@@ -1,0 +1,207 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "emory-healthcare",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1073611492"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+        "name": "Emory Healthcare",
+        "telecom": [{"system": "phone", "value": "404-778-7777"}],
+        "address": [{"line": ["1364 Clifton Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30322", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "emory-university-hospital",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1366445653"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Emory University Hospital",
+        "partOf": {"reference": "Organization/emory-healthcare"},
+        "telecom": [{"system": "phone", "value": "404-712-2000"}],
+        "address": [{"line": ["1364 Clifton Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30322", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "piedmont-healthcare",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1437152507"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+        "name": "Piedmont Healthcare",
+        "telecom": [{"system": "phone", "value": "404-605-5000"}],
+        "address": [{"line": ["1968 Peachtree Road NW"], "city": "Atlanta", "state": "GA", "postalCode": "30309", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "piedmont-atlanta-hospital",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1366445653"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Piedmont Atlanta Hospital",
+        "partOf": {"reference": "Organization/piedmont-healthcare"},
+        "telecom": [{"system": "phone", "value": "404-605-5000"}],
+        "address": [{"line": ["1968 Peachtree Road NW"], "city": "Atlanta", "state": "GA", "postalCode": "30309", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "grady-health-system",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1083617083"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+        "name": "Grady Health System",
+        "telecom": [{"system": "phone", "value": "404-616-1000"}],
+        "address": [{"line": ["80 Jesse Hill Jr Drive SE"], "city": "Atlanta", "state": "GA", "postalCode": "30303", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "grady-memorial-hospital",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1477558402"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Grady Memorial Hospital",
+        "partOf": {"reference": "Organization/grady-health-system"},
+        "telecom": [{"system": "phone", "value": "404-616-4307"}],
+        "address": [{"line": ["80 Jesse Hill Jr Drive SE"], "city": "Atlanta", "state": "GA", "postalCode": "30303", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "northside-hospital",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1124021673"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Northside Hospital Atlanta",
+        "telecom": [{"system": "phone", "value": "404-851-8000"}],
+        "address": [{"line": ["1000 Johnson Ferry Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30342", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "wellstar-health-system",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1629076813"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+        "name": "WellStar Health System",
+        "telecom": [{"system": "phone", "value": "770-956-9827"}],
+        "address": [{"line": ["793 Sawyer Road"], "city": "Marietta", "state": "GA", "postalCode": "30062", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "wellstar-kennestone-hospital",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1891767453"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "WellStar Kennestone Hospital",
+        "partOf": {"reference": "Organization/wellstar-health-system"},
+        "telecom": [{"system": "phone", "value": "770-793-5000"}],
+        "address": [{"line": ["677 Church Street NE"], "city": "Marietta", "state": "GA", "postalCode": "30060", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "childrens-healthcare-atlanta",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1922005099"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+        "name": "Children's Healthcare of Atlanta",
+        "telecom": [{"system": "phone", "value": "404-785-5252"}],
+        "address": [{"line": ["1575 Northeast Expressway NE"], "city": "Atlanta", "state": "GA", "postalCode": "30329", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "choa-egleston",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1649273531"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Children's Healthcare of Atlanta at Egleston",
+        "partOf": {"reference": "Organization/childrens-healthcare-atlanta"},
+        "telecom": [{"system": "phone", "value": "404-785-6000"}],
+        "address": [{"line": ["1405 Clifton Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30322", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "choa-scottish-rite",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1629076821"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Children's Healthcare of Atlanta at Scottish Rite",
+        "partOf": {"reference": "Organization/childrens-healthcare-atlanta"},
+        "telecom": [{"system": "phone", "value": "404-785-5252"}],
+        "address": [{"line": ["1001 Johnson Ferry Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30342", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "choa-hughes-spalding",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1780672615"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Children's Healthcare of Atlanta at Hughes Spalding",
+        "partOf": {"reference": "Organization/childrens-healthcare-atlanta"},
+        "telecom": [{"system": "phone", "value": "404-785-9500"}],
+        "address": [{"line": ["35 Jesse Hill Jr Drive SE"], "city": "Atlanta", "state": "GA", "postalCode": "30303", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "emory-saint-josephs",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1396748889"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Emory Saint Joseph's Hospital",
+        "partOf": {"reference": "Organization/emory-healthcare"},
+        "telecom": [{"system": "phone", "value": "678-843-7001"}],
+        "address": [{"line": ["5665 Peachtree Dunwoody Road NE"], "city": "Atlanta", "state": "GA", "postalCode": "30342", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "emory-midtown",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1063415756"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Emory University Hospital Midtown",
+        "partOf": {"reference": "Organization/emory-healthcare"},
+        "telecom": [{"system": "phone", "value": "404-686-4411"}],
+        "address": [{"line": ["550 Peachtree Street NE"], "city": "Atlanta", "state": "GA", "postalCode": "30308", "country": "US"}]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "atlanta-va-medical-center",
+        "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "1194726374"}],
+        "active": true,
+        "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "hosp", "display": "Hospital"}]}],
+        "name": "Atlanta VA Medical Center",
+        "telecom": [{"system": "phone", "value": "404-321-6111"}],
+        "address": [{"line": ["1670 Clairmont Road"], "city": "Decatur", "state": "GA", "postalCode": "30033", "country": "US"}]
+      }
+    }
+  ]
+}
