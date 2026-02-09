@@ -178,19 +178,47 @@ def is_pediatric(patient: Dict) -> bool:
 
 
 def has_qualifying_condition(bundle: Dict) -> bool:
-    """Check if patient bundle has a qualifying condition for home monitoring"""
-    qualifying_codes = [c['code'] for c in DEVICE_REGISTRY['qualifyingConditions']['codes']]
+    """Check if patient bundle has a qualifying condition for home monitoring
+    
+    Supports both ICD-10 codes (used by some EHRs) and SNOMED CT codes (used by Synthea)
+    """
+    # Get qualifying codes from registry - support both formats
+    qualifying_icd10 = []
+    qualifying_snomed = []
+    
+    qc = DEVICE_REGISTRY.get('qualifyingConditions', {})
+    
+    # Support old format (codes) and new format (icd10/snomed)
+    if 'codes' in qc:
+        qualifying_icd10 = [c['code'] for c in qc['codes']]
+    if 'icd10' in qc:
+        qualifying_icd10 = [c['code'] for c in qc['icd10']]
+    if 'snomed' in qc:
+        qualifying_snomed = [c['code'] for c in qc['snomed']]
     
     for entry in bundle.get('entry', []):
         resource = entry.get('resource', {})
         if resource.get('resourceType') == 'Condition':
             code = resource.get('code', {})
             for coding in code.get('coding', []):
-                icd_code = coding.get('code', '')
-                # Check if any qualifying code is a prefix of the condition code
-                for qc in qualifying_codes:
-                    if icd_code.startswith(qc):
-                        return True
+                code_value = coding.get('code', '')
+                system = coding.get('system', '')
+                
+                # Check SNOMED codes (exact match)
+                if 'snomed' in system.lower() and code_value in qualifying_snomed:
+                    return True
+                
+                # Check ICD-10 codes (prefix match for hierarchical codes)
+                if 'icd' in system.lower():
+                    for qc in qualifying_icd10:
+                        if code_value.startswith(qc):
+                            return True
+                
+                # Also check if no system specified - try prefix match against ICD-10
+                if not system:
+                    for qc in qualifying_icd10:
+                        if code_value.startswith(qc):
+                            return True
     return False
 
 

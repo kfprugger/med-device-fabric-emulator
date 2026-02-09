@@ -1,0 +1,100 @@
+// ============================================================================
+// 02-telemetry-functions.kql
+// Analytical functions over the TelemetryRaw table.
+// These provide rolling statistics, trend detection, and baseline comparisons.
+// Run this in MasimoKQLDB after TelemetryRaw has data flowing.
+//
+// IMPORTANT: The TelemetryRaw.timestamp column is STRING type (auto-created by
+// Eventstream). All datetime operations must wrap it with todatetime(timestamp).
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// fn_VitalsTrend — Rolling 5-minute vital sign statistics per device
+// Returns: avg, min, max, stddev for SpO2 and PR over a sliding window.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Rolling 5-minute vital sign statistics per device",
+    folder = "ClinicalAlerts"
+) fn_VitalsTrend(windowMinutes: int = 5) {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(1m * windowMinutes)
+    | summarize
+        readings      = count(),
+        avg_spo2      = round(avg(todouble(telemetry.spo2)), 1),
+        min_spo2      = round(min(todouble(telemetry.spo2)), 1),
+        max_spo2      = round(max(todouble(telemetry.spo2)), 1),
+        stddev_spo2   = round(stdev(todouble(telemetry.spo2)), 2),
+        avg_pr        = round(avg(todouble(telemetry.pr)), 0),
+        min_pr        = min(toint(telemetry.pr)),
+        max_pr        = max(toint(telemetry.pr)),
+        avg_pi        = round(avg(todouble(telemetry.pi)), 2),
+        avg_pvi       = round(avg(todouble(telemetry.pvi)), 0),
+        avg_sphb      = round(avg(todouble(telemetry.sphb)), 1),
+        avg_signal_iq = round(avg(todouble(telemetry.signal_iq)), 0),
+        last_reading  = max(todatetime(timestamp))
+      by device_id
+    | extend minutes_since_last = datetime_diff('second', now(), last_reading) / 60.0
+    | order by device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// fn_DeviceStatus — Current status of all devices (online/stale/offline)
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Current device status based on last telemetry timestamp",
+    folder = "ClinicalAlerts"
+) fn_DeviceStatus() {
+    TelemetryRaw
+    | summarize last_seen = max(todatetime(timestamp)) by device_id
+    | extend
+        seconds_ago = datetime_diff('second', now(), last_seen),
+        status = case(
+            datetime_diff('second', now(), last_seen) < 30,  "ONLINE",
+            datetime_diff('second', now(), last_seen) < 120, "STALE",
+            "OFFLINE"
+        )
+    | order by status asc, device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// fn_LatestReadings — Most recent reading per device (snapshot view)
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Latest telemetry reading for each device",
+    folder = "ClinicalAlerts"
+) fn_LatestReadings() {
+    TelemetryRaw
+    | summarize arg_max(todatetime(timestamp), *) by device_id
+    | project
+        device_id,
+        timestamp,
+        spo2      = todouble(telemetry.spo2),
+        pr        = toint(telemetry.pr),
+        pi        = todouble(telemetry.pi),
+        pvi       = toint(telemetry.pvi),
+        sphb      = todouble(telemetry.sphb),
+        signal_iq = toint(telemetry.signal_iq)
+    | order by device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// fn_TelemetryByDevice — Time-series data for a specific device
+// Useful for charting trends in a Real-Time Dashboard.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Time-series telemetry for a specific device over a time range",
+    folder = "ClinicalAlerts"
+) fn_TelemetryByDevice(target_device: string, lookback_minutes: int = 60) {
+    TelemetryRaw
+    | where device_id == target_device
+    | where todatetime(timestamp) > ago(1m * lookback_minutes)
+    | project
+        timestamp = todatetime(timestamp),
+        spo2      = todouble(telemetry.spo2),
+        pr        = toint(telemetry.pr),
+        pi        = todouble(telemetry.pi),
+        pvi       = toint(telemetry.pvi),
+        sphb      = todouble(telemetry.sphb),
+        signal_iq = toint(telemetry.signal_iq)
+    | order by timestamp asc
+}

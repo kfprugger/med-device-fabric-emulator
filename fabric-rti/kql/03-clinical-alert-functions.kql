@@ -1,0 +1,208 @@
+// ============================================================================
+// 03-clinical-alert-functions.kql
+// Clinical alert detection functions implementing the 3-tier alert system.
+//
+// Alert Tiers:
+//   WARNING  — SpO2 < 94% OR PR > 110 or < 50 (any patient)
+//   URGENT   — SpO2 < 90% OR PR > 130 or < 45, OR patient has COPD/CHF
+//   CRITICAL — SpO2 < 85% OR PR > 150 or < 40, AND patient has COPD/CHF
+//
+// These functions are designed to work with:
+//   - TelemetryRaw (from Eventstream → Eventhouse)
+//   - Silver Lakehouse tables from Healthcare Data Solutions (via shortcuts)
+//
+// IMPORTANT: TelemetryRaw.timestamp is STRING type (auto-created by Eventstream).
+// All datetime operations must wrap it with todatetime(timestamp).
+// NOTE: "latest" is a Kusto reserved keyword — avoid as a variable name.
+//
+// Run this in MasimoKQLDB after data is flowing.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// fn_SpO2Alerts — Detects SpO2 threshold breaches over a sliding window
+// Standalone function that works without patient context.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Detect SpO2 threshold breaches with 3-tier severity classification",
+    folder = "ClinicalAlerts"
+) fn_SpO2Alerts(windowMinutes: int = 5) {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(1m * windowMinutes)
+    | summarize
+        readings  = count(),
+        avg_spo2  = round(avg(todouble(telemetry.spo2)), 1),
+        min_spo2  = round(min(todouble(telemetry.spo2)), 1),
+        last_spo2 = round(arg_max(todatetime(timestamp), todouble(telemetry.spo2)), 1),
+        last_time = max(todatetime(timestamp))
+      by device_id
+    | where min_spo2 < 94 or avg_spo2 < 95
+    | extend alert_tier = case(
+        min_spo2 < 85, "CRITICAL",
+        min_spo2 < 90, "URGENT",
+        min_spo2 < 94, "WARNING",
+        "INFO"
+      )
+    | where alert_tier != "INFO"
+    | extend
+        alert_type = "SPO2_LOW",
+        message = strcat(
+            alert_tier, ": Device ", device_id,
+            " — SpO2 min=", tostring(min_spo2), "%, avg=", tostring(avg_spo2), "%",
+            " over last ", tostring(windowMinutes), " min"
+        )
+    | project
+        alert_time = last_time,
+        device_id,
+        alert_tier,
+        alert_type,
+        metric_name = "spo2",
+        metric_value = min_spo2,
+        threshold_value = case(
+            alert_tier == "CRITICAL", 85.0,
+            alert_tier == "URGENT",   90.0,
+            94.0
+        ),
+        message,
+        readings
+    | order by alert_tier asc, min_spo2 asc
+}
+
+// ---------------------------------------------------------------------------
+// fn_PulseRateAlerts — Detects pulse rate anomalies (brady/tachycardia)
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Detect pulse rate anomalies with 3-tier severity classification",
+    folder = "ClinicalAlerts"
+) fn_PulseRateAlerts(windowMinutes: int = 5) {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(1m * windowMinutes)
+    | summarize
+        readings = count(),
+        avg_pr   = round(avg(todouble(telemetry.pr)), 0),
+        min_pr   = min(toint(telemetry.pr)),
+        max_pr   = max(toint(telemetry.pr)),
+        last_time = max(todatetime(timestamp))
+      by device_id
+    | where max_pr > 110 or min_pr < 50
+    | extend
+        is_tachy = max_pr > 110,
+        is_brady = min_pr < 50,
+        alert_tier = case(
+            max_pr > 150 or min_pr < 40, "CRITICAL",
+            max_pr > 130 or min_pr < 45, "URGENT",
+            "WARNING"
+        ),
+        alert_type = case(
+            max_pr > 110 and min_pr < 50, "PR_BOTH",
+            max_pr > 110, "PR_HIGH",
+            "PR_LOW"
+        ),
+        abnormal_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr))
+    | extend message = strcat(
+        alert_tier, ": Device ", device_id,
+        " — PR ", iff(is_tachy, strcat("high=", tostring(max_pr)), ""),
+        iff(is_tachy and is_brady, " / ", ""),
+        iff(is_brady, strcat("low=", tostring(min_pr)), ""),
+        " bpm over last ", tostring(windowMinutes), " min"
+    )
+    | project
+        alert_time = last_time,
+        device_id,
+        alert_tier,
+        alert_type,
+        metric_name = "pr",
+        metric_value = abnormal_value,
+        threshold_value = case(
+            alert_tier == "CRITICAL", iff(is_tachy, 150.0, 40.0),
+            alert_tier == "URGENT",   iff(is_tachy, 130.0, 45.0),
+            iff(is_tachy, 110.0, 50.0)
+        ),
+        message,
+        readings
+    | order by alert_tier asc
+}
+
+// ---------------------------------------------------------------------------
+// fn_ClinicalAlerts — ENRICHED multi-metric clinical alerts
+//
+// This is the primary alert function that combines:
+//   1. Real-time telemetry from TelemetryRaw (Eventhouse)
+//   2. Patient context from HDS Silver Lakehouse (via external table/shortcut)
+//
+// SETUP REQUIRED: After deploying Healthcare Data Solutions Clinical
+// Foundations, create an external table or shortcut in the Eventhouse
+// pointing to the Silver lakehouse Patient and Condition tables.
+//
+// If the external tables are not yet configured, this function still works
+// but returns alerts without patient context enrichment.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Enriched clinical alerts combining real-time telemetry with FHIR patient context from HDS Silver Lakehouse",
+    folder = "ClinicalAlerts"
+) fn_ClinicalAlerts(windowMinutes: int = 5) {
+    // --- Stage 1: Compute real-time vital sign alerts ---
+    let spo2_alerts = fn_SpO2Alerts(windowMinutes)
+        | project device_id, alert_time, spo2_tier = alert_tier,
+                  spo2_value = metric_value, spo2_message = message;
+    let pr_alerts = fn_PulseRateAlerts(windowMinutes)
+        | project device_id, alert_time, pr_tier = alert_tier,
+                  pr_value = metric_value, pr_message = message;
+    //
+    // --- Stage 2: Get latest vitals per device ---
+    // NOTE: "latest" is a Kusto reserved keyword; use "vitals" instead
+    let vitals = TelemetryRaw
+        | where todatetime(timestamp) > ago(1m * windowMinutes)
+        | summarize arg_max(todatetime(timestamp), *) by device_id
+        | project device_id,
+                  current_spo2  = todouble(telemetry.spo2),
+                  current_pr    = toint(telemetry.pr),
+                  current_pi    = todouble(telemetry.pi),
+                  current_sphb  = todouble(telemetry.sphb),
+                  signal_iq     = toint(telemetry.signal_iq);
+    //
+    // --- Stage 3: Combine alerts per device ---
+    let combined = vitals
+        | join kind=leftouter spo2_alerts on device_id
+        | join kind=leftouter pr_alerts   on device_id
+        | where isnotempty(spo2_tier) or isnotempty(pr_tier)
+        | extend
+            combined_tier = case(
+                spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
+                spo2_tier == "URGENT"   or pr_tier == "URGENT",   "URGENT",
+                "WARNING"
+            ),
+            alert_type = case(
+                isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
+                isnotempty(spo2_tier), "SPO2_LOW",
+                "PR_ABNORMAL"
+            );
+    //
+    // --- Stage 4: Output enriched alerts ---
+    // NOTE: When HDS Silver Lakehouse is connected via external table,
+    //       replace this section with a join to the Patient and Condition
+    //       external tables for full patient context enrichment.
+    //       See fabric-rti/kql/04-hds-enrichment-example.kql for the pattern.
+    combined
+    | project
+        alert_id      = strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss")),
+        alert_time    = coalesce(alert_time, alert_time1, now()),
+        device_id,
+        patient_id    = "",       // Populated when HDS Silver LH is connected
+        patient_name  = "",       // Populated when HDS Silver LH is connected
+        alert_tier    = combined_tier,
+        alert_type,
+        spo2          = current_spo2,
+        pr            = current_pr,
+        pi            = current_pi,
+        sphb          = current_sphb,
+        signal_iq,
+        qualifying_conditions = "",  // Populated when HDS Silver LH is connected
+        message       = strcat(
+            combined_tier, " ALERT | Device: ", device_id,
+            " | SpO2: ", tostring(current_spo2), "%",
+            " | PR: ", tostring(current_pr), " bpm",
+            iff(isnotempty(spo2_message), strcat(" | ", spo2_message), ""),
+            iff(isnotempty(pr_message),   strcat(" | ", pr_message), "")
+        )
+    | order by alert_tier asc, device_id asc
+}

@@ -1,0 +1,58 @@
+// ============================================================================
+// 01-alert-history-table.kql
+// Creates the AlertHistory table for storing triggered clinical alerts.
+// Run this in the MasimoKQLDB after the Eventstream has created TelemetryRaw.
+// ============================================================================
+
+// AlertHistory — persists every alert triggered by the clinical alert system
+.create table AlertHistory (
+    alert_id: string,
+    alert_time: datetime,
+    device_id: string,
+    patient_id: string,
+    patient_name: string,
+    alert_tier: string,          // WARNING, URGENT, CRITICAL
+    alert_type: string,          // SPO2_LOW, PR_HIGH, PR_LOW, MULTI_METRIC
+    metric_name: string,
+    metric_value: real,
+    threshold_value: real,
+    qualifying_conditions: string,  // Comma-separated condition list
+    message: string,
+    acknowledged: bool,
+    acknowledged_by: string,
+    acknowledged_at: datetime
+)
+
+// Set retention to 90 days for alert history
+.alter table AlertHistory policy retention
+```
+{
+    "SoftDeletePeriod": "90.00:00:00",
+    "Recoverability": "Enabled"
+}
+```
+
+// Enable streaming ingestion for real-time alert writes
+.alter table AlertHistory policy streamingingestion enable
+
+// Create a mapping for programmatic alert ingestion
+.create table AlertHistory ingestion json mapping 'AlertHistoryMapping'
+```
+[
+    {"column": "alert_id",               "path": "$.alert_id",               "datatype": "string"},
+    {"column": "alert_time",             "path": "$.alert_time",             "datatype": "datetime"},
+    {"column": "device_id",              "path": "$.device_id",              "datatype": "string"},
+    {"column": "patient_id",             "path": "$.patient_id",             "datatype": "string"},
+    {"column": "patient_name",           "path": "$.patient_name",           "datatype": "string"},
+    {"column": "alert_tier",             "path": "$.alert_tier",             "datatype": "string"},
+    {"column": "alert_type",             "path": "$.alert_type",             "datatype": "string"},
+    {"column": "metric_name",            "path": "$.metric_name",            "datatype": "string"},
+    {"column": "metric_value",           "path": "$.metric_value",           "datatype": "real"},
+    {"column": "threshold_value",        "path": "$.threshold_value",        "datatype": "real"},
+    {"column": "qualifying_conditions",  "path": "$.qualifying_conditions",  "datatype": "string"},
+    {"column": "message",                "path": "$.message",                "datatype": "string"},
+    {"column": "acknowledged",           "path": "$.acknowledged",           "datatype": "bool"},
+    {"column": "acknowledged_by",        "path": "$.acknowledged_by",        "datatype": "string"},
+    {"column": "acknowledged_at",        "path": "$.acknowledged_at",        "datatype": "datetime"}
+]
+```

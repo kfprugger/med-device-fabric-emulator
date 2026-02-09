@@ -1,0 +1,184 @@
+// ============================================================================
+// 04-hds-enrichment-example.kql
+// Example: Connecting HDS Silver Lakehouse to the Eventhouse for enriched alerts.
+//
+// After deploying Healthcare Data Solutions Clinical Foundations:
+//   1. The Silver Lakehouse contains flattened FHIR R4 tables (Patient,
+//      Device, Condition, Observation, etc.)
+//   2. Create a OneLake shortcut from the Eventhouse to the Silver Lakehouse
+//      OR use external tables (external_table) to query across items.
+//
+// This file shows the pattern for creating external table references
+// and the enriched version of fn_ClinicalAlerts.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// OPTION A: Create external tables pointing to Silver Lakehouse delta tables
+// Replace <workspace_id>, <silver_lakehouse_id> with actual values.
+// ---------------------------------------------------------------------------
+
+// NOTE: Uncomment and run these after HDS is deployed. Replace placeholders.
+
+/*
+// External table for Patient (Silver Lakehouse)
+.create external table SilverPatient (
+    id: string,
+    name_text: string,
+    name_family: string,
+    name_given: string,
+    gender: string,
+    birthDate: datetime,
+    identifier: dynamic,
+    identifierOrig: dynamic,
+    idOrig: string,
+    msftSourceSystem: string
+) kind=delta
+(
+    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Patient'
+)
+
+// External table for Condition (Silver Lakehouse)
+.create external table SilverCondition (
+    id: string,
+    subject_reference: string,
+    code_coding: dynamic,
+    code_text: string,
+    clinicalStatus_coding: dynamic,
+    verificationStatus_coding: dynamic,
+    onsetDateTime: datetime,
+    msftSourceSystem: string
+) kind=delta
+(
+    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Condition'
+)
+
+// External table for Device (Silver Lakehouse)
+.create external table SilverDevice (
+    id: string,
+    identifier: dynamic,
+    type_coding: dynamic,
+    type_text: string,
+    patient_reference: string,
+    status: string,
+    msftSourceSystem: string
+) kind=delta
+(
+    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Device'
+)
+*/
+
+// ---------------------------------------------------------------------------
+// OPTION B: Enriched fn_ClinicalAlerts using Silver Lakehouse data
+//
+// This replaces the base fn_ClinicalAlerts function once the external
+// tables above are created. It joins real-time telemetry alerts with
+// FHIR patient/condition context from HDS.
+// ---------------------------------------------------------------------------
+
+/*
+.create-or-alter function with (
+    docstring = "Enriched clinical alerts with HDS Silver Lakehouse patient context",
+    folder = "ClinicalAlerts"
+) fn_ClinicalAlerts(windowMinutes: int = 5) {
+    // --- Patient-Device mapping via Silver Lakehouse ---
+    // The Silver LH Device table contains references back to patients.
+    // We also query Conditions for COPD (SNOMED 13645005) and CHF (84114007).
+    let device_patient_map = external_table('SilverDevice')
+        | where isnotempty(patient_reference)
+        | project device_identifier = tostring(identifier[0].value),
+                  patient_ref = patient_reference;
+    //
+    let patient_info = external_table('SilverPatient')
+        | project patient_id = id,
+                  patient_name = coalesce(name_text, strcat(name_given, " ", name_family)),
+                  gender, birthDate;
+    //
+    let high_risk_conditions = external_table('SilverCondition')
+        | mv-expand coding = code_coding
+        | where tostring(coding.code) in (
+            "13645005",   // COPD (SNOMED)
+            "84114007",   // Heart failure (SNOMED)
+            "195967001",  // Asthma (SNOMED)
+            "233604007",  // Pneumonia (SNOMED)
+            "59621000"    // Hypertension (SNOMED)
+          )
+        | summarize conditions = make_set(tostring(coding.display)) by patient_ref = subject_reference
+        | extend conditions_str = strcat_array(conditions, ", ");
+    //
+    // --- Real-time telemetry alerts ---
+    let spo2_alerts = fn_SpO2Alerts(windowMinutes)
+        | project device_id, alert_time, spo2_tier = alert_tier,
+                  spo2_value = metric_value, spo2_message = message;
+    let pr_alerts = fn_PulseRateAlerts(windowMinutes)
+        | project device_id, alert_time, pr_tier = alert_tier,
+                  pr_value = metric_value, pr_message = message;
+    //
+    let latest = TelemetryRaw
+        | where timestamp > ago(1m * windowMinutes)
+        | summarize arg_max(timestamp, *) by device_id
+        | project device_id,
+                  current_spo2  = todouble(telemetry.spo2),
+                  current_pr    = toint(telemetry.pr),
+                  current_pi    = todouble(telemetry.pi),
+                  current_sphb  = todouble(telemetry.sphb),
+                  signal_iq     = toint(telemetry.signal_iq);
+    //
+    // --- Enrich with patient context ---
+    latest
+    | join kind=leftouter spo2_alerts on device_id
+    | join kind=leftouter pr_alerts   on device_id
+    | where isnotempty(spo2_tier) or isnotempty(pr_tier)
+    | join kind=leftouter device_patient_map on $left.device_id == $right.device_identifier
+    | join kind=leftouter patient_info on $left.patient_ref == $right.patient_id
+    | join kind=leftouter high_risk_conditions on $left.patient_ref == $right.patient_ref1
+    //
+    // --- Severity escalation based on patient conditions ---
+    | extend
+        has_high_risk = isnotempty(conditions_str),
+        base_tier = case(
+            spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
+            spo2_tier == "URGENT"   or pr_tier == "URGENT",   "URGENT",
+            "WARNING"
+        )
+    | extend
+        // Escalate tier if patient has high-risk conditions
+        final_tier = case(
+            base_tier == "CRITICAL", "CRITICAL",
+            base_tier == "URGENT" and has_high_risk, "CRITICAL",
+            base_tier == "WARNING" and has_high_risk, "URGENT",
+            base_tier
+        ),
+        alert_type = case(
+            isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
+            isnotempty(spo2_tier), "SPO2_LOW",
+            "PR_ABNORMAL"
+        )
+    //
+    // --- Final projection ---
+    | project
+        alert_id      = strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss")),
+        alert_time    = coalesce(alert_time, alert_time1, now()),
+        device_id,
+        patient_id    = coalesce(patient_id, ""),
+        patient_name  = coalesce(patient_name, "(not linked)"),
+        alert_tier    = final_tier,
+        alert_type,
+        spo2          = current_spo2,
+        pr            = current_pr,
+        pi            = current_pi,
+        sphb          = current_sphb,
+        signal_iq,
+        qualifying_conditions = coalesce(conditions_str, ""),
+        escalated     = (final_tier != base_tier),
+        message       = strcat(
+            final_tier, " ALERT",
+            iff(final_tier != base_tier, " (ESCALATED)", ""),
+            " | Patient: ", coalesce(patient_name, "Unknown"),
+            " | Device: ", device_id,
+            " | SpO2: ", tostring(current_spo2), "%",
+            " | PR: ", tostring(current_pr), " bpm",
+            iff(has_high_risk, strcat(" | Conditions: ", conditions_str), "")
+        )
+    | order by alert_tier asc, device_id asc
+}
+*/

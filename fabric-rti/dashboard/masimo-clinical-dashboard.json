@@ -1,0 +1,67 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "Masimo Clinical Alert Dashboard",
+  "description": "Real-Time Intelligence dashboard for Masimo pulse oximetry monitoring with 7-panel clinical overview.",
+  "tiles": [
+    {
+      "id": "tile-device-status",
+      "title": "Device Status",
+      "visualType": "donutChart",
+      "position": { "x": 0, "y": 0, "width": 4, "height": 4 },
+      "query": "fn_DeviceStatus()\n| summarize device_count = count() by status\n| order by status asc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-active-alerts",
+      "title": "Active Clinical Alerts",
+      "visualType": "table",
+      "position": { "x": 4, "y": 0, "width": 8, "height": 4 },
+      "query": "fn_ClinicalAlerts(5)\n| project alert_tier, device_id, alert_type, spo2, pr, message\n| order by alert_tier asc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-spo2-heatmap",
+      "title": "SpO2 Heatmap (Last 30 min)",
+      "visualType": "lineChart",
+      "position": { "x": 0, "y": 4, "width": 6, "height": 4 },
+      "query": "TelemetryRaw\n| where todatetime(timestamp) > ago(30m)\n| summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)\n  by device_id, bin(todatetime(timestamp), 1m)\n| order by timestamp asc, device_id asc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-alert-trend",
+      "title": "Alert Trend (24h)",
+      "visualType": "stackedBarChart",
+      "position": { "x": 6, "y": 4, "width": 6, "height": 4 },
+      "query": "AlertHistory\n| where alert_time > ago(24h)\n| summarize alert_count = count() by alert_tier, bin(alert_time, 15m)\n| order by alert_time asc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-top-alerting",
+      "title": "Top 10 Alerting Devices (24h)",
+      "visualType": "barChart",
+      "position": { "x": 0, "y": 8, "width": 4, "height": 4 },
+      "query": "AlertHistory\n| where alert_time > ago(24h)\n| summarize\n    total_alerts = count(),\n    critical = countif(alert_tier == \"CRITICAL\"),\n    urgent   = countif(alert_tier == \"URGENT\"),\n    warning  = countif(alert_tier == \"WARNING\")\n  by device_id\n| top 10 by total_alerts desc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-vital-signs",
+      "title": "Vital Signs — Latest",
+      "visualType": "table",
+      "position": { "x": 4, "y": 8, "width": 8, "height": 4 },
+      "query": "fn_LatestReadings()\n| extend\n    spo2_status = case(spo2 < 85, \"🔴\", spo2 < 90, \"🟠\", spo2 < 94, \"🟡\", \"🟢\"),\n    pr_status   = case(pr > 150 or pr < 40, \"🔴\", pr > 130 or pr < 45, \"🟠\",\n                       pr > 110 or pr < 50, \"🟡\", \"🟢\")\n| project device_id, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_iq, timestamp\n| order by spo2 asc",
+      "database": "MasimoEventhouse"
+    },
+    {
+      "id": "tile-signal-quality",
+      "title": "Degraded Signal Quality",
+      "visualType": "table",
+      "position": { "x": 0, "y": 12, "width": 6, "height": 3 },
+      "query": "fn_LatestReadings()\n| where signal_iq < 95\n| project device_id, signal_iq, spo2, pr, timestamp\n| order by signal_iq asc",
+      "database": "MasimoEventhouse"
+    }
+  ],
+  "autoRefresh": {
+    "enabled": true,
+    "intervalSeconds": 30
+  }
+}

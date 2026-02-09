@@ -155,11 +155,10 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 ### 4. **Medical Device Integration** (Masimo Pulse Oximeters)
 - Creates **100 Masimo Radius-7 pulse oximeter** Device resources
 - Identifies patients with qualifying conditions for remote monitoring:
-  - Chronic respiratory conditions (J40-J47, J60-J70)
-  - Heart failure (I50.x)
-  - Sleep apnea (G47.3x)
-  - Post-surgical recovery
-- Links devices to qualifying patients via DeviceAssociation resources
+  - **SNOMED CT codes** (used by Synthea): Asthma (195967001), Diabetes (44054006), Hypertension (59621000), COPD (13645005), Heart failure (84114007)
+  - **ICD-10 codes** (for real EHR data): J40-J47 (respiratory), I50 (heart failure), G47.3 (sleep apnea)
+- Links devices to qualifying patients via DeviceAssociation (Basic) resources
+- Supports both Synthea-generated synthetic data and real-world EHR data
 
 ## 📊 FHIR Resources Created
 
@@ -318,6 +317,112 @@ foreach ($type in $types) {
 }
 ```
 
+## 📡 Real-Time Intelligence — Clinical Alert System
+
+This project includes a **Microsoft Fabric Real-Time Intelligence (RTI)** layer that streams Masimo telemetry into Fabric for clinical alerting, enriched with FHIR patient context via Healthcare Data Solutions.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph Azure["Azure Resources"]
+        EH["Event Hub<br/>(telemetry-stream)"]
+        FHIR["FHIR Service<br/>(7,800 patients)"]
+    end
+
+    subgraph Fabric["Microsoft Fabric Workspace"]
+        ES["Eventstream<br/>(MasimoTelemetryStream)"]
+        EVH["Eventhouse<br/>(MasimoKQLDB)"]
+        HDS["Healthcare Data Solutions<br/>(Clinical Foundations)"]
+        DA["Data Activator<br/>(Clinical Alerts)"]
+        DASH["Real-Time Dashboard"]
+    end
+
+    EH --> ES --> EVH
+    FHIR -->|"$export"| HDS
+    EVH -->|"KQL Alerts"| DA
+    HDS -->|"Patient Context"| EVH
+    EVH --> DASH
+    DA -->|"Teams / Email"| Notify["🔔 Notifications"]
+```
+
+### Quick Start
+
+```powershell
+# Deploy Fabric RTI resources (workspace, Eventhouse, Eventstream)
+.\deploy-fabric-rti.ps1
+
+# Or with custom workspace name
+.\deploy-fabric-rti.ps1 -FabricWorkspaceName "my-clinical-workspace"
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-FabricWorkspaceName` | `med-device-real-time` | Fabric workspace name (created if missing) |
+| `-ResourceGroupName` | `rg-medtech-sys-identity` | Azure RG with existing deployment |
+| `-EventHubNamespace` | *(auto-detected)* | Event Hub namespace |
+| `-EventHubName` | `telemetry-stream` | Event Hub name |
+| `-FhirServiceUrl` | *(auto-detected)* | FHIR service endpoint |
+| `-SkipHdsGuidance` | `$false` | Skip HDS manual-step output |
+
+### What Gets Deployed
+
+| Component | Method | Description |
+|-----------|--------|-------------|
+| Fabric Workspace | Automated | Created/validated via REST API |
+| Eventhouse + KQL DB | Automated | Stores real-time telemetry |
+| Eventstream | Automated | Routes Event Hub → Eventhouse |
+| AlertHistory Table | Automated | Clinical alert storage with 90-day retention |
+| KQL Functions (×7) | Automated | Telemetry analytics & clinical alert detection |
+| Real-Time Dashboard | Manual | 7-panel clinical monitoring dashboard |
+| Healthcare Data Solutions | Manual | FHIR patient context (Silver Lakehouse) |
+| AHDS Data Export | Manual | Azure Marketplace offer for FHIR $export |
+| Data Activator | Manual | Clinical alert triggers |
+
+### Clinical Alert Tiers
+
+| Tier | SpO₂ | Pulse Rate | Condition Modifier |
+|------|------|------------|--------------------|
+| ⚠️ Warning | < 94% | > 110 or < 50 bpm | Any patient |
+| 🔶 Urgent | < 90% | > 130 or < 45 bpm | OR patient has COPD/CHF |
+| 🔴 Critical | < 85% | > 150 or < 40 bpm | AND patient has COPD/CHF |
+
+### KQL Functions
+
+Located in `fabric-rti/kql/`:
+
+| File | Functions | Purpose |
+|------|-----------|---------|
+| `01-alert-history-table.kql` | AlertHistory table | Stores triggered alerts |
+| `02-telemetry-functions.kql` | `fn_VitalsTrend`, `fn_DeviceStatus`, `fn_LatestReadings`, `fn_TelemetryByDevice` | Telemetry analytics |
+| `03-clinical-alert-functions.kql` | `fn_SpO2Alerts`, `fn_PulseRateAlerts`, `fn_ClinicalAlerts` | Alert detection |
+| `04-hds-enrichment-example.kql` | External tables + enriched alerts | HDS Silver Lakehouse integration |
+| `05-dashboard-queries.kql` | 7 dashboard panels | Real-Time Dashboard queries |
+
+### Real-Time Dashboard
+
+A 7-panel clinical monitoring dashboard is defined in `fabric-rti/dashboard/`:
+
+| Panel | Visual Type | Data Source |
+|-------|-------------|-------------|
+| Device Status | Donut chart | `fn_DeviceStatus()` |
+| Active Clinical Alerts | Table (color-coded) | `fn_ClinicalAlerts(5)` |
+| SpO2 Heatmap | Multi-line chart | `TelemetryRaw` (30 min) |
+| Alert Trend (24h) | Stacked bar chart | `AlertHistory` |
+| Top Alerting Devices | Bar chart | `AlertHistory` |
+| Vital Signs Snapshot | Table with indicators | `fn_LatestReadings()` |
+| Degraded Signal Quality | Table (filtered) | `fn_LatestReadings()` |
+
+See [fabric-rti/dashboard/DASHBOARD-GUIDE.md](fabric-rti/dashboard/DASHBOARD-GUIDE.md) for step-by-step setup.
+
+### Healthcare Data Solutions Integration
+
+The system uses **HDS Clinical Foundations** instead of custom tables for FHIR data. The Silver Lakehouse provides pre-flattened FHIR R4 tables (Patient, Device, Condition, etc.) with built-in identity management and update handling.
+
+See [fabric-rti/HDS-SETUP-GUIDE.md](fabric-rti/HDS-SETUP-GUIDE.md) for the complete setup walkthrough.
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -334,3 +439,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Synthea](https://synthetichealth.github.io/synthea/) - Synthetic patient generator
 - [Azure Health Data Services](https://azure.microsoft.com/en-us/products/health-data-services/) - FHIR platform
 - [Masimo](https://www.masimo.com/) - Medical device specifications reference
+- [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) - Real-Time Intelligence platform
+- [Healthcare Data Solutions](https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview) - FHIR data foundations on Fabric

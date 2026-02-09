@@ -1,0 +1,83 @@
+// ============================================================================
+// 05-dashboard-queries.kql
+// Pre-built queries for the Real-Time Dashboard.
+// Each section becomes a panel/tile in the Fabric RTI Dashboard.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// PANEL 1: Unit Census — Device count by status
+// Visual: Pie chart or stat tiles
+// ---------------------------------------------------------------------------
+// Title: "Device Status"
+fn_DeviceStatus()
+| summarize device_count = count() by status
+| order by status asc
+
+// ---------------------------------------------------------------------------
+// PANEL 2: Active Alerts — Current open alerts by severity tier
+// Visual: Table with conditional formatting (red/orange/yellow)
+// ---------------------------------------------------------------------------
+// Title: "Active Clinical Alerts"
+fn_ClinicalAlerts(5)
+| project alert_tier, device_id, patient_name, alert_type,
+          spo2, pr, qualifying_conditions, message
+| order by alert_tier asc
+
+// ---------------------------------------------------------------------------
+// PANEL 3: SpO2 Heatmap — All devices, color-coded SpO2
+// Visual: Heatmap or multi-line chart
+// ---------------------------------------------------------------------------
+// Title: "SpO2 Heatmap (Last 30 min)"
+TelemetryRaw
+| where timestamp > ago(30m)
+| summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)
+  by device_id, bin(timestamp, 1m)
+| order by timestamp asc, device_id asc
+
+// ---------------------------------------------------------------------------
+// PANEL 4: Alert Trend — Alerts over time (last 24h)
+// Visual: Time-series bar chart
+// ---------------------------------------------------------------------------
+// Title: "Alert Trend (24h)"
+AlertHistory
+| where alert_time > ago(24h)
+| summarize alert_count = count() by alert_tier, bin(alert_time, 15m)
+| order by alert_time asc
+
+// ---------------------------------------------------------------------------
+// PANEL 5: Top Alerting Devices — Devices with most alerts
+// Visual: Horizontal bar chart
+// ---------------------------------------------------------------------------
+// Title: "Top 10 Alerting Devices (24h)"
+AlertHistory
+| where alert_time > ago(24h)
+| summarize
+    total_alerts = count(),
+    critical = countif(alert_tier == "CRITICAL"),
+    urgent   = countif(alert_tier == "URGENT"),
+    warning  = countif(alert_tier == "WARNING")
+  by device_id
+| top 10 by total_alerts desc
+
+// ---------------------------------------------------------------------------
+// PANEL 6: Vital Signs Snapshot — Latest reading per device (table)
+// Visual: Table with sparklines
+// ---------------------------------------------------------------------------
+// Title: "Vital Signs — Latest"
+fn_LatestReadings()
+| extend
+    spo2_status = case(spo2 < 85, "🔴", spo2 < 90, "🟠", spo2 < 94, "🟡", "🟢"),
+    pr_status   = case(pr > 150 or pr < 40, "🔴", pr > 130 or pr < 45, "🟠",
+                       pr > 110 or pr < 50, "🟡", "🟢")
+| project device_id, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_iq, timestamp
+| order by spo2 asc
+
+// ---------------------------------------------------------------------------
+// PANEL 7: Signal Quality — Devices with degraded signal
+// Visual: Table filtered to signal_iq < 95
+// ---------------------------------------------------------------------------
+// Title: "Degraded Signal Quality"
+fn_LatestReadings()
+| where signal_iq < 95
+| project device_id, signal_iq, spo2, pr, timestamp
+| order by signal_iq asc

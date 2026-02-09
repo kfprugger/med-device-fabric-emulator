@@ -102,8 +102,8 @@
     {"id": "MASIMO-RADIUS7-0100", "serialNumber": "MSM7-ATL-00100", "model": "Radius-7", "manufacturer": "Masimo Corporation"}
   ],
   "qualifyingConditions": {
-    "description": "ICD-10 codes that qualify a patient for home pulse oximetry monitoring",
-    "codes": [
+    "description": "Codes that qualify a patient for home pulse oximetry monitoring (ICD-10 and SNOMED CT)",
+    "icd10": [
       {"code": "J44", "display": "Chronic obstructive pulmonary disease"},
       {"code": "J45", "display": "Asthma"},
       {"code": "I50", "display": "Heart failure"},
@@ -111,14 +111,24 @@
       {"code": "J84", "display": "Other interstitial pulmonary diseases"},
       {"code": "J18", "display": "Pneumonia"},
       {"code": "J96", "display": "Respiratory failure"},
-      {"code": "Z96.6", "display": "Presence of orthopedic joint implants"},
-      {"code": "M79.3", "display": "Panniculitis"},
       {"code": "E11", "display": "Type 2 diabetes mellitus"},
       {"code": "I25", "display": "Chronic ischemic heart disease"},
       {"code": "J47", "display": "Bronchiectasis"},
-      {"code": "Q21", "display": "Congenital heart defects"},
-      {"code": "P27", "display": "Chronic respiratory disease originating in perinatal period"},
-      {"code": "P28", "display": "Other respiratory conditions originating in perinatal period"}
+      {"code": "Q21", "display": "Congenital heart defects"}
+    ],
+    "snomed": [
+      {"code": "195967001", "display": "Asthma"},
+      {"code": "44054006", "display": "Type 2 diabetes mellitus"},
+      {"code": "59621000", "display": "Essential hypertension"},
+      {"code": "38341003", "display": "Hypertensive disorder"},
+      {"code": "162864005", "display": "Body mass index 30+ - obesity"},
+      {"code": "271825005", "display": "Respiratory distress"},
+      {"code": "13645005", "display": "Chronic obstructive lung disease"},
+      {"code": "84114007", "display": "Heart failure"},
+      {"code": "233604007", "display": "Pneumonia"},
+      {"code": "53741008", "display": "Coronary arteriosclerosis"},
+      {"code": "22298006", "display": "Myocardial infarction"},
+      {"code": "840539006", "display": "COVID-19"}
     ]
   }
 }
