@@ -7,7 +7,7 @@ param fhirServiceName string = 'fhir${uniqueString(resourceGroup().id)}'
 param storageAccountName string = 'stfhir${uniqueString(resourceGroup().id)}'
 param adminGroupObjectId string = ''
 
-// Storage Account for Synthea output (using Blob storage with Managed Identity)
+// Storage Account for Synthea output (ADLS Gen 2 with Hierarchical Namespace)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -19,6 +19,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     accessTier: 'Hot'
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
+    isHnsEnabled: true  // Enables ADLS Gen 2 (Hierarchical Namespace)
     allowSharedKeyAccess: true  // Required for some operations
     networkAcls: {
       defaultAction: 'Allow'
@@ -105,6 +106,17 @@ resource storageBlobContributorRole 'Microsoft.Authorization/roleAssignments@202
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: adminGroupObjectId
+    principalType: 'Group'
+  }
+}
+
+// Storage Blob Data Reader for admin group (read blob data)
+resource storageBlobReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(adminGroupObjectId)) {
+  name: guid(storageAccount.id, adminGroupObjectId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1') // Storage Blob Data Reader
     principalId: adminGroupObjectId
     principalType: 'Group'
   }
