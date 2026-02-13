@@ -193,7 +193,10 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 ### Quick Start
 
 ```powershell
-# Deploy all infrastructure and run data generation
+# Full end-to-end deployment (Azure infra + FHIR data + Fabric RTI)
+.\Deploy-All.ps1
+
+# Or deploy just FHIR infrastructure and data
 .\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -Location "eastus"
 ```
 
@@ -217,7 +220,9 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 | `-ResourceGroupName` | Required | Azure resource group name |
 | `-Location` | `eastus` | Azure region |
 | `-PatientCount` | `10000` | Number of patients to generate |
-| `-DeviceCount` | `100` | Number of Masimo devices |
+| `-InfraOnly` | `false` | Deploy FHIR infrastructure only, skip data generation |
+| `-RunSynthea` | `false` | Generate patients only (infra must already exist) |
+| `-RunLoader` | `false` | Load FHIR data only (infra + blobs must exist) |
 
 ## 🔐 Authentication & Security
 
@@ -253,11 +258,39 @@ Invoke-RestMethod -Uri "https://<workspace>-<fhir>.fhir.azurehealthcareapis.com/
 
 ```
 med-device-fabric-emulator/
-├── deploy-fhir.ps1          # Main deployment script
-├── deploy.ps1               # Legacy deployment script
-├── fhir-infra.bicep         # FHIR infrastructure (Bicep)
-├── fhir-loader-job.bicep    # FHIR loader container job
-├── synthea-job.bicep        # Synthea generator container job
+├── Deploy-All.ps1           # Full orchestrator (infra + FHIR + Fabric RTI + agents)
+├── deploy-fhir.ps1          # FHIR infrastructure & data pipeline
+├── deploy-fabric-rti.ps1    # Fabric RTI deployment (Phase 1 + Phase 2)
+├── deploy-data-agents.ps1   # Fabric Data Agents (Patient 360 + Clinical Triage)
+├── update-agents-inline.ps1 # Quick-update agent definitions (hardcoded IDs)
+├── deploy.ps1               # Legacy emulator-only deployment
+├── run-kql-scripts.ps1      # Standalone KQL script runner
+├── create-device-associations.py  # Link Masimo devices to FHIR patients
+├── emulator.py              # Masimo device emulator (streams to Event Hub)
+├── Dockerfile               # Emulator container image
+├── bicep/
+│   ├── infra.bicep          # Event Hub, ACR, Key Vault
+│   ├── emulator.bicep       # Emulator ACI container
+│   ├── fhir-infra.bicep     # FHIR Service, Storage, Managed Identity
+│   ├── fhir-loader-job.bicep # FHIR loader ACI job
+│   └── synthea-job.bicep    # Synthea generator ACI job
+├── cleanup/
+│   ├── Remove-AzureInfra.ps1    # Tear down Azure resource group
+│   ├── Remove-FabricWorkspace.ps1 # Delete Fabric workspace & items
+│   └── Remove-FhirData.ps1     # Purge FHIR data
+├── docs/
+│   └── images/
+├── fabric-rti/
+│   ├── HDS-SETUP-GUIDE.md   # Healthcare Data Solutions setup guide
+│   ├── kql/
+│   │   ├── 01-alert-history-table.kql    # AlertHistory table & policies
+│   │   ├── 02-telemetry-functions.kql    # Telemetry analytics functions
+│   │   ├── 03-clinical-alert-functions.kql # Alert detection functions
+│   │   ├── 04-hds-enrichment-example.kql # Silver LH shortcuts + enriched alerts
+│   │   └── 05-dashboard-queries.kql      # Dashboard panel queries
+│   └── dashboard/
+│       ├── DASHBOARD-GUIDE.md
+│       └── masimo-clinical-dashboard.json
 ├── fhir-loader/
 │   ├── Dockerfile           # FHIR loader container
 │   ├── load_fhir.py         # Main loader logic
@@ -349,12 +382,24 @@ flowchart LR
 ### Quick Start
 
 ```powershell
-# Deploy Fabric RTI resources (workspace, Eventhouse, Eventstream)
+# Phase 1: Deploy Fabric RTI resources (workspace, Eventhouse, Eventstream, base KQL)
 .\deploy-fabric-rti.ps1
 
-# Or with custom workspace name
-.\deploy-fabric-rti.ps1 -FabricWorkspaceName "my-clinical-workspace"
+# --- Manual steps required here (see below) ---
+
+# Phase 2: After HDS is deployed and pipeline has run
+.\deploy-fabric-rti.ps1 -Phase2
 ```
+
+### Two-Phase Deployment
+
+The RTI deployment is split into two phases because Healthcare Data Solutions (HDS) must be deployed manually through the Fabric portal:
+
+| Phase | Method | What It Does |
+|-------|--------|-------------|
+| **Phase 1** | `.\deploy-fabric-rti.ps1` | Creates workspace, Eventhouse, KQL Database, Eventstream, cloud connection, AlertHistory table, base KQL functions (01-03), and runs FHIR `$export` to ADLS Gen2 |
+| **Manual** | Fabric Portal | Deploy HDS, add scipy 1.11.4, create OneLake shortcut, update config, run pipeline |
+| **Phase 2** | `.\deploy-fabric-rti.ps1 -Phase2` | Creates KQL shortcuts to 6 Silver tables, deploys enriched `fn_ClinicalAlerts`, `fn_AlertLocationMap`, and Clinical Alerts Map dashboard |
 
 ### Parameters
 
@@ -366,20 +411,36 @@ flowchart LR
 | `-EventHubName` | `telemetry-stream` | Event Hub name |
 | `-FhirServiceUrl` | *(auto-detected)* | FHIR service endpoint |
 | `-SkipHdsGuidance` | `$false` | Skip HDS manual-step output |
+| `-SkipFhirExport` | `$false` | Skip the automated FHIR $export step |
+| `-Phase2` | `$false` | Run Phase 2 only (post-HDS shortcuts + enrichment) |
+| `-SilverLakehouseId` | *(auto-detected)* | Silver Lakehouse ID (Phase 2; auto-discovered if blank) |
 
 ### What Gets Deployed
 
-| Component | Method | Description |
-|-----------|--------|-------------|
-| Fabric Workspace | Automated | Created/validated via REST API |
-| Eventhouse + KQL DB | Automated | Stores real-time telemetry |
-| Eventstream | Automated | Routes Event Hub → Eventhouse |
-| AlertHistory Table | Automated | Clinical alert storage with 90-day retention |
-| KQL Functions (×7) | Automated | Telemetry analytics & clinical alert detection |
-| Real-Time Dashboard | Manual | 7-panel clinical monitoring dashboard |
-| Healthcare Data Solutions | Manual | FHIR patient context (Silver Lakehouse) |
-| AHDS Data Export | Manual | Azure Marketplace offer for FHIR $export |
-| Data Activator | Manual | Clinical alert triggers |
+| Component | Phase | Method | Description |
+|-----------|-------|--------|-------------|
+| Fabric Workspace | 1 | Automated | Created/validated via REST API |
+| Eventhouse + KQL DB | 1 | Automated | Stores real-time telemetry |
+| Eventstream | 1 | Automated | Routes Event Hub → Eventhouse |
+| AlertHistory Table | 1 | Automated | Clinical alert storage with 90-day retention |
+| KQL Functions (×7) | 1 | Automated | Telemetry analytics & clinical alert detection |
+| FHIR $export → ADLS Gen2 | 1 | Automated | Direct FHIR `$export` API call to storage |
+| Healthcare Data Solutions | — | **Manual** | FHIR patient context (Silver Lakehouse) |
+| scipy 1.11.4 | — | **Manual** | Must be added to HDS Spark environment |
+| SilverPatient shortcut | 2 | Automated | KQL external table → Silver Patient delta table |
+| SilverCondition shortcut | 2 | Automated | KQL external table → Silver Condition delta table |
+| SilverDevice shortcut | 2 | Automated | KQL external table → Silver Device delta table |
+| SilverLocation shortcut | 2 | Automated | KQL external table → Silver Location delta table |
+| SilverEncounter shortcut | 2 | Automated | KQL external table → Silver Encounter delta table |
+| SilverBasic shortcut | 2 | Automated | KQL external table → Silver Basic (DeviceAssociation) delta table |
+| Enriched fn_ClinicalAlerts | 2 | Automated | Alerts with patient context via DeviceAssociation + severity escalation |
+| fn_AlertLocationMap | 2 | Automated | Alerts joined with Encounter → Location for map (unknown → Nashville, TN) |
+| Clinical Alerts Map | 2 | Automated | Map dashboard showing alert locations by hospital (4 tiles) |
+| Patient 360 Agent | 2 | Automated | AI Data Agent for unified patient views (KQL + Lakehouse) |
+| Clinical Triage Agent | 2 | Automated | AI Data Agent for alert-based clinical triage (KQL + Lakehouse) |
+| Real-Time Dashboard | 1 | Automated | 7-tile clinical monitoring dashboard (kusto-trident, auto-refresh 30s, device filter) |
+| Eventstream Start | 1 | Automated | Ensures Eventstream is running after deployment |
+| Data Activator | — | Manual | Clinical alert triggers |
 
 ### Clinical Alert Tiers
 
@@ -398,30 +459,145 @@ Located in `fabric-rti/kql/`:
 | `01-alert-history-table.kql` | AlertHistory table | Stores triggered alerts |
 | `02-telemetry-functions.kql` | `fn_VitalsTrend`, `fn_DeviceStatus`, `fn_LatestReadings`, `fn_TelemetryByDevice` | Telemetry analytics |
 | `03-clinical-alert-functions.kql` | `fn_SpO2Alerts`, `fn_PulseRateAlerts`, `fn_ClinicalAlerts` | Alert detection |
-| `04-hds-enrichment-example.kql` | External tables + enriched alerts | HDS Silver Lakehouse integration |
+| `04-hds-enrichment-example.kql` | External tables + enriched alerts | HDS Silver Lakehouse integration (6 tables) |
 | `05-dashboard-queries.kql` | 7 dashboard panels | Real-Time Dashboard queries |
 
 ### Real-Time Dashboard
 
-A 7-panel clinical monitoring dashboard is defined in `fabric-rti/dashboard/`:
+The dashboard is **automatically deployed** by `deploy-fabric-rti.ps1` (Step 7b) using the `kusto-trident` data source kind. It includes a device filter (single-select with "All") and 30-second auto-refresh.
 
-| Panel | Visual Type | Data Source |
-|-------|-------------|-------------|
-| Device Status | Donut chart | `fn_DeviceStatus()` |
-| Active Clinical Alerts | Table (color-coded) | `fn_ClinicalAlerts(5)` |
-| SpO2 Heatmap | Multi-line chart | `TelemetryRaw` (30 min) |
-| Alert Trend (24h) | Stacked bar chart | `AlertHistory` |
-| Top Alerting Devices | Bar chart | `AlertHistory` |
-| Vital Signs Snapshot | Table with indicators | `fn_LatestReadings()` |
-| Degraded Signal Quality | Table (filtered) | `fn_LatestReadings()` |
+| Tile | Visual Type | Data Source | Filterable |
+|------|-------------|-------------|------------|
+| Active Devices | Card | `fn_DeviceStatus()` where `ONLINE` | No |
+| Active Alerts | Card | `fn_ClinicalAlerts(60)` count | No |
+| Clinical Alerts | Table | `fn_ClinicalAlerts(60)` (last 50) | No |
+| SpO2 Trend | Line chart | `TelemetryRaw` (60 min, 30s bins) | Yes — `_selectedDevices` |
+| Pulse Rate Trend | Line chart | `TelemetryRaw` (60 min, 30s bins) | Yes — `_selectedDevices` |
+| Device Status | Table | `fn_DeviceStatus()` | No |
+| Latest Readings | Table | `fn_LatestReadings()` | No |
 
-See [fabric-rti/dashboard/DASHBOARD-GUIDE.md](fabric-rti/dashboard/DASHBOARD-GUIDE.md) for step-by-step setup.
+See [fabric-rti/dashboard/DASHBOARD-GUIDE.md](fabric-rti/dashboard/DASHBOARD-GUIDE.md) for manual setup details.
+
+### Clinical Alerts Map Dashboard (Phase 2)
+
+A second dashboard, **Clinical Alerts Map**, is deployed by Phase 2 with 30-second auto-refresh. It requires `fn_AlertLocationMap` (Silver Lakehouse joins).
+
+| Tile | Visual Type | Data Source |
+|------|-------------|-------------|
+| Alert Locations | Map (bubble) | `fn_AlertLocationMap(60)` — grouped by hospital, sized by alert count |
+| Alerts by Hospital | Bar chart | `fn_AlertLocationMap(60)` — severity breakdown per hospital |
+| Total Active Alerts | Card | `fn_AlertLocationMap(60)` count |
+| Alert Detail | Table | `fn_AlertLocationMap(60)` — device, patient, tier, vitals, location |
+
+> Patients without a mapped Encounter → Location default to **Nashville, TN** (36.1627°N, 86.7816°W) and appear as "Unknown (Nashville)".
 
 ### Healthcare Data Solutions Integration
 
-The system uses **HDS Clinical Foundations** instead of custom tables for FHIR data. The Silver Lakehouse provides pre-flattened FHIR R4 tables (Patient, Device, Condition, etc.) with built-in identity management and update handling.
+The system uses **HDS Clinical Foundations** instead of custom tables for FHIR data. The Silver Lakehouse provides normalized FHIR R4 tables (Patient, Device, Condition, Encounter, Location, Basic) with built-in identity management and update handling.
+
+> **Note:** The HDS Silver Lakehouse stores FHIR resources as nested JSON objects (not flattened columns). Device-patient associations are stored as `Basic` (DeviceAssociation) resources in `SilverBasic`, with device references in the `extension` array. Cross-resource joins use `idOrig` (original FHIR UUID) and `msftSourceReference` fields.
+
+> **⚠️ CRITICAL:** After deploying HDS, you **must** manually add `scipy==1.11.4` to the HDS Spark environment's **External repositories** before running any pipeline. Without it, the bronze-to-silver flattening will fail. See the [HDS Setup Guide](fabric-rti/HDS-SETUP-GUIDE.md#step-2b-add-scipy-to-hds-spark-environment-required) for details and screenshot.
+
+After the Silver Lakehouse is populated, run **Phase 2** to create KQL shortcuts:
+
+```powershell
+.\deploy-fabric-rti.ps1 -Phase2
+```
+
+This creates 6 KQL external tables (`SilverPatient`, `SilverCondition`, `SilverDevice`, `SilverLocation`, `SilverEncounter`, `SilverBasic`) via OneLake shortcuts, and deploys:
+- **`fn_ClinicalAlerts`** — enriched alerts that join telemetry with patient demographics via `SilverBasic` (DeviceAssociation) resources, with severity escalation for high-risk conditions (COPD, CHF, asthma, hypertension)
+- **`fn_AlertLocationMap`** — joins alerts with `SilverEncounter` → `SilverLocation` for hospital-level geolocation; patients without a mapped location default to Nashville, TN (36.1627°N, 86.7816°W)
+- **Clinical Alerts Map** — a 4-tile KQL dashboard with a bubble map, alerts-by-hospital bar chart, alert count card, and detail table
 
 See [fabric-rti/HDS-SETUP-GUIDE.md](fabric-rti/HDS-SETUP-GUIDE.md) for the complete setup walkthrough.
+
+### Fabric Data Agents
+
+After Phase 2 completes, deploy **two AI-powered Data Agents** that combine real-time telemetry with FHIR clinical data:
+
+```powershell
+# Deploy both agents
+.\deploy-data-agents.ps1
+
+# Or deploy individually
+.\deploy-data-agents.ps1 -Patient360Only
+.\deploy-data-agents.ps1 -TriageOnly
+
+# Quick-update agent definitions (after agents already exist)
+.\update-agents-inline.ps1
+```
+
+#### Agent Architecture
+
+Both agents use a **dual-datasource architecture**:
+- **KQL datasource** — `TelemetryRaw` + `AlertHistory` native tables only (no functions, no external tables)
+- **Lakehouse datasource** — Silver Lakehouse SQL tables (`dbo.Patient`, `dbo.Condition`, `dbo.Basic`, etc.)
+
+Agents use **inline KQL query patterns** in their instructions and **SQL queries** for the Lakehouse, with a **cross-datasource workflow** for questions spanning both telemetry and clinical data.
+
+#### Patient 360 Agent
+
+Provides a unified patient view across FHIR clinical data and real-time telemetry:
+- Latest vital signs per device (SpO2, pulse rate, perfusion index)
+- Device status (online/stale/offline)
+- Patient demographics, conditions, and device assignments
+- Cross-datasource lookups: "Show patient info for device MASIMO-RADIUS7-0033"
+
+#### Clinical Triage Agent
+
+Supports rapid triage decisions with alert prioritization:
+- Multi-metric alert detection (SpO2 + pulse rate combined)
+- Alert severity tiers: CRITICAL / URGENT / WARNING
+- Cross-datasource patient identification for alerting devices
+- Sample queries: "Run a clinical triage", "Which devices have low SpO2? Look up the patients."
+
+#### Key Data Patterns
+
+| Table | Access | Key Fields |
+|-------|--------|------------|
+| `TelemetryRaw` | KQL | `device_id`, `timestamp` (string!), `telemetry.spo2`, `telemetry.pr` |
+| `AlertHistory` | KQL | Historical alert records (may be stale) |
+| `dbo.Basic` | Lakehouse SQL | Device-patient associations via `code_string`, `extension`, `subject_string` |
+| `dbo.Condition` | Lakehouse SQL | Patient diagnoses via `code_string`, `subject_string` |
+| `dbo.Patient` | Lakehouse SQL | Demographics via `name_string`, `idOrig` |
+
+> **Critical:** Device associations in `dbo.Basic` use code `'device-assoc'` (not `'ASSIGNED'`). The `code_string` column is a JSON **object** (not array), so use `JSON_VALUE(code_string, '$.coding[0].code')`, not `$[0].coding[0].code`.
+
+## 🚀 Deploy-All Orchestrator
+
+The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
+
+```powershell
+# Full deploy: Azure infra + FHIR data + Fabric RTI
+.\Deploy-All.ps1
+
+# Phase 2 only (after HDS pipeline completes)
+.\Deploy-All.ps1 -Phase2Only
+```
+
+| Step | Script Called | What It Does |
+|------|-------------|---------------|
+| 1 | `deploy.ps1` | Deploys Event Hub, ACR, Key Vault, builds + deploys emulator ACI |
+| 2 | `deploy-fhir.ps1` | Deploys FHIR Service, runs Synthea + FHIR Loader |
+| 3 | `deploy-fabric-rti.ps1` | Creates Fabric workspace, Eventhouse, Eventstream, KQL schema, dashboard |
+| 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
+| 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
+
+## 🧹 Cleanup
+
+Teardown scripts are in the `cleanup/` folder:
+
+```powershell
+# Remove all Azure resources (resource group + contents)
+.\cleanup\Remove-AzureInfra.ps1
+
+# Delete the Fabric workspace and all items
+.\cleanup\Remove-FabricWorkspace.ps1
+
+# Purge FHIR data only (keep infrastructure)
+.\cleanup\Remove-FhirData.ps1
+```
 
 ## 🤝 Contributing
 

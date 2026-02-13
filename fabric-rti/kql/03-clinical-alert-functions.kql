@@ -64,7 +64,7 @@
         ),
         message,
         readings
-    | order by alert_tier asc, min_spo2 asc
+    | order by alert_tier asc, metric_value asc
 }
 
 // ---------------------------------------------------------------------------

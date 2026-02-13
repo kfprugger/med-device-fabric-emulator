@@ -1,0 +1,365 @@
+// ============================================================================
+// 06-agent-wrapper-functions.kql
+// Self-contained zero-parameter functions for Fabric Data Agent compatibility.
+//
+// These functions DO NOT call fn_* functions or reference external tables.
+// Each one inlines the logic directly against native KQL tables (TelemetryRaw,
+// AlertHistory) with explicit scalar type projections.
+//
+// Why self-contained?
+// 1. Data Agent validates functions via .getschema — chaining through
+//    parameterized fn_* functions can break schema resolution.
+// 2. External tables (Silver Lakehouse shortcuts) may timeout during
+//    validation due to cold-start or identity context issues.
+// 3. The Agent has the Silver Lakehouse as a separate datasource, so it
+//    can query patient/encounter/location data directly when needed.
+//
+// Naming convention: agent_<OriginalName>
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// agent_VitalsTrend — Rolling 5-minute vital sign statistics per device
+// Inlined from fn_VitalsTrend(5), queries TelemetryRaw directly.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Rolling 5-minute vital sign statistics per device. Self-contained — queries TelemetryRaw directly.",
+    folder = "AgentFunctions"
+) agent_VitalsTrend() {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(5m)
+    | summarize
+        readings        = count(),
+        avg_spo2        = round(avg(todouble(telemetry.spo2)), 1),
+        min_spo2        = round(min(todouble(telemetry.spo2)), 1),
+        max_spo2        = round(max(todouble(telemetry.spo2)), 1),
+        stddev_spo2     = round(stdev(todouble(telemetry.spo2)), 2),
+        avg_pr          = round(avg(todouble(telemetry.pr)), 0),
+        min_pr          = min(toint(telemetry.pr)),
+        max_pr          = max(toint(telemetry.pr)),
+        avg_pi          = round(avg(todouble(telemetry.pi)), 2),
+        avg_pvi         = round(avg(todouble(telemetry.pvi)), 0),
+        avg_sphb        = round(avg(todouble(telemetry.sphb)), 1),
+        avg_signal_iq   = round(avg(todouble(telemetry.signal_iq)), 0),
+        last_reading    = max(todatetime(timestamp))
+      by device_id
+    | extend minutes_since_last = datetime_diff('second', now(), last_reading) / 60.0
+    | project
+        device_id       = tostring(device_id),
+        readings        = tolong(readings),
+        avg_spo2        = todouble(avg_spo2),
+        min_spo2        = todouble(min_spo2),
+        max_spo2        = todouble(max_spo2),
+        stddev_spo2     = todouble(stddev_spo2),
+        avg_pr          = todouble(avg_pr),
+        min_pr          = toint(min_pr),
+        max_pr          = toint(max_pr),
+        avg_pi          = todouble(avg_pi),
+        avg_pvi         = todouble(avg_pvi),
+        avg_sphb        = todouble(avg_sphb),
+        avg_signal_iq   = todouble(avg_signal_iq),
+        last_reading    = todatetime(last_reading),
+        minutes_since_last = todouble(minutes_since_last)
+    | order by device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_DeviceStatus — Current device status: ONLINE, STALE, or OFFLINE
+// Inlined from fn_DeviceStatus(), queries TelemetryRaw directly.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Current device status: ONLINE, STALE, or OFFLINE based on last telemetry timestamp. Self-contained.",
+    folder = "AgentFunctions"
+) agent_DeviceStatus() {
+    TelemetryRaw
+    | summarize last_seen = max(todatetime(timestamp)) by device_id
+    | extend
+        seconds_ago = datetime_diff('second', now(), last_seen),
+        status = case(
+            datetime_diff('second', now(), last_seen) < 30, "ONLINE",
+            datetime_diff('second', now(), last_seen) < 120, "STALE",
+            "OFFLINE")
+    | project
+        device_id   = tostring(device_id),
+        last_seen   = todatetime(last_seen),
+        seconds_ago = tolong(seconds_ago),
+        status      = tostring(status)
+    | order by status asc, device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_LatestReadings — Most recent telemetry reading per device
+// Inlined from fn_LatestReadings(), queries TelemetryRaw directly.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Most recent telemetry reading for each device with all vital signs. Self-contained.",
+    folder = "AgentFunctions"
+) agent_LatestReadings() {
+    TelemetryRaw
+    | summarize arg_max(todatetime(timestamp), *) by device_id
+    | project
+        device_id   = tostring(device_id),
+        timestamp   = tostring(timestamp),
+        spo2        = todouble(telemetry.spo2),
+        pr          = toint(telemetry.pr),
+        pi          = todouble(telemetry.pi),
+        pvi         = toint(telemetry.pvi),
+        sphb        = todouble(telemetry.sphb),
+        signal_iq   = toint(telemetry.signal_iq)
+    | order by device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_TelemetryByDevice — Last 60 minutes of telemetry for all devices
+// Agent filters by device_id in its generated KQL WHERE clause.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Time-series telemetry for all devices over the last 60 minutes. Filter by device_id in your query. Self-contained.",
+    folder = "AgentFunctions"
+) agent_TelemetryByDevice() {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(60m)
+    | project
+        device_id   = tostring(device_id),
+        timestamp   = todatetime(timestamp),
+        spo2        = todouble(telemetry.spo2),
+        pr          = toint(telemetry.pr),
+        pi          = todouble(telemetry.pi),
+        pvi         = toint(telemetry.pvi),
+        sphb        = todouble(telemetry.sphb),
+        signal_iq   = toint(telemetry.signal_iq)
+    | order by device_id asc, timestamp asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_SpO2Alerts — SpO2 threshold breach alerts (5-minute window)
+// Inlined from fn_SpO2Alerts(5), queries TelemetryRaw directly.
+// Three tiers: WARNING (<94), URGENT (<90), CRITICAL (<85).
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "SpO2 threshold breach alerts with 3-tier severity. 5-minute window. Self-contained.",
+    folder = "AgentFunctions"
+) agent_SpO2Alerts() {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(5m)
+    | where isnotnull(telemetry.spo2)
+    | extend spo2_val = todouble(telemetry.spo2)
+    | where spo2_val > 0 and spo2_val < 100
+    | summarize
+        min_spo2  = min(spo2_val),
+        avg_spo2  = round(avg(spo2_val), 1),
+        readings  = count(),
+        last_time = max(todatetime(timestamp))
+      by device_id
+    | where min_spo2 < 94
+    | extend
+        alert_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING"),
+        alert_type = "SPO2_LOW"
+    | extend
+        msg = strcat(alert_tier, " Dev:", device_id, " SpO2=", tostring(min_spo2)),
+        tv  = case(alert_tier == "CRITICAL", 85.0, alert_tier == "URGENT", 90.0, 94.0)
+    | project
+        alert_time      = todatetime(last_time),
+        device_id       = tostring(device_id),
+        alert_tier      = tostring(alert_tier),
+        alert_type      = tostring(alert_type),
+        metric_name     = "spo2",
+        metric_value    = todouble(min_spo2),
+        threshold_value = todouble(tv),
+        message         = tostring(msg),
+        readings        = tolong(readings)
+    | order by alert_tier asc, metric_value asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_PulseRateAlerts — Pulse rate anomaly alerts (5-minute window)
+// Inlined from fn_PulseRateAlerts(5), queries TelemetryRaw directly.
+// Detects bradycardia (<50 bpm) and tachycardia (>110 bpm).
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Pulse rate anomaly alerts for bradycardia and tachycardia with 3-tier severity. 5-minute window. Self-contained.",
+    folder = "AgentFunctions"
+) agent_PulseRateAlerts() {
+    TelemetryRaw
+    | where todatetime(timestamp) > ago(5m)
+    | summarize
+        readings = count(),
+        avg_pr   = round(avg(todouble(telemetry.pr)), 0),
+        min_pr   = min(toint(telemetry.pr)),
+        max_pr   = max(toint(telemetry.pr)),
+        last_time = max(todatetime(timestamp))
+      by device_id
+    | where max_pr > 110 or min_pr < 50
+    | extend
+        is_tachy = max_pr > 110,
+        is_brady = min_pr < 50
+    | extend
+        alert_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL",
+                          max_pr > 130 or min_pr < 45, "URGENT",
+                          "WARNING"),
+        alert_type = case(max_pr > 110 and min_pr < 50, "PR_BOTH",
+                          max_pr > 110, "PR_HIGH",
+                          "PR_LOW")
+    | extend
+        abnormal_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr)),
+        tv = case(alert_tier == "CRITICAL", iff(is_tachy, 150.0, 40.0),
+                  alert_tier == "URGENT",   iff(is_tachy, 130.0, 45.0),
+                  iff(is_tachy, 110.0, 50.0))
+    | extend msg = strcat(alert_tier, " Dev:", device_id, " PR:", tostring(max_pr))
+    | project
+        alert_time      = todatetime(last_time),
+        device_id       = tostring(device_id),
+        alert_tier      = tostring(alert_tier),
+        alert_type      = tostring(alert_type),
+        metric_name     = "pr",
+        metric_value    = todouble(abnormal_value),
+        threshold_value = todouble(tv),
+        message         = tostring(msg),
+        readings        = tolong(readings)
+    | order by alert_tier asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_ClinicalAlerts — Combined SpO2 + PR alerts with device context
+// Simplified version that does NOT reference external tables (Silver Lakehouse).
+// The Data Agent has the Silver Lakehouse as a separate datasource, so it can
+// query patient/condition data directly via lakehouse tables when richer
+// context is needed. This avoids external table cold-start timeouts.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Combined SpO2 and pulse rate clinical alerts with severity escalation. No external table dependencies. Self-contained.",
+    folder = "AgentFunctions"
+) agent_ClinicalAlerts() {
+    let spo2_alerts =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(5m)
+        | where isnotnull(telemetry.spo2)
+        | extend spo2_val = todouble(telemetry.spo2)
+        | where spo2_val > 0 and spo2_val < 100
+        | summarize min_spo2 = min(spo2_val), last_time = max(todatetime(timestamp)) by device_id
+        | where min_spo2 < 94
+        | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
+        | project device_id, spo2_time = last_time, spo2_tier, spo2_value = min_spo2;
+    let pr_alerts =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(5m)
+        | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)),
+                    last_time = max(todatetime(timestamp)) by device_id
+        | where max_pr > 110 or min_pr < 50
+        | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL",
+                                max_pr > 130 or min_pr < 45, "URGENT", "WARNING"),
+                 pr_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr))
+        | project device_id, pr_time = last_time, pr_tier, pr_value;
+    let vitals =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(5m)
+        | summarize arg_max(todatetime(timestamp), *) by device_id
+        | project device_id,
+                  current_spo2 = todouble(telemetry.spo2),
+                  current_pr   = toint(telemetry.pr),
+                  current_pi   = todouble(telemetry.pi),
+                  current_sphb = todouble(telemetry.sphb),
+                  signal_iq    = toint(telemetry.signal_iq);
+    vitals
+    | join kind=leftouter spo2_alerts on device_id
+    | join kind=leftouter pr_alerts on device_id
+    | where isnotempty(spo2_tier) or isnotempty(pr_tier)
+    | extend
+        base_tier = case(
+            spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
+            spo2_tier == "URGENT"   or pr_tier == "URGENT",   "URGENT",
+            "WARNING"),
+        alert_type = case(
+            isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
+            isnotempty(spo2_tier), "SPO2_LOW",
+            "PR_ABNORMAL")
+    | extend msg = strcat(base_tier, " ALERT | Device: ", device_id,
+                          " | SpO2: ", tostring(current_spo2), "%",
+                          " | PR: ", tostring(current_pr), " bpm")
+    | project
+        alert_id    = tostring(strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss"))),
+        alert_time  = todatetime(coalesce(spo2_time, pr_time, now())),
+        device_id   = tostring(device_id),
+        alert_tier  = tostring(base_tier),
+        alert_type  = tostring(alert_type),
+        spo2        = todouble(current_spo2),
+        pr          = toint(current_pr),
+        pi          = todouble(current_pi),
+        sphb        = todouble(current_sphb),
+        signal_iq   = toint(signal_iq),
+        message     = tostring(msg)
+    | order by alert_tier asc, device_id asc
+}
+
+// ---------------------------------------------------------------------------
+// agent_AlertLocationMap — Alerts with default Nashville location
+// Simplified version: assigns Nashville, TN as default location for ALL
+// alerts (matching the system's default behavior). Does NOT query external
+// tables for encounter/location lookups.
+// The Data Agent can join with lakehouse tables for real location data.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Clinical alerts with default Nashville location. No external table dependencies. Self-contained.",
+    folder = "AgentFunctions"
+) agent_AlertLocationMap() {
+    let spo2_alerts =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(60m)
+        | where isnotnull(telemetry.spo2)
+        | extend spo2_val = todouble(telemetry.spo2)
+        | where spo2_val > 0 and spo2_val < 100
+        | summarize min_spo2 = min(spo2_val), last_time = max(todatetime(timestamp)) by device_id
+        | where min_spo2 < 94
+        | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
+        | project device_id, spo2_time = last_time, spo2_tier, spo2_value = min_spo2;
+    let pr_alerts =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(60m)
+        | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)),
+                    last_time = max(todatetime(timestamp)) by device_id
+        | where max_pr > 110 or min_pr < 50
+        | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL",
+                                max_pr > 130 or min_pr < 45, "URGENT", "WARNING"),
+                 pr_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr))
+        | project device_id, pr_time = last_time, pr_tier, pr_value;
+    let vitals =
+        TelemetryRaw
+        | where todatetime(timestamp) > ago(60m)
+        | summarize arg_max(todatetime(timestamp), *) by device_id
+        | project device_id,
+                  current_spo2 = todouble(telemetry.spo2),
+                  current_pr   = toint(telemetry.pr),
+                  current_pi   = todouble(telemetry.pi),
+                  current_sphb = todouble(telemetry.sphb),
+                  signal_iq    = toint(telemetry.signal_iq);
+    vitals
+    | join kind=leftouter spo2_alerts on device_id
+    | join kind=leftouter pr_alerts on device_id
+    | where isnotempty(spo2_tier) or isnotempty(pr_tier)
+    | extend
+        base_tier = case(
+            spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
+            spo2_tier == "URGENT"   or pr_tier == "URGENT",   "URGENT",
+            "WARNING"),
+        alert_type = case(
+            isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
+            isnotempty(spo2_tier), "SPO2_LOW",
+            "PR_ABNORMAL")
+    | extend msg = strcat(base_tier, " ALERT | Device: ", device_id,
+                          " | SpO2: ", tostring(current_spo2), "%",
+                          " | PR: ", tostring(current_pr), " bpm",
+                          " | Nashville, TN")
+    | project
+        alert_time      = todatetime(coalesce(spo2_time, pr_time, now())),
+        device_id       = tostring(device_id),
+        alert_tier      = tostring(base_tier),
+        alert_type      = tostring(alert_type),
+        spo2            = todouble(current_spo2),
+        pr              = toint(current_pr),
+        location_name   = "Nashville General Hospital",
+        city            = "Nashville",
+        state           = "TN",
+        latitude        = 36.1627,
+        longitude       = -86.7816,
+        message         = tostring(msg)
+    | order by alert_tier asc, alert_time desc
+}

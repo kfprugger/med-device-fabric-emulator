@@ -1,6 +1,6 @@
 // fhir-loader-job.bicep
 // Azure Container Instance job to upload Synthea data to FHIR and create device linkages
-// Uses Managed Identity for both blob storage and FHIR service access
+// Uses a pre-provisioned User-Assigned Managed Identity for blob storage and FHIR service access (no RBAC propagation delay)
 
 param location string = resourceGroup().location
 param acrName string
@@ -8,23 +8,23 @@ param imageName string
 param storageAccountName string
 param containerName string
 param fhirServiceUrl string
-
-// Get reference to storage account for RBAC
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
-  name: storageAccountName
-}
+param aciIdentityId string
+param aciIdentityClientId string
 
 // Get reference to ACR for credentials
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
   name: acrName
 }
 
-// Container Group for FHIR Loader job with System-Assigned Managed Identity
+// Container Group for FHIR Loader job with User-Assigned Managed Identity
 resource fhirLoaderJob 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
   name: 'fhir-loader-job'
   location: location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${aciIdentityId}': {}
+    }
   }
   properties: {
     containers: [
@@ -55,6 +55,10 @@ resource fhirLoaderJob 'Microsoft.ContainerInstance/containerGroups@2023-05-01' 
               name: 'DEVICE_COUNT'
               value: '100'
             }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: aciIdentityClientId
+            }
           ]
         }
       }
@@ -71,19 +75,5 @@ resource fhirLoaderJob 'Microsoft.ContainerInstance/containerGroups@2023-05-01' 
   }
 }
 
-// Grant "Storage Blob Data Reader" role to read Synthea output
-// Role ID: 2a2b9908-6ea1-4ae2-8e65-a410df84e7d1
-resource storageBlobDataReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, fhirLoaderJob.id, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
-    principalId: fhirLoaderJob.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Output the principal ID for FHIR RBAC assignment
 output containerGroupName string = fhirLoaderJob.name
 output containerGroupId string = fhirLoaderJob.id
-output principalId string = fhirLoaderJob.identity.principalId

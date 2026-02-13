@@ -74,12 +74,13 @@ class FHIRClient:
             return self.access_token
             
         try:
-            # Try Managed Identity first, fall back to Default
+            # Use AZURE_CLIENT_ID for user-assigned managed identity, fall back to Default
+            client_id = os.environ.get('AZURE_CLIENT_ID')
             try:
-                self.credential = ManagedIdentityCredential()
+                self.credential = ManagedIdentityCredential(client_id=client_id)
                 token = self.credential.get_token(self.resource_scope)
             except Exception:
-                self.credential = DefaultAzureCredential()
+                self.credential = DefaultAzureCredential(managed_identity_client_id=client_id)
                 token = self.credential.get_token(self.resource_scope)
                 
             self.access_token = token.token
@@ -386,15 +387,16 @@ def upload_devices(client: FHIRClient) -> None:
 
 
 def get_blob_service_client():
-    """Get blob service client with managed identity"""
+    """Get blob service client with user-assigned managed identity"""
+    client_id = os.environ.get('AZURE_CLIENT_ID')
     try:
-        credential = ManagedIdentityCredential()
+        credential = ManagedIdentityCredential(client_id=client_id)
         return BlobServiceClient(
             account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
             credential=credential
         )
     except Exception:
-        credential = DefaultAzureCredential()
+        credential = DefaultAzureCredential(managed_identity_client_id=client_id)
         return BlobServiceClient(
             account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
             credential=credential
@@ -522,10 +524,66 @@ def create_practitioner_from_npi(npi: str) -> Dict:
     }
 
 
+def fetch_existing_locations(client: 'FHIRClient') -> Dict[str, str]:
+    """Fetch all existing Location resources from FHIR and build a reference cache.
+    
+    Returns a dict mapping conditional reference strings to direct references:
+    {"Location?identifier=system|value": "Location/resource-id"}
+    """
+    print("Checking FHIR server for existing Location resources...", flush=True)
+    
+    location_cache: Dict[str, str] = {}
+    try:
+        entries = client.search('Location', {'_count': '1000'})
+        
+        for entry in entries:
+            resource = entry.get('resource', {})
+            resource_id = resource.get('id', '')
+            if not resource_id:
+                continue
+            
+            for identifier in resource.get('identifier', []):
+                system = identifier.get('system', '')
+                value = identifier.get('value', '')
+                if system and value:
+                    conditional_ref = f"Location?identifier={system}|{value}"
+                    location_cache[conditional_ref] = f"Location/{resource_id}"
+        
+        if location_cache:
+            print(f"  Found {len(location_cache)} existing Locations in FHIR — will reuse", flush=True)
+        else:
+            print(f"  No existing Locations found — will create from Synthea references", flush=True)
+    except Exception as e:
+        print(f"  Warning: Could not query existing Locations: {e}", flush=True)
+        print(f"  Will create Location stubs as needed", flush=True)
+    
+    return location_cache
+
+
 def create_location_from_ref(location_ref: str) -> Optional[Dict]:
-    """Create a minimal Location resource from a conditional reference."""
+    """Create an enriched Location resource from a conditional reference.
+    
+    Each Location stub is assigned a real Atlanta-area hospital address and
+    GPS coordinates (round-robin) so the Silver Lakehouse Location table
+    has usable data for map visualizations.
+    """
     import hashlib
     import urllib.parse
+    
+    # Real Atlanta hospital locations with addresses + GPS coordinates
+    ATLANTA_HOSPITALS = [
+        {"name": "Emory University Hospital", "line": "1364 Clifton Road NE", "city": "Atlanta", "state": "GA", "postalCode": "30322", "lat": 33.7916, "lng": -84.3222, "org": "Organization/emory-university-hospital"},
+        {"name": "Piedmont Atlanta Hospital", "line": "1968 Peachtree Road NW", "city": "Atlanta", "state": "GA", "postalCode": "30309", "lat": 33.8121, "lng": -84.3860, "org": "Organization/piedmont-atlanta-hospital"},
+        {"name": "Grady Memorial Hospital", "line": "80 Jesse Hill Jr Drive SE", "city": "Atlanta", "state": "GA", "postalCode": "30303", "lat": 33.7545, "lng": -84.3830, "org": "Organization/grady-memorial-hospital"},
+        {"name": "Northside Hospital Atlanta", "line": "1000 Johnson Ferry Road NE", "city": "Atlanta", "state": "GA", "postalCode": "30342", "lat": 33.8789, "lng": -84.3589, "org": "Organization/northside-hospital"},
+        {"name": "WellStar Kennestone Hospital", "line": "677 Church Street NE", "city": "Marietta", "state": "GA", "postalCode": "30060", "lat": 33.9527, "lng": -84.5197, "org": "Organization/wellstar-kennestone-hospital"},
+        {"name": "Children's Healthcare at Egleston", "line": "1405 Clifton Road NE", "city": "Atlanta", "state": "GA", "postalCode": "30322", "lat": 33.7881, "lng": -84.3217, "org": "Organization/choa-egleston"},
+        {"name": "Children's Healthcare at Scottish Rite", "line": "1001 Johnson Ferry Road NE", "city": "Atlanta", "state": "GA", "postalCode": "30342", "lat": 33.8790, "lng": -84.3575, "org": "Organization/choa-scottish-rite"},
+        {"name": "Emory Saint Joseph's Hospital", "line": "5665 Peachtree Dunwoody Road NE", "city": "Atlanta", "state": "GA", "postalCode": "30342", "lat": 33.8932, "lng": -84.3362, "org": "Organization/emory-saint-josephs"},
+        {"name": "Emory Midtown Hospital", "line": "550 Peachtree Street NE", "city": "Atlanta", "state": "GA", "postalCode": "30308", "lat": 33.7654, "lng": -84.3860, "org": "Organization/emory-midtown"},
+        {"name": "Atlanta VA Medical Center", "line": "1670 Clairmont Road", "city": "Decatur", "state": "GA", "postalCode": "30033", "lat": 33.7851, "lng": -84.3076, "org": "Organization/atlanta-va-medical-center"},
+        {"name": "Hughes Spalding Hospital", "line": "35 Jesse Hill Jr Drive SE", "city": "Atlanta", "state": "GA", "postalCode": "30303", "lat": 33.7543, "lng": -84.3807, "org": "Organization/choa-hughes-spalding"},
+    ]
     
     # Parse the conditional reference to extract identifier
     # Format: Location?identifier=system|value
@@ -548,6 +606,10 @@ def create_location_from_ref(location_ref: str) -> Optional[Dict]:
     uuid = hashlib.md5(f"location-{system}-{value}".encode()).hexdigest()
     uuid_formatted = f"{uuid[:8]}-{uuid[8:12]}-{uuid[12:16]}-{uuid[16:20]}-{uuid[20:32]}"
     
+    # Deterministic hospital assignment based on identifier hash
+    hospital_index = int(uuid[:8], 16) % len(ATLANTA_HOSPITALS)
+    hospital = ATLANTA_HOSPITALS[hospital_index]
+    
     return {
         "resourceType": "Location",
         "id": uuid_formatted,
@@ -558,7 +620,21 @@ def create_location_from_ref(location_ref: str) -> Optional[Dict]:
             }
         ],
         "status": "active",
-        "name": f"Location {value[-6:] if len(value) > 6 else value}"
+        "name": hospital["name"],
+        "address": {
+            "line": [hospital["line"]],
+            "city": hospital["city"],
+            "state": hospital["state"],
+            "postalCode": hospital["postalCode"],
+            "country": "US"
+        },
+        "position": {
+            "longitude": hospital["lng"],
+            "latitude": hospital["lat"]
+        },
+        "managingOrganization": {
+            "reference": hospital["org"]
+        }
     }
 
 
@@ -602,12 +678,15 @@ def create_organization_from_ref(org_ref: str) -> Optional[Dict]:
     }
 
 
-def inject_referenced_resources(bundle: Dict) -> Dict:
+def inject_referenced_resources(bundle: Dict, existing_locations: Dict[str, str] = None) -> Dict:
     """Scan bundle for conditional references and create missing resources.
     
     This handles the case where Synthea bundles reference Practitioners, Locations,
     and Organizations via conditional references, but don't include those resources 
     in the bundle. We create minimal stub resources so the references can resolve.
+    
+    If existing_locations is provided, Location stubs are skipped for references
+    that already have a corresponding resource in the FHIR server.
     """
     # Collect all conditional references in the bundle
     conditional_refs = set()
@@ -650,14 +729,20 @@ def inject_referenced_resources(bundle: Dict) -> Dict:
             'resource': practitioner
         })
     
-    # Create Location resources  
+    # Create Location resources (skip any that already exist in FHIR)
+    skipped_locations = 0
     for loc_ref in location_refs:
+        if existing_locations and loc_ref in existing_locations:
+            skipped_locations += 1
+            continue
         location = create_location_from_ref(loc_ref)
         if location:
             new_entries.append({
                 'fullUrl': f"urn:uuid:{location['id']}",
                 'resource': location
             })
+    if skipped_locations:
+        pass  # Logged at batch level to avoid per-bundle noise
     
     # Add new entries at the beginning of the bundle (they need to be processed first)
     if new_entries:
@@ -821,8 +906,12 @@ def split_bundle_entries(bundle: Dict, max_entries: int = 400) -> List[Dict]:
     return bundles
 
 
-def process_synthea_bundles(client: FHIRClient) -> List[Dict]:
-    """Stream and process Synthea bundles, upload to FHIR, and identify qualifying patients"""
+def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, str] = None) -> List[Dict]:
+    """Stream and process Synthea bundles, upload to FHIR, and identify qualifying patients.
+    
+    If existing_locations is provided, Location resources already in FHIR are reused
+    instead of creating new stubs, avoiding duplicate Location entries across runs.
+    """
     print("Processing Synthea bundles (streaming mode)...", flush=True)
     
     qualifying_patients = []
@@ -846,7 +935,8 @@ def process_synthea_bundles(client: FHIRClient) -> List[Dict]:
                 
                 # Inject stub Practitioner/Location resources for conditional references
                 # Synthea bundles reference these but don't include them
-                bundle = inject_referenced_resources(bundle)
+                # Existing locations from FHIR are reused rather than re-created
+                bundle = inject_referenced_resources(bundle, existing_locations)
                 
                 # Reorder entries so referenced resources come first
                 bundle = reorder_bundle_entries(bundle)
@@ -854,6 +944,11 @@ def process_synthea_bundles(client: FHIRClient) -> List[Dict]:
                 # Build map of conditional references -> direct UUID references
                 # This allows us to convert Practitioner?identifier=... to Practitioner/uuid
                 ref_map = build_conditional_reference_map(bundle)
+                
+                # Merge existing FHIR location references into the map so
+                # conditional refs resolve to the real Location resource IDs
+                if existing_locations:
+                    ref_map.update(existing_locations)
                 
                 # Convert to transaction bundle
                 bundle['type'] = 'transaction'
@@ -960,8 +1055,8 @@ def print_summary(client: FHIRClient) -> None:
     """Print summary of FHIR data"""
     print("\n=== FHIR DATA SUMMARY ===", flush=True)
     
-    resource_types = ['Patient', 'Organization', 'Practitioner', 'Encounter', 
-                      'Condition', 'Observation', 'Device', 'Basic']
+    resource_types = ['Patient', 'Organization', 'Practitioner', 'Location',
+                      'Encounter', 'Condition', 'Observation', 'Device', 'Basic']
     
     for rt in resource_types:
         try:
@@ -1006,6 +1101,9 @@ def main():
         print("ERROR: Could not establish FHIR connection", flush=True)
         sys.exit(1)
     
+    # Step 0: Fetch existing locations from FHIR for reuse across runs
+    existing_locations = fetch_existing_locations(client)
+    
     # Step 1: Upload Atlanta providers
     upload_providers(client)
     
@@ -1013,7 +1111,7 @@ def main():
     upload_devices(client)
     
     # Step 3: Process Synthea bundles and identify qualifying patients
-    qualifying_patients = process_synthea_bundles(client)
+    qualifying_patients = process_synthea_bundles(client, existing_locations)
     
     # Step 4: Create device associations
     if qualifying_patients:

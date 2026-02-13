@@ -19,10 +19,10 @@ echo "Files generated:"
 ls -la /output/fhir/ | head -20
 echo "Total FHIR files: $(ls -1 /output/fhir/*.json 2>/dev/null | wc -l)"
 
-# Upload to blob storage using managed identity
+# Upload to blob storage using User-Assigned Managed Identity
 echo "=== UPLOADING TO BLOB STORAGE ==="
-echo "Logging in with Managed Identity (allow no subscriptions for storage-only access)..."
-az login --identity --allow-no-subscriptions
+echo "Logging in with User-Assigned Managed Identity..."
+az login --identity --client-id $AZURE_CLIENT_ID --allow-no-subscriptions
 
 echo "Uploading FHIR bundles to blob storage..."
 az storage blob upload-batch \

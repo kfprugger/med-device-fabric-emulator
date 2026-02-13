@@ -43,6 +43,15 @@ resource syntheaContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
+// Blob container for FHIR $export output (NDJSON)
+resource fhirExportContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobServices
+  name: 'fhir-export'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // Health Data Services Workspace
 resource healthWorkspace 'Microsoft.HealthcareApis/workspaces@2023-11-01' = {
   name: workspaceName
@@ -70,6 +79,9 @@ resource fhirService 'Microsoft.HealthcareApis/workspaces/fhirservices@2023-11-0
       headers: ['*']
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
       allowCredentials: false
+    }
+    exportConfiguration: {
+      storageAccountName: storageAccountName
     }
   }
 }
@@ -144,9 +156,62 @@ resource healthWorkspaceReaderRole 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
+// ============================================
+// User-Assigned Managed Identity for ACI Jobs
+// ============================================
+// Shared identity for Synthea and FHIR Loader containers.
+// RBAC is assigned once at infra time — no propagation delays on container runs.
+
+resource aciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-aci-fhir-jobs'
+  location: location
+}
+
+// Storage Blob Data Contributor — Synthea needs to write, Loader needs to read
+resource aciStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, aciIdentity.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: aciIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// FHIR Data Contributor — Loader needs to write patients, devices, and associations
+resource aciFhirDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(fhirService.id, aciIdentity.id, '5a1fc7df-4bf1-4951-a576-89034ee01acd')
+  scope: fhirService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5a1fc7df-4bf1-4951-a576-89034ee01acd')
+    principalId: aciIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ============================================
+// FHIR Service MI → Storage (for $export)
+// ============================================
+// The FHIR service uses its system-assigned MI to write NDJSON to the
+// fhir-export container during $export operations.
+
+resource fhirMiStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, fhirService.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: fhirService.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Outputs
 output workspaceName string = healthWorkspace.name
 output fhirServiceName string = fhirService.name
 output fhirServiceUrl string = 'https://${workspaceName}-${fhirServiceName}.fhir.azurehealthcareapis.com'
 output storageAccountName string = storageAccount.name
 output containerName string = syntheaContainer.name
+output exportContainerName string = fhirExportContainer.name
+output aciIdentityId string = aciIdentity.id
+output aciIdentityPrincipalId string = aciIdentity.properties.principalId
+output aciIdentityClientId string = aciIdentity.properties.clientId

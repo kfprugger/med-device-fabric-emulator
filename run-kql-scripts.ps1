@@ -115,6 +115,6 @@ Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host "  KQL Scripts 01-03 Complete" -ForegroundColor Cyan
 Write-Host "  Succeeded: $success / $($success + $fail)" -ForegroundColor $(if ($fail -eq 0) { "Green" } else { "Yellow" })
 if ($fail -gt 0) { Write-Host "  Failed:    $fail" -ForegroundColor Red }
-Write-Host "  Script 04: SKIPPED (HDS not yet deployed)" -ForegroundColor Yellow
+Write-Host "  Script 04: Run via Phase 2: .\deploy-fabric-rti.ps1 -Phase2" -ForegroundColor Yellow
 Write-Host "  Script 05: Reference queries only" -ForegroundColor DarkGray
 Write-Host "===========================================" -ForegroundColor Cyan

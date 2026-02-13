@@ -19,8 +19,8 @@ fn_DeviceStatus()
 // ---------------------------------------------------------------------------
 // Title: "Active Clinical Alerts"
 fn_ClinicalAlerts(5)
-| project alert_tier, device_id, patient_name, alert_type,
-          spo2, pr, qualifying_conditions, message
+| project alert_tier, device_id, alert_type,
+          spo2, pr, message
 | order by alert_tier asc
 
 // ---------------------------------------------------------------------------
@@ -29,9 +29,9 @@ fn_ClinicalAlerts(5)
 // ---------------------------------------------------------------------------
 // Title: "SpO2 Heatmap (Last 30 min)"
 TelemetryRaw
-| where timestamp > ago(30m)
+| where todatetime(timestamp) > ago(30m)
 | summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)
-  by device_id, bin(timestamp, 1m)
+  by device_id, bin(todatetime(timestamp), 1m)
 | order by timestamp asc, device_id asc
 
 // ---------------------------------------------------------------------------
@@ -81,3 +81,54 @@ fn_LatestReadings()
 | where signal_iq < 95
 | project device_id, signal_iq, spo2, pr, timestamp
 | order by signal_iq asc
+
+// ============================================================================
+// CLINICAL ALERTS MAP DASHBOARD (Phase 2 — requires Silver Lakehouse)
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// MAP TILE: Alert locations — bubble map with alert counts per hospital
+// Visual: Map (requires fn_AlertLocationMap which joins Silver Lakehouse)
+// ---------------------------------------------------------------------------
+// Title: "Alert Locations"
+fn_AlertLocationMap(60)
+| summarize alert_count = count(),
+    critical = countif(alert_tier == 'CRITICAL'),
+    urgent = countif(alert_tier == 'URGENT'),
+    warning = countif(alert_tier == 'WARNING'),
+    patients = dcount(patient_name),
+    devices = dcount(device_id)
+    by location_name, latitude, longitude, city, state
+| extend tooltip = strcat(location_name, '\n', alert_count, ' alerts (', critical, ' critical)\n', devices, ' devices, ', patients, ' patients')
+
+// ---------------------------------------------------------------------------
+// BAR TILE: Alerts by Hospital — stacked by severity
+// Visual: Bar chart
+// ---------------------------------------------------------------------------
+// Title: "Alerts by Hospital"
+fn_AlertLocationMap(60)
+| summarize total = count(),
+    critical = countif(alert_tier == 'CRITICAL'),
+    urgent = countif(alert_tier == 'URGENT'),
+    warning = countif(alert_tier == 'WARNING')
+    by location_name
+| order by total desc
+
+// ---------------------------------------------------------------------------
+// TABLE TILE: Alert detail with location
+// Visual: Table
+// ---------------------------------------------------------------------------
+// Title: "Alert Detail"
+fn_AlertLocationMap(60)
+| project alert_time, device_id, patient_name, alert_tier, alert_type,
+          spo2, pr, location_name, city
+| order by alert_tier asc, alert_time desc
+| take 100
+
+// ---------------------------------------------------------------------------
+// CARD TILE: Total active alerts
+// Visual: Card
+// ---------------------------------------------------------------------------
+// Title: "Total Active Alerts"
+fn_AlertLocationMap(60)
+| count

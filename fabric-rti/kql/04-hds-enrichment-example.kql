@@ -1,71 +1,71 @@
 // ============================================================================
 // 04-hds-enrichment-example.kql
-// Example: Connecting HDS Silver Lakehouse to the Eventhouse for enriched alerts.
+// Connecting HDS Silver Lakehouse to the Eventhouse for enriched alerts.
+//
+// *** AUTOMATED BY PHASE 2 ***
+// These commands are now executed automatically by:
+//   .\deploy-fabric-rti.ps1 -Phase2
+//
+// The script auto-discovers the Silver Lakehouse ID and creates the external
+// tables as OneLake shortcuts. You only need to run these manually if Phase 2
+// fails or you want to customize the schema.
 //
 // After deploying Healthcare Data Solutions Clinical Foundations:
 //   1. The Silver Lakehouse contains flattened FHIR R4 tables (Patient,
 //      Device, Condition, Observation, etc.)
-//   2. Create a OneLake shortcut from the Eventhouse to the Silver Lakehouse
-//      OR use external tables (external_table) to query across items.
-//
-// This file shows the pattern for creating external table references
-// and the enriched version of fn_ClinicalAlerts.
+//   2. Phase 2 creates external tables (OneLake shortcuts) from the
+//      Eventhouse to the Silver Lakehouse delta tables.
+//   3. The enriched fn_ClinicalAlerts function joins real-time telemetry
+//      with patient demographics and qualifying conditions.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// OPTION A: Create external tables pointing to Silver Lakehouse delta tables
-// Replace <workspace_id>, <silver_lakehouse_id> with actual values.
+// OPTION A: External tables pointing to Silver Lakehouse delta tables
+// These are created AUTOMATICALLY by: .\deploy-fabric-rti.ps1 -Phase2
+//
+// Phase 2 uses a two-step process:
+//   1. Create an OneLake shortcut on the KQL Database (path="/Tables")
+//   2. Create an external table (kind=delta) via KQL management API
+//
+// The URL must use the OneLake DFS endpoint with ;impersonate suffix:
+//   https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/<shortcut_name>;impersonate
+//
+// To run manually, replace <workspace_id> and <kql_db_id> with actual
+// values from your Fabric portal URLs. You must FIRST create the shortcut
+// via Fabric REST API before the external table command will work.
 // ---------------------------------------------------------------------------
 
-// NOTE: Uncomment and run these after HDS is deployed. Replace placeholders.
+// Step 1 (for each table): Create shortcut via Fabric REST API
+// POST /workspaces/<workspace_id>/items/<kql_db_id>/shortcuts?shortcutConflictPolicy=CreateOrOverwrite
+// Body: { "name": "SilverPatient", "path": "/Tables", "target": { "oneLake": { "workspaceId": "<workspace_id>", "itemId": "<silver_lakehouse_id>", "path": "Tables/Patient" } } }
 
-/*
-// External table for Patient (Silver Lakehouse)
-.create external table SilverPatient (
-    id: string,
-    name_text: string,
-    name_family: string,
-    name_given: string,
-    gender: string,
-    birthDate: datetime,
-    identifier: dynamic,
-    identifierOrig: dynamic,
-    idOrig: string,
-    msftSourceSystem: string
-) kind=delta
+// Step 2 (for each table): Create external table via KQL management command
+// The ;impersonate suffix is MANDATORY for Fabric KQL external tables.
+
+.create-or-alter external table SilverPatient kind=delta
 (
-    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Patient'
+    h@'https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/SilverPatient;impersonate'
 )
 
-// External table for Condition (Silver Lakehouse)
-.create external table SilverCondition (
-    id: string,
-    subject_reference: string,
-    code_coding: dynamic,
-    code_text: string,
-    clinicalStatus_coding: dynamic,
-    verificationStatus_coding: dynamic,
-    onsetDateTime: datetime,
-    msftSourceSystem: string
-) kind=delta
+.create-or-alter external table SilverCondition kind=delta
 (
-    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Condition'
+    h@'https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/SilverCondition;impersonate'
 )
 
-// External table for Device (Silver Lakehouse)
-.create external table SilverDevice (
-    id: string,
-    identifier: dynamic,
-    type_coding: dynamic,
-    type_text: string,
-    patient_reference: string,
-    status: string,
-    msftSourceSystem: string
-) kind=delta
+.create-or-alter external table SilverDevice kind=delta
 (
-    'abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<silver_lakehouse_id>/Tables/Device'
+    h@'https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/SilverDevice;impersonate'
 )
-*/
+
+.create-or-alter external table SilverLocation kind=delta
+(
+    h@'https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/SilverLocation;impersonate'
+)
+
+.create-or-alter external table SilverEncounter kind=delta
+(
+    h@'https://onelake.dfs.fabric.microsoft.com/<workspace_id>/<kql_db_id>/Tables/SilverEncounter;impersonate'
+)
 
 // ---------------------------------------------------------------------------
 // OPTION B: Enriched fn_ClinicalAlerts using Silver Lakehouse data
@@ -73,8 +73,11 @@
 // This replaces the base fn_ClinicalAlerts function once the external
 // tables above are created. It joins real-time telemetry alerts with
 // FHIR patient/condition context from HDS.
+//
+// *** DEPLOYED AUTOMATICALLY by: .\deploy-fabric-rti.ps1 -Phase2 ***
 // ---------------------------------------------------------------------------
 
+// Phase 2 auto-deploys this function. To run manually, uncomment below:
 /*
 .create-or-alter function with (
     docstring = "Enriched clinical alerts with HDS Silver Lakehouse patient context",

@@ -184,7 +184,7 @@ if ($AdminSecurityGroup) {
 
 $infra = az deployment group create `
     --resource-group $ResourceGroupName `
-    --template-file infra.bicep `
+    --template-file bicep/infra.bicep `
     --parameters adminGroupObjectId="$adminGroupObjectId" `
     --query properties.outputs 2>&1
 
@@ -218,7 +218,7 @@ $fullImageTag = "$acrLoginServer/masimo-emulator:v1"
 
 az deployment group create `
   --resource-group $ResourceGroupName `
-  --template-file emulator.bicep `
+  --template-file bicep/emulator.bicep `
   --parameters acrName=$acrName `
                imageName=$fullImageTag `
                eventHubName=$ehName `
