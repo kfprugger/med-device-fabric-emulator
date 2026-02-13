@@ -2,6 +2,8 @@
 
 A complete solution for generating synthetic patient data, loading it into Azure FHIR Service, and associating patients with medical devices (Masimo pulse oximeters) for remote patient monitoring scenarios.
 
+![Architecture Diagram](docs/images/architecture-diagram.drawio.png)
+
 ## 🏗️ Architecture
 
 ```mermaid

@@ -798,7 +798,12 @@ dependencies:
         @{ Name = "SilverDevice";    Table = "Device" },
         @{ Name = "SilverLocation";  Table = "Location" },
         @{ Name = "SilverEncounter"; Table = "Encounter" },
-        @{ Name = "SilverBasic";     Table = "Basic" }
+        @{ Name = "SilverBasic";     Table = "Basic" },
+        @{ Name = "SilverObservation"; Table = "Observation" },
+        @{ Name = "SilverMedicationRequest"; Table = "MedicationRequest" },
+        @{ Name = "SilverProcedure"; Table = "Procedure" },
+        @{ Name = "SilverImmunization"; Table = "Immunization" },
+        @{ Name = "SilverImagingStudy"; Table = "ImagingStudy" }
     )
 
     foreach ($sc in $shortcuts) {
@@ -855,7 +860,12 @@ dependencies:
         @{ Query = "external_table('SilverDevice') | take 1 | count"; Label = "SilverDevice" },
         @{ Query = "external_table('SilverLocation') | take 1 | count"; Label = "SilverLocation" },
         @{ Query = "external_table('SilverEncounter') | take 1 | count"; Label = "SilverEncounter" },
-        @{ Query = "external_table('SilverBasic') | take 1 | count"; Label = "SilverBasic" }
+        @{ Query = "external_table('SilverBasic') | take 1 | count"; Label = "SilverBasic" },
+        @{ Query = "external_table('SilverObservation') | take 1 | count"; Label = "SilverObservation" },
+        @{ Query = "external_table('SilverMedicationRequest') | take 1 | count"; Label = "SilverMedicationRequest" },
+        @{ Query = "external_table('SilverProcedure') | take 1 | count"; Label = "SilverProcedure" },
+        @{ Query = "external_table('SilverImmunization') | take 1 | count"; Label = "SilverImmunization" },
+        @{ Query = "external_table('SilverImagingStudy') | take 1 | count"; Label = "SilverImagingStudy" }
     )
 
     foreach ($vq in $verifyQueries) {
