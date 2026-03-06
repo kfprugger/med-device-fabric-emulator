@@ -273,6 +273,7 @@ med-device-fabric-emulator/
 ├── deploy-fabric-rti.ps1    # Fabric RTI deployment (Phase 1 + Phase 2)
 ├── deploy-data-agents.ps1   # Fabric Data Agents (Patient 360 + Clinical Triage)
 ├── update-agents-inline.ps1 # Quick-update agent definitions (hardcoded IDs)
+├── deploy-ontology.ps1       # Fabric IQ Ontology deployment (REST API)
 ├── deploy.ps1               # Legacy emulator-only deployment
 ├── run-kql-scripts.ps1      # Standalone KQL script runner
 ├── create-device-associations.py  # Link Masimo devices to FHIR patients
@@ -289,9 +290,13 @@ med-device-fabric-emulator/
 │   ├── Remove-FabricWorkspace.ps1 # Delete Fabric workspace & items
 │   └── Remove-FhirData.ps1     # Purge FHIR data
 ├── docs/
-│   └── images/
+│   ├── images/
+│   ├── FABRIC-IQ-ONTOLOGY-PLAN.md  # Ontology design plan & data model
+│   └── ONTOLOGY-SETUP-GUIDE.md     # Step-by-step ontology setup guide
 ├── fabric-rti/
 │   ├── HDS-SETUP-GUIDE.md   # Healthcare Data Solutions setup guide
+│   ├── sql/
+│   │   └── create-device-association-table.ipynb  # Spark SQL notebook for ontology binding
 │   ├── kql/
 │   │   ├── 01-alert-history-table.kql    # AlertHistory table & policies
 │   │   ├── 02-telemetry-functions.kql    # Telemetry analytics functions
@@ -501,6 +506,57 @@ A second dashboard, **Clinical Alerts Map**, is deployed by Phase 2 with 30-seco
 
 > Patients without a mapped Encounter → Location default to **Nashville, TN** (36.1627°N, 86.7816°W) and appear as "Unknown (Nashville)".
 
+### Fabric IQ — Ontology (Semantic Layer)
+
+The project includes a **Fabric IQ Ontology** (`ClinicalDeviceOntology`) that creates a unified semantic layer across the Eventhouse and Silver Lakehouse. The ontology defines shared business concepts (entity types), their properties, and cross-domain relationships so that Data Agents, Power BI, and graph queries share the same clinical vocabulary.
+
+```mermaid
+graph LR
+    Patient -->|has| Encounter
+    Patient -->|has| Condition
+    Patient -->|has| Observation
+    Patient -->|has| MedicationRequest
+    Patient -->|linkedTo| Device
+    Device -->|generates| DeviceTelemetry
+    Device -->|triggers| ClinicalAlert
+    ClinicalAlert -->|concerns| Patient
+
+    style Patient fill:#4CAF50,color:#fff
+    style Device fill:#2196F3,color:#fff
+    style DeviceTelemetry fill:#FF9800,color:#fff
+    style ClinicalAlert fill:#f44336,color:#fff
+    style Encounter fill:#9C27B0,color:#fff
+    style Condition fill:#009688,color:#fff
+    style Observation fill:#795548,color:#fff
+    style MedicationRequest fill:#607D8B,color:#fff
+```
+
+| Entity Type | Binding | Source | Approx Rows |
+|-------------|---------|--------|-------------|
+| Patient | Static | Silver Lakehouse | ~7,800 |
+| Device | Static | Silver Lakehouse | ~100 |
+| Encounter | Static | Silver Lakehouse | ~363,000 |
+| Condition | Static | Silver Lakehouse | ~244,000 |
+| MedicationRequest | Static | Silver Lakehouse | ~250,000 |
+| Observation | Static | Silver Lakehouse | ~2,800,000 |
+| DeviceAssociation | Static | Silver Lakehouse (`DeviceAssociation`) | ~100 |
+| DeviceTelemetry | **Time Series** | Eventhouse (`TelemetryRaw`) | Streaming |
+| ClinicalAlert | Static | Eventhouse (`AlertHistory`) | Varies |
+
+**Setup:** Run `deploy-ontology.ps1` to create the ontology with all entity types, data bindings, and relationships via REST API. Or follow the manual [setup guide](docs/ONTOLOGY-SETUP-GUIDE.md) for portal-based creation.
+
+```powershell
+# Automated: Create ontology via Fabric REST API
+.\deploy-ontology.ps1
+
+# Or with a custom workspace name
+.\deploy-ontology.ps1 -FabricWorkspaceName "my-workspace"
+```
+
+**Prerequisite:** Run the `DeviceAssociation` table creation notebook (`fabric-rti/sql/create-device-association-table.ipynb`) in a Spark session attached to the Silver Lakehouse before creating the ontology. The Lakehouse SQL analytics endpoint is read-only.
+
+> **Note:** Fabric IQ Ontology is currently a **preview** feature. The ontology can be created automatically via `deploy-ontology.ps1` (REST API) or manually via the Fabric portal. The ontology requires the Silver Lakehouse to use **managed** tables with OneLake security **disabled**.
+
 ### Healthcare Data Solutions Integration
 
 The system uses **HDS Clinical Foundations** instead of custom tables for FHIR data. The Silver Lakehouse provides normalized FHIR R4 tables (Patient, Device, Condition, Encounter, Location, Basic) with built-in identity management and update handling.
@@ -593,6 +649,7 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 | 3 | `deploy-fabric-rti.ps1` | Creates Fabric workspace, Eventhouse, Eventstream, KQL schema, dashboard |
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
 | 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
+| 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) |
 
 ## 🧹 Cleanup
 
@@ -627,3 +684,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Masimo](https://www.masimo.com/) - Medical device specifications reference
 - [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) - Real-Time Intelligence platform
 - [Healthcare Data Solutions](https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview) - FHIR data foundations on Fabric
+- [Fabric IQ](https://learn.microsoft.com/fabric/iq/overview) - Unified semantic layer and ontology workload
+- [Ontology (preview)](https://learn.microsoft.com/fabric/iq/ontology/overview) - Enterprise vocabulary and data binding

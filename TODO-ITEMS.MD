@@ -90,6 +90,22 @@
 
 ---
 
+## Priority 4 — Fabric IQ / Ontology (Semantic Layer)
+
+### 11. Create ClinicalDeviceOntology
+- [ ] Create `DeviceAssociation` managed table via Spark SQL notebook on Silver Lakehouse (upload `fabric-rti/sql/create-device-association-table.ipynb`)
+- [ ] Run `deploy-ontology.ps1` to create ontology with all entity types, data bindings, and relationships via REST API
+- [ ] Validate entity instance counts and graph traversal in the Preview experience
+- [ ] Connect ontology as a datasource on the **Patient 360** Data Agent
+- [ ] Connect ontology as a datasource on the **Clinical Triage** Data Agent
+- [ ] Test cross-domain agent queries (e.g., "Show conditions for the patient on device MASIMO-RADIUS7-0033")
+
+### 12. Ontology Maintenance
+- [ ] Add ontology deployment to `Deploy-All.ps1` orchestrator
+- [ ] Version-control ontology definition as JSON in the repo
+
+---
+
 ## Completed Items
 
 - [x] Deploy Azure infrastructure (FHIR, ACR, Storage, Managed Identity)
