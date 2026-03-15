@@ -247,8 +247,8 @@ flowchart LR
 | Parameter | Default | Required | Description |
 |-----------|---------|----------|-------------|
 | `-ResourceGroupName` | `rg-medtech-rti-fhir` | Yes | Azure resource group name |
-| `-Location` | `eastus` | No | Azure region |
-| `-PatientCount` | `10000` | No | Number of patients to generate |
+| `-Location` | — | **Yes** | Azure region (e.g. `eastus`, `westus3`) |
+| `-PatientCount` | `500` | No | Number of patients to generate |
 | `-Tags` | `@{}` | No | Resource tags (e.g. `@{SecurityControl='Ignore'}`) |
 | `-InfraOnly` | `false` | No | Deploy FHIR infrastructure only, skip data generation |
 | `-RunSynthea` | `false` | No | Generate patients only (infra must already exist) |

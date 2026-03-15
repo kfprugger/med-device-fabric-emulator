@@ -25,8 +25,8 @@
 
 param (
     # ── Azure ──
-    [string]$ResourceGroupName = "rg-medtech-rti-fhir",
-    [string]$Location = "eastus",
+    [Parameter(Mandatory)][string]$ResourceGroupName = "rg-medtech-rti-fhir",
+    [Parameter(Mandatory)][string]$Location,
     [string]$AdminSecurityGroup = "sg-azure-admins",
 
     # ── FHIR / Synthea ──
