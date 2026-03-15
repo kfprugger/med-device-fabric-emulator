@@ -248,6 +248,7 @@ flowchart LR
 |-----------|---------|----------|-------------|
 | `-ResourceGroupName` | `rg-medtech-rti-fhir` | **Yes** | Azure resource group name |
 | `-Location` | — | **Yes** | Azure region (e.g. `eastus`, `westus3`) |
+| `-FabricWorkspaceName` | — | **Yes** | Fabric workspace name (created if missing) |
 | `-PatientCount` | `500` | No | Number of patients to generate |
 | `-Tags` | `@{}` | No | Resource tags (e.g. `@{SecurityControl='Ignore'}`) |
 | `-InfraOnly` | `false` | No | Deploy FHIR infrastructure only, skip data generation |

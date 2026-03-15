@@ -33,7 +33,7 @@ param (
     [int]$PatientCount = 500,
 
     # ── Fabric ──
-    [string]$FabricWorkspaceName = "med-device-rti-hds",
+    [Parameter(Mandatory)][string]$FabricWorkspaceName,
 
     # ── Fabric Phase 2 (post-HDS) ──
     [string]$SilverLakehouseId = "",
