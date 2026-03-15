@@ -1,0 +1,18 @@
+{
+  "mappings": [
+    {"snomed": "13645005",  "display": "COPD",                  "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "195967001", "display": "Asthma",                "modality": "CR", "collection": "RSNA Pneumonia"},
+    {"snomed": "233604007", "display": "Pneumonia",             "modality": "CR", "collection": "RSNA Pneumonia"},
+    {"snomed": "84114007",  "display": "Heart failure",         "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "840539006", "display": "COVID-19",              "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "59621000",  "display": "Hypertension",          "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "44054006",  "display": "Diabetes",              "modality": "CR", "collection": "RSNA Pneumonia"},
+    {"snomed": "53741008",  "display": "Coronary arteriosclerosis", "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "22298006",  "display": "Myocardial infarction", "modality": "CT", "collection": "LIDC-IDRI"},
+    {"snomed": "162864005", "display": "Obesity",               "modality": "CT", "collection": "LIDC-IDRI"}
+  ],
+  "default": {
+    "modality": "CT",
+    "collection": "LIDC-IDRI"
+  }
+}

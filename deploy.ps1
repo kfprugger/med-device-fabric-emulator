@@ -2,10 +2,24 @@
 param (
     [string]$ResourceGroupName = "rg-medtech",
     [string]$Location = "eastus",
-    [string]$AdminSecurityGroup = "sg-azure-admins"
+    [string]$AdminSecurityGroup = "sg-azure-admins",
+    [hashtable]$Tags = @{}
 )
 
 $ErrorActionPreference = "Stop"
+
+# Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
+$env:PYTHONIOENCODING = "utf-8"
+
+# Serialize tags for Bicep parameter passing
+$tagsParamFile = Join-Path $env:TEMP "deploy-tags-$(Get-Random).json"
+$tagsParamContent = @{
+    '`$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+    contentVersion = '1.0.0.0'
+    parameters = @{ resourceTags = @{ value = if ($Tags.Count -gt 0) { $Tags } else { @{} } } }
+}
+$tagsParamContent | ConvertTo-Json -Depth 5 | Set-Content $tagsParamFile -Encoding utf8
+$tagsParamRef = "@$tagsParamFile"
 
 Write-Host "--- STEP 1: GENERATING PYTHON CODE ---" -ForegroundColor Cyan
 
@@ -186,6 +200,7 @@ $infra = az deployment group create `
     --resource-group $ResourceGroupName `
     --template-file bicep/infra.bicep `
     --parameters adminGroupObjectId="$adminGroupObjectId" `
+    --parameters $tagsParamRef `
     --query properties.outputs 2>&1
 
 if ($LASTEXITCODE -ne 0) {
@@ -222,7 +237,10 @@ az deployment group create `
   --parameters acrName=$acrName `
                imageName=$fullImageTag `
                eventHubName=$ehName `
-               eventHubNamespace=$ehNamespace
+               eventHubNamespace=$ehNamespace `
+  --parameters $tagsParamRef
 
 Write-Host "--- SUCCESS ---" -ForegroundColor Green
 Write-Host "Emulator running with System-Assigned Identity (using Entra ID for Event Hub)."
+
+

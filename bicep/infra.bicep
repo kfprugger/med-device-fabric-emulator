@@ -3,6 +3,9 @@ param location string = resourceGroup().location
 param tenantId string = subscription().tenantId
 param adminGroupObjectId string = ''
 
+// Tag required by Azure Policy to allow public network access
+param resourceTags object = {}
+
 @minLength(3) 
 param appName string = 'masimo${uniqueString(resourceGroup().id)}'
 
@@ -10,6 +13,7 @@ param appName string = 'masimo${uniqueString(resourceGroup().id)}'
 resource ehNamespace 'Microsoft.EventHub/namespaces@2021-11-01' = {
   name: '${appName}-eh-ns'
   location: location
+  tags: resourceTags
   sku: { name: 'Standard', tier: 'Standard' }
   properties: {
     disableLocalAuth: false
@@ -33,6 +37,7 @@ resource nsAuthRule 'Microsoft.EventHub/namespaces/authorizationRules@2021-11-01
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
   name: '${appName}acr'
   location: location
+  tags: resourceTags
   sku: { name: 'Basic' }
   properties: { adminUserEnabled: true }
 }
@@ -41,6 +46,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   name: '${appName}-kv'
   location: location
+  tags: resourceTags
   properties: {
     sku: { family: 'A', name: 'standard' }
     tenantId: tenantId

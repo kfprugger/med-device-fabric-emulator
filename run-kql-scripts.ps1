@@ -71,6 +71,10 @@ if (Invoke-KustoMgmt $cmd "AlertHistory JSON mapping") { $success++ } else { $fa
 Write-Host ""
 Write-Host "=== Script 02: Telemetry Functions ===" -ForegroundColor Cyan
 
+# Ensure TelemetryRaw table exists (Eventstream may not have auto-created it)
+$cmd = '.create-merge table TelemetryRaw (device_id:string, timestamp:string, telemetry:dynamic, source:string, metadata:dynamic) with (folder="Masimo")'
+if (Invoke-KustoMgmt $cmd "Ensure TelemetryRaw table") { $success++ } else { $fail++ }
+
 # fn_VitalsTrend
 $cmd = '.create-or-alter function with (docstring = "Rolling vital sign statistics per device over a sliding window", folder = "ClinicalAlerts") fn_VitalsTrend(windowMinutes: int = 5) { TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | summarize readings = count(), avg_spo2 = round(avg(todouble(telemetry.spo2)), 1), min_spo2 = round(min(todouble(telemetry.spo2)), 1), max_spo2 = round(max(todouble(telemetry.spo2)), 1), stddev_spo2 = round(stdev(todouble(telemetry.spo2)), 2), avg_pr = round(avg(todouble(telemetry.pr)), 0), min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), avg_pi = round(avg(todouble(telemetry.pi)), 2), avg_pvi = round(avg(todouble(telemetry.pvi)), 0), avg_sphb = round(avg(todouble(telemetry.sphb)), 1), avg_signal_iq = round(avg(todouble(telemetry.signal_iq)), 0), last_reading = max(todatetime(timestamp)) by device_id | extend minutes_since_last = datetime_diff(''second'', now(), last_reading) / 60.0 | order by device_id asc }'
 if (Invoke-KustoMgmt $cmd "fn_VitalsTrend") { $success++ } else { $fail++ }
@@ -96,7 +100,7 @@ Write-Host ""
 Write-Host "=== Script 03: Clinical Alert Functions ===" -ForegroundColor Cyan
 
 # fn_SpO2Alerts — separate extend for message and threshold_value
-$cmd = '.create-or-alter function with (docstring = "Detect SpO2 threshold breaches with 3-tier severity", folder = "ClinicalAlerts") fn_SpO2Alerts(windowMinutes: int = 5) { TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | where isnotnull(telemetry.spo2) | extend spo2 = todouble(telemetry.spo2) | where spo2 > 0 and spo2 < 100 | summarize min_spo2 = min(spo2), avg_spo2 = round(avg(spo2),1), readings = count(), last_time = max(todatetime(timestamp)) by device_id | where min_spo2 < 94 | extend alert_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING") | extend alert_type = "SPO2_LOW" | extend message = strcat(alert_tier, " Dev:", device_id, " SpO2=", tostring(min_spo2)) | extend tv = case(alert_tier == "CRITICAL", 85.0, alert_tier == "URGENT", 90.0, 94.0) | project alert_time = last_time, device_id, alert_tier, alert_type, metric_name = "spo2", metric_value = min_spo2, threshold_value = tv, message, readings | order by alert_tier asc, min_spo2 asc }'
+$cmd = '.create-or-alter function with (docstring = "Detect SpO2 threshold breaches with 3-tier severity", folder = "ClinicalAlerts") fn_SpO2Alerts(windowMinutes: int = 5) { TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | where isnotnull(telemetry.spo2) | extend spo2 = todouble(telemetry.spo2) | where spo2 > 0 and spo2 < 100 | summarize min_spo2 = min(spo2), avg_spo2 = round(avg(spo2),1), readings = count(), last_time = max(todatetime(timestamp)) by device_id | where min_spo2 < 94 | extend alert_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING") | extend alert_type = "SPO2_LOW" | extend message = strcat(alert_tier, " Dev:", device_id, " SpO2=", tostring(min_spo2)) | extend tv = case(alert_tier == "CRITICAL", 85.0, alert_tier == "URGENT", 90.0, 94.0) | project alert_time = last_time, device_id, alert_tier, alert_type, metric_name = "spo2", metric_value = min_spo2, threshold_value = tv, message, readings | order by alert_tier asc, metric_value asc }'
 if (Invoke-KustoMgmt $cmd "fn_SpO2Alerts") { $success++ } else { $fail++ }
 
 # fn_PulseRateAlerts — separate extend for message and threshold

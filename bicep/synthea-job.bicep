@@ -10,6 +10,7 @@ param containerName string
 param patientCount int = 10000
 param aciIdentityId string
 param aciIdentityClientId string
+param resourceTags object = {}
 
 // Get reference to ACR for credentials
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
@@ -20,6 +21,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existin
 resource syntheaJob 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
   name: 'synthea-generator-job'
   location: location
+  tags: resourceTags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {

@@ -65,7 +65,7 @@ $headers = @{
 Write-Host ""
 Write-Host "Current resource counts:" -ForegroundColor Yellow
 $readHeaders = @{ Authorization = "Bearer $token"; Accept = "application/fhir+json" }
-$types = @('Patient','Organization','Practitioner','Location','Encounter','Condition','Observation','Device','Basic')
+$types = @('Patient','Organization','Practitioner','Location','Encounter','Condition','Observation','Device','Basic','ImagingStudy')
 foreach ($rt in $types) {
     try {
         $count = (Invoke-RestMethod -Uri "$FhirUrl/$rt`?_summary=count" -Headers $readHeaders).total
@@ -146,3 +146,21 @@ if ($statusCode -eq 202) {
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
+
+# ── DICOM Study Purge (if DICOM service exists in same RG) ──
+if ($ResourceGroupName) {
+    $dicomDeployment = az deployment group show `
+        --resource-group $ResourceGroupName `
+        --name dicom-infra `
+        --query properties.outputs 2>$null
+
+    if ($LASTEXITCODE -eq 0 -and $dicomDeployment) {
+        $dicomJson = $dicomDeployment | ConvertFrom-Json
+        $dicomUrl = $dicomJson.dicomServiceUrl.value
+        Write-Host ""
+        Write-Host "DICOM service found: $dicomUrl" -ForegroundColor Yellow
+        Write-Host "  DICOM studies will be deleted when the resource group is removed." -ForegroundColor DarkGray
+        Write-Host "  To purge DICOM data independently, delete individual studies via:" -ForegroundColor DarkGray
+        Write-Host "    DELETE $dicomUrl/v1/studies/{studyInstanceUID}" -ForegroundColor DarkGray
+    }
+}

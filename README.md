@@ -7,60 +7,13 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 **What this solution demonstrates:**
 - **Real-Time Intelligence** — Masimo pulse oximeter telemetry streams through Eventstream into Eventhouse with KQL-based clinical alert detection (SpO2 drops, abnormal pulse rates) in seconds
 - **Healthcare Data Solutions** — 10K synthetic FHIR R4 patients (5M+ clinical resources) flow into a Silver Lakehouse via Fabric's native HDS connector with zero custom ETL
+- **DICOM Medical Imaging** — Real TCIA chest CT studies are downloaded, re-tagged with Synthea patient identifiers, stored in ADLS Gen2, and ingested into Fabric HDS via a OneLake shortcut and the imaging pipeline
 - **Data Agents** — Two natural-language AI agents (Patient 360 + Clinical Triage) let users ask questions like *"Show me all patients with SpO2 below 90 and their active conditions"* — federating across KQL telemetry and Lakehouse clinical data in one response
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
 The entire solution deploys in under 2 hours with a single command (`Deploy-All.ps1`) and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
 
 ## 🏗️ Architecture
-
-```mermaid
-flowchart TB
-    subgraph Azure["Azure Resource Group"]
-        subgraph Generation["Data Generation"]
-            Synthea["🏥 Synthea Generator<br/>(Azure Container Instance)"]
-            Blob["📦 Azure Blob Storage<br/>(synthea-output container)"]
-        end
-        
-        subgraph Loading["Data Loading"]
-            Loader["⚙️ FHIR Loader<br/>(Azure Container Instance)"]
-        end
-        
-        subgraph FHIR["Azure Health Data Services"]
-            FHIRService["🔥 FHIR Service (R4)<br/>- Patients<br/>- Encounters<br/>- Conditions<br/>- Observations<br/>- Devices"]
-        end
-        
-        subgraph Infrastructure["Supporting Infrastructure"]
-            ACR["📦 Azure Container Registry<br/>- synthea-generator<br/>- fhir-loader"]
-            Identity["🔐 User-Assigned<br/>Managed Identity"]
-        end
-        
-        Synthea -->|"Generate 10K<br/>patient bundles"| Blob
-        Blob -->|"Download<br/>bundles"| Loader
-        Loader -->|"Upload FHIR<br/>transactions"| FHIRService
-        
-        Identity -.->|"FHIR Data Contributor"| FHIRService
-        Identity -.->|"Storage Blob Data Contributor"| Blob
-        Identity -.->|"AcrPull"| ACR
-        
-        ACR -->|"Pull images"| Synthea
-        ACR -->|"Pull images"| Loader
-    end
-    
-    subgraph Clients["External Clients"]
-        Postman["🧪 Postman/Bruno"]
-        Apps["📱 Applications"]
-    end
-    
-    Clients -->|"REST API<br/>(OAuth 2.0)"| FHIRService
-
-    style Azure fill:#e6f3ff,stroke:#0078d4
-    style Generation fill:#fff3e6,stroke:#ff8c00
-    style Loading fill:#e6ffe6,stroke:#00a000
-    style FHIR fill:#ffe6e6,stroke:#d40000
-    style Infrastructure fill:#f0e6ff,stroke:#8000d4
-    style Clients fill:#f5f5f5,stroke:#666666
-```
 
 ### Data Flow
 
@@ -88,7 +41,18 @@ flowchart LR
         S5["Associate Masimo<br/>devices with patients"]
     end
     
-    Step1 --> Step2 --> Step3 --> Step4 --> Step5
+    subgraph Step6["6️⃣ Image"]
+        S6A["Download TCIA<br/>DICOM studies"]
+        S6B["Re-tag with<br/>Synthea patient IDs"]
+        S6C["Upload .dcm to<br/>ADLS Gen2"]
+    end
+    
+    subgraph Step7["7️⃣ Ingest"]
+        S7["OneLake shortcut +<br/>HDS clinical, imaging,<br/>and OMOP pipelines"]
+    end
+    
+    Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7
+    S6A --> S6B --> S6C
     S3A --> S3B --> S3C
 
     style Step1 fill:#e6f3ff,stroke:#0078d4
@@ -96,6 +60,8 @@ flowchart LR
     style Step3 fill:#e6ffe6,stroke:#00a000
     style Step4 fill:#ffe6e6,stroke:#d40000
     style Step5 fill:#f0e6ff,stroke:#8000d4
+    style Step6 fill:#e6fff0,stroke:#00a060
+    style Step7 fill:#fff0e6,stroke:#d48000
 ```
 
 ### FHIR Resource Relationships
@@ -109,6 +75,7 @@ erDiagram
     Patient ||--o{ Immunization : "received"
     Patient ||--o{ Procedure : "underwent"
     Patient ||--o{ DeviceAssociation : "linked to"
+    Patient ||--o{ ImagingStudy : "has imaging"
     
     Encounter }o--|| Practitioner : "performed by"
     Encounter }o--|| Organization : "at"
@@ -170,6 +137,54 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 - Links devices to qualifying patients via DeviceAssociation (Basic) resources
 - Supports both Synthea-generated synthetic data and real-world EHR data
 
+### 5. **DICOM Medical Imaging** (dicom-loader + storage-access-trusted-workspace)
+
+Adds real medical imaging to the platform using public DICOM studies from [The Cancer Imaging Archive (TCIA)](https://www.cancerimagingarchive.net/):
+
+```mermaid
+flowchart LR
+    subgraph Azure["Azure Resource Group"]
+        TCIA["🌐 TCIA\n(Public DICOM)"]
+        DicomLoader["⚙️ dicom-loader\n(ACI Container)"]
+        ADLS["📦 ADLS Gen2\n(dicom-output)"]
+        FHIR["🔥 FHIR Service"]
+    end
+
+    subgraph Fabric["Microsoft Fabric Workspace"]
+        Shortcut["🔗 OneLake Shortcut\n(Bronze Lakehouse)"]
+        Pipeline["⚡ HDS Imaging Pipeline"]
+        Silver["🏥 Silver Lakehouse\n(ImagingStudy table)"]
+        Agents["🤖 Data Agents"]
+    end
+
+    TCIA -->|"Download\nDICOM ZIP"| DicomLoader
+    DicomLoader -->|"Re-tag +\nUpload .dcm"| ADLS
+    DicomLoader -->|"Create\nImagingStudy"| FHIR
+    ADLS -->|"Shortcut"| Shortcut
+    Shortcut --> Pipeline --> Silver
+    Silver --> Agents
+
+    style Azure fill:#e6f3ff,stroke:#0078d4
+    style Fabric fill:#f0e6ff,stroke:#8000d4
+```
+
+- Downloads chest CT studies from **LIDC-IDRI** collection (or RSNA Pneumonia for CR modality)
+- **Re-tags** DICOM files with Synthea patient identifiers using pydicom — preserves pixel data, replaces patient demographics and UIDs
+- Matches imaging modality to patient conditions via SNOMED code mapping (COPD→CT, Asthma→CR, etc.)
+- Uploads re-tagged `.dcm` files to **ADLS Gen2** (`dicom-output` container), organized by `{patientId}/{studyUID}/{seriesUID}/`
+- Creates **FHIR ImagingStudy** resources linking each study to the Synthea patient
+- **OneLake shortcut** connects the ADLS container to the Bronze Lakehouse at `/Files/Ingest/Imaging/DICOM/DICOM-HDS/`
+- Triggers the **HDS imaging ingestion pipeline** to flow DICOM metadata into the Silver `ImagingStudy` table
+- Triggers the **HDS OMOP analytics pipeline** to populate the Gold OMOP CDM tables
+
+```powershell
+# Deploy DICOM loader (build container, download TCIA, re-tag, upload to ADLS Gen2)
+.\deploy-fhir.ps1 -RunDicom
+
+# Create OneLake shortcut + invoke HDS clinical, imaging, and OMOP pipelines
+.\storage-access-trusted-workspace.ps1 -FabricWorkspaceName "med-device-rti-hds"
+```
+
 ## 📊 FHIR Resources Created
 
 | Resource Type | Approximate Count | Description |
@@ -186,6 +201,7 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 | Location | ~300+ | Care delivery locations |
 | Device | 100 | Masimo pulse oximeters |
 | Basic (DeviceAssociation) | Up to 100 | Device-patient linkages |
+| ImagingStudy | Up to 100 | DICOM study references (TCIA re-tagged) |
 
 ## 🚀 Deployment
 
@@ -233,6 +249,8 @@ Pre-loaded Organization resources for major Atlanta healthcare systems:
 | `-InfraOnly` | `false` | Deploy FHIR infrastructure only, skip data generation |
 | `-RunSynthea` | `false` | Generate patients only (infra must already exist) |
 | `-RunLoader` | `false` | Load FHIR data only (infra + blobs must exist) |
+| `-RunDicom` | `false` | DICOM only: build container, download TCIA, re-tag, upload to ADLS Gen2 |
+| `-SkipDicom` | `false` | Skip DICOM steps in full deployment |
 
 ## 🔐 Authentication & Security
 
@@ -274,6 +292,7 @@ med-device-fabric-emulator/
 ├── deploy-data-agents.ps1   # Fabric Data Agents (Patient 360 + Clinical Triage)
 ├── update-agents-inline.ps1 # Quick-update agent definitions (hardcoded IDs)
 ├── deploy-ontology.ps1       # Fabric IQ Ontology deployment (REST API)
+├── storage-access-trusted-workspace.ps1  # DICOM OneLake shortcut + HDS pipeline trigger (clinical, imaging, OMOP)
 ├── deploy.ps1               # Legacy emulator-only deployment
 ├── run-kql-scripts.ps1      # Standalone KQL script runner
 ├── create-device-associations.py  # Link Masimo devices to FHIR patients
@@ -284,11 +303,19 @@ med-device-fabric-emulator/
 │   ├── emulator.bicep       # Emulator ACI container
 │   ├── fhir-infra.bicep     # FHIR Service, Storage, Managed Identity
 │   ├── fhir-loader-job.bicep # FHIR loader ACI job
+│   ├── dicom-loader-job.bicep # DICOM loader ACI job
 │   └── synthea-job.bicep    # Synthea generator ACI job
 ├── cleanup/
 │   ├── Remove-AzureInfra.ps1    # Tear down Azure resource group
 │   ├── Remove-FabricWorkspace.ps1 # Delete Fabric workspace & items
-│   └── Remove-FhirData.ps1     # Purge FHIR data
+│   └── Remove-FhirData.ps1     # Purge FHIR + DICOM data
+├── dicom-loader/
+│   ├── Dockerfile           # DICOM loader container
+│   ├── load_dicom.py        # TCIA download, re-tag, ADLS upload, ImagingStudy creation
+│   ├── tcia_client.py       # TCIA REST API client
+│   ├── dicom_retagger.py    # pydicom re-tagging (patient IDs, UIDs)
+│   ├── condition_modality_map.json # SNOMED → TCIA collection/modality mapping
+│   └── requirements.txt
 ├── docs/
 │   ├── images/
 │   ├── FABRIC-IQ-ONTOLOGY-PLAN.md  # Ontology design plan & data model
@@ -343,6 +370,26 @@ Configured for Atlanta demographics:
 
 ## 📈 Monitoring
 
+### Verify Eventstream is Active
+
+After Phase 1 deployment, confirm telemetry is flowing:
+
+1. Open the Fabric portal → workspace → **MasimoTelemetryStream** (Eventstream)
+2. Verify the pipeline shows: `EventHubSource` (Active ✅) → `MasimoTelemetryStream` → `EventhouseDestination` (Active ✅)
+3. Click **Data preview** to see live telemetry rows with `device_id`, `timestamp`, `telemetry` (SpO2, PR, PI)
+
+Or verify via KQL:
+```kql
+// Run in MasimoEventhouse → MasimoEventhouse_queryset
+TelemetryRaw | count
+
+// Latest readings per device
+fn_LatestReadings() | take 10
+
+// Check for active alerts
+fn_ClinicalAlerts(5)
+```
+
 ### Check Container Logs
 
 ```powershell
@@ -351,6 +398,12 @@ az container logs -g <resource-group> -n synthea-generator-job
 
 # FHIR loader logs
 az container logs -g <resource-group> -n fhir-loader-job
+
+# DICOM loader logs
+az container logs -g <resource-group> -n dicom-loader-job
+
+# Emulator logs (streaming telemetry)
+az container logs -g <resource-group> -n masimo-emulator-grp --tail 10
 ```
 
 ### Query FHIR Counts
@@ -647,6 +700,8 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 | 1 | `deploy.ps1` | Deploys Event Hub, ACR, Key Vault, builds + deploys emulator ACI |
 | 2 | `deploy-fhir.ps1` | Deploys FHIR Service, runs Synthea + FHIR Loader |
 | 3 | `deploy-fabric-rti.ps1` | Creates Fabric workspace, Eventhouse, Eventstream, KQL schema, dashboard |
+| 3 | `deploy-fhir.ps1 -RunDicom` | Builds DICOM loader container, downloads TCIA, re-tags, uploads to ADLS Gen2 |
+| 3b | `storage-access-trusted-workspace.ps1` | Creates OneLake shortcut + invokes HDS clinical, imaging, and OMOP pipelines |
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
 | 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
 | 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) |

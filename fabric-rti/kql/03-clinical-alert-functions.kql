@@ -32,7 +32,6 @@
         readings  = count(),
         avg_spo2  = round(avg(todouble(telemetry.spo2)), 1),
         min_spo2  = round(min(todouble(telemetry.spo2)), 1),
-        last_spo2 = round(arg_max(todatetime(timestamp), todouble(telemetry.spo2)), 1),
         last_time = max(todatetime(timestamp))
       by device_id
     | where min_spo2 < 94 or avg_spo2 < 95

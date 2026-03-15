@@ -102,7 +102,7 @@ Healthcare Data Foundations is the prerequisite capability that provides the med
 | `healthcare#_msft_fhir_ndjson_bronze_ingestion` | Notebook | Ingests NDJSON files into Bronze |
 | `healthcare#_msft_raw_process_movement` | Notebook | Moves processed files |
 | `healthcare#_msft_fhir_flattening_sample` | Notebook | Sample flattening patterns |
-| `healthcare#_msft_clinical_data_foundation_ingestion` | Pipeline | End-to-end ingestion pipeline |
+| `healthcare#_msft_clinical_data_foundation_ingestion` | Pipeline | End-to-end ingestion pipeline |\n| `healthcare#_msft_imaging_with_clinical_foundation_ingestion` | Pipeline | DICOM imaging ingestion pipeline |\n| `healthcare#_msft_omop_analytics` | Pipeline | Silver → Gold OMOP CDM v5.4 transformation |
 | Admin Lakehouse | Lakehouse | Config + execution tracking |
 | Bronze Lakehouse | Lakehouse | Raw/staged FHIR data |
 | Silver Lakehouse | Lakehouse | Flattened FHIR R4 tables |

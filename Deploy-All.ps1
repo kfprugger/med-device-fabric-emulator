@@ -4,6 +4,7 @@
 # Sequence:
 #   Step 1 — Base Azure infrastructure (Event Hub, ACR, emulator container)
 #   Step 2 — FHIR Service + Synthea patient generation + FHIR data load
+#   Step 2b— DICOM infrastructure + TCIA download, re-tag, upload
 #   Step 3 — Fabric RTI Phase 1 (workspace, Eventhouse, KQL, FHIR $export)
 #   Step 4 — Guidance for Healthcare Data Solutions (manual Fabric portal step)
 #   Step 5 — Fabric RTI Phase 2 [optional, after HDS deployed]:
@@ -11,6 +12,8 @@
 #              b. Trigger HDS clinical pipeline (NDJSON → Bronze → Silver)
 #              c. KQL shortcuts to Silver Lakehouse
 #              d. Enriched fn_ClinicalAlerts function
+#   Step 5b— DICOM shortcut + HDS clinical, imaging, and OMOP pipelines
+#   Step 6 — Data Agents (Patient 360 + Clinical Triage)
 #
 # Usage:
 #   .\Deploy-All.ps1                                                  # Full pipeline up to Phase 1
@@ -39,9 +42,11 @@ param (
     # ── Step control ──
     [switch]$SkipBaseInfra,          # Skip deploy.ps1 (emulator infra already exists)
     [switch]$SkipFhir,               # Skip deploy-fhir.ps1 (FHIR data already loaded)
+    [switch]$SkipDicom,              # Skip DICOM infra + loader
     [switch]$SkipFabric,             # Skip deploy-fabric-rti.ps1 entirely
     [switch]$Phase2Only,             # Run only Fabric Phase 2
     [switch]$RebuildContainers,      # Force container image rebuilds
+    [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
 
     # ── Cleanup ──
@@ -174,6 +179,7 @@ if ($Teardown) {
     $skips = @()
     if ($SkipBaseInfra) { $skips += "Base Infra" }
     if ($SkipFhir) { $skips += "FHIR/Synthea" }
+    if ($SkipDicom) { $skips += "DICOM" }
     if ($SkipFabric) { $skips += "Fabric" }
     if ($skips.Count -gt 0) {
         Write-Host "  SKIPPING: $($skips -join ', ')" -ForegroundColor Yellow
@@ -225,9 +231,15 @@ if ($Phase2Only) {
         & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
     }
 
-    Write-Summary
-    Pop-Location
-    exit 0
+    # DICOM shortcut + HDS pipelines (clinical, imaging, OMOP)
+    if (-not $SkipDicom) {
+        Invoke-Step -StepName "DICOM Shortcut + HDS Pipelines" `
+            -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
+            & "$ScriptDir\storage-access-trusted-workspace.ps1" `
+                -FabricWorkspaceName $FabricWorkspaceName `
+                -ResourceGroupName $ResourceGroupName
+        }
+    }
 }
 
 # ============================================================================
@@ -316,11 +328,42 @@ if (-not $SkipFhir) {
             PatientCount       = $PatientCount
         }
         if ($RebuildContainers) { $fhirArgs['RebuildContainers'] = $true }
+        if ($Tags.Count -gt 0) { $fhirArgs['Tags'] = $Tags }
 
         & "$ScriptDir\deploy-fhir.ps1" @fhirArgs
     }
 } else {
     Write-Host "  >>  Skipping FHIR / Synthea (--SkipFhir)" -ForegroundColor DarkGray
+}
+
+# ============================================================================
+# STEP 2b — DICOM SERVICE + TCIA LOADER
+# ============================================================================
+
+if (-not $SkipDicom -and -not $SkipFhir) {
+    Invoke-Step -StepName "DICOM Service + Loader" `
+        -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
+        Write-Host "  This step will:" -ForegroundColor White
+        Write-Host "    [1/3] Build DICOM Loader container image in ACR" -ForegroundColor DarkGray
+        Write-Host "    [2/3] Deploy DICOM service into HDS workspace" -ForegroundColor DarkGray
+        Write-Host "    [3/3] Run DICOM Loader (TCIA download, re-tag, STOW-RS upload)" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $dicomArgs = @{
+            ResourceGroupName  = $ResourceGroupName
+            Location           = $Location
+            AdminSecurityGroup = $AdminSecurityGroup
+            RunDicom           = $true
+        }
+        if ($RebuildContainers) { $dicomArgs['RebuildContainers'] = $true }
+        if ($Tags.Count -gt 0) { $dicomArgs['Tags'] = $Tags }
+
+        & "$ScriptDir\deploy-fhir.ps1" @dicomArgs
+    }
+} elseif ($SkipDicom) {
+    Write-Host "  >>  Skipping DICOM (--SkipDicom)" -ForegroundColor DarkGray
+} else {
+    Write-Host "  >>  Skipping DICOM (FHIR was skipped)" -ForegroundColor DarkGray
 }
 
 # ============================================================================
@@ -393,7 +436,7 @@ if (-not $SkipFabric) {
 }
 
 # ============================================================================
-# STEP 5 — DATA AGENTS (after Phase 2)
+# STEP 6 — DATA AGENTS (after Phase 2 + OMOP)
 # ============================================================================
 
 # Deploy Data Agents if running Phase 2 or if the Silver Lakehouse is available

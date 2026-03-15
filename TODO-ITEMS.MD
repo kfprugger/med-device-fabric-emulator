@@ -80,7 +80,7 @@
 - [ ] Add a **SMART on FHIR** app registration to enable third-party EHR integration (Epic, Cerner) for bidirectional data exchange. **STRETCH GOAL**
 - [ ] Implement **FHIR Bulk Export** ($export) on a schedule to keep the Silver Lakehouse in sync with the FHIR Service as new data arrives (beyond the initial HDS load)
 - [ ] Add support for **HL7v2 ADT feeds** via an Azure Integration account or Logic App for real-time admit/discharge/transfer events. **STRETCH GOAL**
-- [ ] Explore **DICOM → ImagingStudy** enrichment using Azure Health Data Services DICOM service to link radiology images with FHIR ImagingStudy resources
+- [ ] Explore **DICOM → ImagingStudy** enrichment using Azure Health Data Services DICOM service to link radiology images with FHIR ImagingStudy resources ✅ **IMPLEMENTED** — see `dicom-loader/`, `bicep/dicom-infra.bicep`, `deploy-fhir.ps1 -RunDicom`
 
 ### 10. Performance & Cost Optimization
 - [ ] Enable **Eventhouse data retention policies** to age-off raw telemetry older than 90 days (archive to OneLake cold tier)

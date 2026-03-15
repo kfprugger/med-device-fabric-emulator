@@ -272,7 +272,7 @@ $lhFewShots = @(
     @{
         id       = "c1c2c3c4-8888-4000-c000-000000000008"
         question = "Show recent observations or lab results"
-        query    = "SELECT TOP 50 JSON_VALUE(code_string, '`$.coding[0].display') AS observation_type, valueQuantity_value, valueQuantity_unit, effectiveDateTime FROM dbo.Observation ORDER BY effectiveDateTime DESC"
+        query    = "SELECT TOP 50 JSON_VALUE(code_string, '`$.coding[0].display') AS observation_type, JSON_VALUE(valueQuantity_string, '`$.value') AS value, JSON_VALUE(valueQuantity_string, '`$.unit') AS unit, effectiveDateTime FROM dbo.Observation ORDER BY effectiveDateTime DESC"
     },
     @{
         id       = "c1c2c3c4-9999-4000-c000-000000000009"
@@ -308,6 +308,16 @@ $lhFewShots = @(
         id       = "c1c2c3c4-ffff-4000-c000-000000000015"
         question = "Show imaging studies"
         query    = "SELECT TOP 50 * FROM dbo.ImagingStudy ORDER BY started DESC"
+    },
+    @{
+        id       = "c1c2c3c4-0016-4000-c000-000000000016"
+        question = "Get patient demographics and device info for device MASIMO-RADIUS7-0033"
+        query    = "SELECT JSON_VALUE(b.extension, '`$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '`$.display') AS patient_name, JSON_VALUE(b.subject_string, '`$.idOrig') AS patient_id, p.gender, p.birthDate, p.address_string FROM dbo.Basic b LEFT JOIN dbo.Patient p ON JSON_VALUE(b.subject_string, '`$.idOrig') = p.idOrig WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%'"
+    },
+    @{
+        id       = "c1c2c3c4-0017-4000-c000-000000000017"
+        question = "Full patient summary: demographics, conditions, medications, procedures, immunizations, and imaging for device MASIMO-RADIUS7-0033"
+        query    = "SELECT JSON_VALUE(b.subject_string, '`$.display') AS patient_name, 'Condition' AS record_type, JSON_VALUE(c.code_string, '`$.coding[0].display') AS description, c.onsetDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(c.subject_string, '`$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '`$.display') AS patient_name, 'Medication' AS record_type, JSON_VALUE(m.medicationCodeableConcept_string, '`$.coding[0].display') AS description, m.authoredOn AS date_recorded FROM dbo.Basic b INNER JOIN dbo.MedicationRequest m ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(m.subject_string, '`$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '`$.display') AS patient_name, 'Procedure' AS record_type, JSON_VALUE(pr.code_string, '`$.coding[0].display') AS description, pr.performedDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.[Procedure] pr ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(pr.subject_string, '`$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '`$.display') AS patient_name, 'Immunization' AS record_type, JSON_VALUE(i.vaccineCode_string, '`$.coding[0].display') AS description, i.occurrenceDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(i.patient_string, '`$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '`$.display') AS patient_name, 'ImagingStudy' AS record_type, COALESCE(img.description, JSON_VALUE(img.modality_string, '`$[0].code')) AS description, img.started AS date_recorded FROM dbo.Basic b INNER JOIN dbo.ImagingStudy img ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(img.subject_string, '`$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '`$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '`$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' ORDER BY patient_name, record_type, date_recorded DESC"
     }
 )
 
@@ -407,7 +417,7 @@ function Deploy-DataAgent {
         Write-Host "    Open it in Fabric portal to add datasources." -ForegroundColor Yellow
     }
 
-    Write-Host "  ✓ Agent URL: https://app.fabric.microsoft.com/groups/$workspaceId/dataAgents/$agentId" -ForegroundColor Cyan
+    Write-Host "  ✓ Agent URL: https://app.fabric.microsoft.com/groups/$workspaceId/aiskills/$agentId" -ForegroundColor Cyan
     Write-Host ""
     return $agentId
 }
@@ -1090,19 +1100,31 @@ Write-Host "    KQL: TelemetryRaw + AlertHistory (inline query patterns)" -Foreg
 Write-Host "    Lakehouse: $silverLhName (Patient, Condition, Device, Location, Encounter, Basic, Observation, MedicationRequest, Procedure, Immunization, ImagingStudy)" -ForegroundColor Green
 Write-Host ""
 if ($p360Id) {
-    Write-Host "  Patient 360:     https://app.fabric.microsoft.com/groups/$workspaceId/dataAgents/$p360Id" -ForegroundColor Cyan
+    Write-Host "  Patient 360:     https://app.fabric.microsoft.com/groups/$workspaceId/aiskills/$p360Id" -ForegroundColor Cyan
 }
 if ($triageId) {
-    Write-Host "  Clinical Triage: https://app.fabric.microsoft.com/groups/$workspaceId/dataAgents/$triageId" -ForegroundColor Cyan
+    Write-Host "  Clinical Triage: https://app.fabric.microsoft.com/groups/$workspaceId/aiskills/$triageId" -ForegroundColor Cyan
 }
 Write-Host ""
 Write-Host "  SAMPLE QUESTIONS — Patient 360:" -ForegroundColor Yellow
+Write-Host "    KQL only:" -ForegroundColor DarkGray
 Write-Host "    - Show me the latest vital signs for all devices" -ForegroundColor Gray
 Write-Host "    - Which devices have SpO2 alerts right now?" -ForegroundColor Gray
+Write-Host "    Lakehouse only:" -ForegroundColor DarkGray
+Write-Host "    - List all patients with respiratory conditions linked to monitoring devices" -ForegroundColor Gray
+Write-Host "    - Show imaging studies for device MASIMO-RADIUS7-0033" -ForegroundColor Gray
+Write-Host "    Cross-datasource (KQL + Lakehouse):" -ForegroundColor DarkGray
 Write-Host "    - Give me a full patient summary for device MASIMO-RADIUS7-0033" -ForegroundColor Gray
+Write-Host "    - Which patients with respiratory conditions have low SpO2 right now?" -ForegroundColor Gray
+Write-Host "    - Show the latest vitals and all conditions for the patient on device MASIMO-RADIUS7-0001" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  SAMPLE QUESTIONS — Clinical Triage:" -ForegroundColor Yellow
+Write-Host "    KQL only:" -ForegroundColor DarkGray
+Write-Host "    - Which devices have SpO2 alerts right now?" -ForegroundColor Gray
+Write-Host "    - Show devices with abnormal pulse rate in the last 5 minutes" -ForegroundColor Gray
+Write-Host "    Cross-datasource (KQL + Lakehouse):" -ForegroundColor DarkGray
 Write-Host "    - Run a clinical triage" -ForegroundColor Gray
-Write-Host "    - Which devices have low SpO2 right now? Look up the patients." -ForegroundColor Gray
-Write-Host "    - Show the 5 devices with the lowest SpO2 and get their patient info" -ForegroundColor Gray
+Write-Host "    - Which devices have low SpO2 right now? Look up the patients and their conditions." -ForegroundColor Gray
+Write-Host "    - Show the 5 devices with the lowest SpO2 and get their patient info and diagnoses" -ForegroundColor Gray
+Write-Host "    - Find patients with COPD or asthma whose SpO2 is below 93%%" -ForegroundColor Gray
 Write-Host ""

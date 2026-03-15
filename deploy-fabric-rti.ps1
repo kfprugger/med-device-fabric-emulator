@@ -33,7 +33,8 @@ param (
     [switch]$SkipFhirExport = $false,        # Skip the automated FHIR $export step
     [switch]$Phase2 = $false,                # Run Phase 2 only (post-HDS deployment)
     [string]$SilverLakehouseId = "",         # Silver Lakehouse ID (required for Phase 2)
-    [string]$SilverLakehouseName = ""        # Silver Lakehouse display name (auto-detected if blank)
+    [string]$SilverLakehouseName = "",       # Silver Lakehouse display name (auto-detected if blank)
+    [string]$KustoUri = ""                   # Kusto Query URI (auto-detected; provide if capacity is paused)
 )
 
 $ErrorActionPreference = "Stop"
@@ -199,12 +200,9 @@ function Wait-FabricItem {
     )
 
     # Map type names to REST endpoints
-    $typeEndpoints = @{
-        "Eventhouse"  = "eventhouses"
-        "KQLDatabase" = "kqlDatabases"
-        "Eventstream" = "eventstreams"
-    }
-    $endpoint = if ($typeEndpoints.ContainsKey($ItemType)) { $typeEndpoints[$ItemType] } else { "items?type=$ItemType" }
+    # NOTE: Specific endpoints (eventhouses, kqlDatabases) may 404 in newer API versions
+    # Use generic items?type= as primary, with specific endpoints as fallback
+    $endpoint = "items?type=$ItemType"
 
     $elapsed = 0
     while ($elapsed -lt $TimeoutSeconds) {
@@ -242,10 +240,23 @@ if ($Phase2) {
     $workspaceId = $ws.id
     Write-Host "  ✓ Workspace: $FabricWorkspaceName ($workspaceId)" -ForegroundColor Green
 
-    # Re-discover KQL Database
+    # Verify HDS is deployed
+    $allItems = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items"
+    $hdsItem = $allItems.value | Where-Object { $_.type -eq 'Healthcaredatasolution' } | Select-Object -First 1
+    if (-not $hdsItem) {
+        Write-Host ""
+        Write-Host "  ERROR: Healthcare Data Solutions not found in workspace." -ForegroundColor Red
+        Write-Host "  HDS must be deployed before running Phase 2." -ForegroundColor Yellow
+        Write-Host "  Deploy HDS: Fabric portal → '$FabricWorkspaceName' → + New Item → Healthcare data solution" -ForegroundColor DarkGray
+        Write-Host "  Docs: https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/deploy" -ForegroundColor DarkCyan
+        exit 1
+    }
+    Write-Host "  ✓ HDS: $($hdsItem.displayName)" -ForegroundColor Green
+
+    # Re-discover KQL Database (use generic items API — kqlDatabases endpoint deprecated)
     $kqlDbName = "MasimoKQLDB"
     $eventhouseName = "MasimoEventhouse"
-    $kqlDbs = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases"
+    $kqlDbs = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=KQLDatabase"
     $kqlDb = $kqlDbs.value | Where-Object { $_.displayName -eq $kqlDbName -or $_.displayName -eq $eventhouseName }
     if (-not $kqlDb) {
         Write-Host "ERROR: KQL Database not found. Run Phase 1 first." -ForegroundColor Red
@@ -253,26 +264,47 @@ if ($Phase2) {
     }
     $kqlDbId = $kqlDb.id
     $kqlDbName = $kqlDb.displayName
-    $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId"
-    $kustoUri = $kqlDbDetail.queryServiceUri
-    if (-not $kustoUri) { $kustoUri = $kqlDbDetail.queryUri }
-    if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryUri } catch {} }
-    if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryServiceUri } catch {} }
+    # Try kqlDatabases/{id} detail first, fall back to items/{id}
+    $kqlDbDetail = $null
+    try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId" } catch {}
+    if (-not $kqlDbDetail) {
+        try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items/$kqlDbId" } catch {}
+    }
+    $kustoUri = $null
+    if ($kqlDbDetail) {
+        $kustoUri = $kqlDbDetail.queryServiceUri
+        if (-not $kustoUri) { $kustoUri = $kqlDbDetail.queryUri }
+        if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryUri } catch {} }
+        if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryServiceUri } catch {} }
+    }
     if (-not $kustoUri) {
-        Write-Host "  ⚠ Could not discover Kusto URI. API response properties:" -ForegroundColor Yellow
-        $kqlDbDetail | Get-Member -MemberType NoteProperty | ForEach-Object {
-            $propName = $_.Name
-            $propVal  = $kqlDbDetail.$propName
-            Write-Host "    $propName = $propVal" -ForegroundColor DarkGray
+        # Fallback: try to discover Kusto URI from Eventhouse properties
+        Write-Host "  ⚠ kqlDatabases detail API unavailable. Trying Eventhouse discovery..." -ForegroundColor Yellow
+        $ehItems = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=Eventhouse"
+        $eh = $ehItems.value | Where-Object { $_.displayName -eq $eventhouseName } | Select-Object -First 1
+        if ($eh) {
+            # Try eventhouses/{id} endpoint (requires active capacity)
+            try {
+                $ehDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/eventhouses/$($eh.id)"
+                if ($ehDetail.queryServiceUri) { $kustoUri = $ehDetail.queryServiceUri }
+                elseif ($ehDetail.queryUri) { $kustoUri = $ehDetail.queryUri }
+                elseif ($ehDetail.properties.queryServiceUri) { $kustoUri = $ehDetail.properties.queryServiceUri }
+                elseif ($ehDetail.properties.queryUri) { $kustoUri = $ehDetail.properties.queryUri }
+            } catch {}
         }
-        if ($kqlDbDetail.properties) {
-            Write-Host "    properties (nested):" -ForegroundColor DarkGray
-            $kqlDbDetail.properties | Get-Member -MemberType NoteProperty -ErrorAction SilentlyContinue | ForEach-Object {
-                $propName = $_.Name
-                $propVal  = $kqlDbDetail.properties.$propName
-                Write-Host "      $propName = $propVal" -ForegroundColor DarkGray
-            }
-        }
+    }
+    # Check if user provided KustoUri parameter
+    if (-not $kustoUri -and $KustoUri) {
+        $kustoUri = $KustoUri
+        Write-Host "  ✓ Using provided Kusto URI: $kustoUri" -ForegroundColor Green
+    }
+    if (-not $kustoUri) {
+        Write-Host "  ⚠ Could not auto-discover Kusto URI." -ForegroundColor Yellow
+        Write-Host "  This usually means the Fabric capacity is paused or the API has changed." -ForegroundColor Yellow
+        Write-Host "  Options:" -ForegroundColor White
+        Write-Host "    1. Resume the Fabric capacity and re-run this script" -ForegroundColor DarkGray
+        Write-Host "    2. Provide the URI: -KustoUri 'https://...kusto.fabric.microsoft.com'" -ForegroundColor DarkGray
+        Write-Host "    3. Find it in: Fabric portal → MasimoEventhouse → Properties → Query URI" -ForegroundColor DarkGray
         Write-Host "  ERROR: Cannot proceed without a Kusto endpoint URI." -ForegroundColor Red
         exit 1
     }
@@ -889,7 +921,7 @@ dependencies:
     Write-Host "  and qualifying conditions for severity escalation." -ForegroundColor White
     Write-Host ""
 
-    $cmd = '.create-or-alter function with (docstring = "Enriched clinical alerts — joins telemetry with HDS Silver Lakehouse patient data via Basic (DeviceAssociation) resources", folder = "ClinicalAlerts") fn_ClinicalAlerts(windowMinutes: int = 5) { let device_patient_map = external_table(''SilverBasic'') | where tostring(code.coding[0].code) == "device-assoc" | extend ext = parse_json(tostring(extension)) | mv-expand ext | where tostring(ext.url) has "associated-device" | extend device_identifier = replace_string(tostring(ext.valueReference.reference), "Device/", "") | project device_identifier, patient_orig_id = tostring(subject.idOrig); let patient_info = external_table(''SilverPatient'') | extend name_arr = parse_json(tostring(name)) | extend name_obj = name_arr[0] | project patient_orig_id = idOrig, patient_name = coalesce(tostring(name_obj.text), strcat(tostring(name_obj.given[0]), " ", tostring(name_obj.family))), gender, birthDate; let high_risk_conditions = external_table(''SilverCondition'') | extend coding = code.coding | mv-expand coding | where tostring(coding.code) in ("13645005", "84114007", "195967001", "233604007", "59621000") | summarize conditions = make_set(tostring(coding.display)) by patient_orig_id = tostring(subject.msftSourceReference) | extend conditions_str = strcat_array(conditions, ", "); let spo2_alerts = fn_SpO2Alerts(windowMinutes) | project device_id, alert_time, spo2_tier = alert_tier, spo2_value = metric_value, spo2_message = message; let pr_alerts = fn_PulseRateAlerts(windowMinutes) | project device_id, alert_time, pr_tier = alert_tier, pr_value = metric_value, pr_message = message; let vitals = TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | summarize arg_max(todatetime(timestamp), *) by device_id | project device_id, current_spo2 = todouble(telemetry.spo2), current_pr = toint(telemetry.pr), current_pi = todouble(telemetry.pi), current_sphb = todouble(telemetry.sphb), signal_iq = toint(telemetry.signal_iq); vitals | join kind=leftouter spo2_alerts on device_id | join kind=leftouter pr_alerts on device_id | where isnotempty(spo2_tier) or isnotempty(pr_tier) | join kind=leftouter device_patient_map on $left.device_id == $right.device_identifier | join kind=leftouter patient_info on patient_orig_id | join kind=leftouter high_risk_conditions on patient_orig_id | extend has_high_risk = isnotempty(conditions_str), base_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL", spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING") | extend final_tier = case(base_tier == "CRITICAL", "CRITICAL", base_tier == "URGENT" and has_high_risk, "CRITICAL", base_tier == "WARNING" and has_high_risk, "URGENT", base_tier), alert_type = case(isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC", isnotempty(spo2_tier), "SPO2_LOW", "PR_ABNORMAL") | project alert_id = strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss")), alert_time = coalesce(alert_time, alert_time1, now()), device_id, patient_id = coalesce(patient_orig_id, ""), patient_name = coalesce(patient_name, "(not linked)"), alert_tier = final_tier, alert_type, spo2 = current_spo2, pr = current_pr, pi = current_pi, sphb = current_sphb, signal_iq, qualifying_conditions = coalesce(conditions_str, ""), escalated = (final_tier != base_tier), message = strcat(final_tier, " ALERT", iff(final_tier != base_tier, " (ESCALATED)", ""), " | Patient: ", coalesce(patient_name, "Unknown"), " | Device: ", device_id, " | SpO2: ", tostring(current_spo2), "%", " | PR: ", tostring(current_pr), " bpm", iff(has_high_risk, strcat(" | Conditions: ", conditions_str), "")) | order by alert_tier asc, device_id asc }'
+    $cmd = '.create-or-alter function with (docstring = "Enriched clinical alerts — joins telemetry with HDS Silver Lakehouse patient data via Basic (DeviceAssociation) resources", folder = "ClinicalAlerts") fn_ClinicalAlerts(windowMinutes: int = 5) { let device_patient_map = external_table(''SilverBasic'') | where tostring(code.coding[0].code) == "device-assoc" | extend ext = parse_json(extension) | mv-expand ext | where tostring(ext.url) has "associated-device" | extend device_identifier = replace_string(tostring(ext.valueReference.reference), "Device/", "") | project device_identifier, patient_orig_id = tostring(subject.idOrig); let patient_info = external_table(''SilverPatient'') | extend name_obj = name[0] | project patient_orig_id = idOrig, patient_name = coalesce(tostring(name_obj.text), strcat(tostring(name_obj.given[0]), " ", tostring(name_obj.family))), gender, birthDate; let high_risk_conditions = external_table(''SilverCondition'') | mv-expand coding = code.coding | where tostring(coding.code) in ("13645005", "84114007", "195967001", "233604007", "59621000") | summarize conditions = make_set(tostring(coding.display)) by patient_orig_id = tostring(subject.msftSourceReference) | extend conditions_str = strcat_array(conditions, ", "); let spo2_alerts = fn_SpO2Alerts(windowMinutes) | project device_id, alert_time, spo2_tier = alert_tier, spo2_value = metric_value, spo2_message = message; let pr_alerts = fn_PulseRateAlerts(windowMinutes) | project device_id, alert_time, pr_tier = alert_tier, pr_value = metric_value, pr_message = message; let vitals = TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | summarize arg_max(todatetime(timestamp), *) by device_id | project device_id, current_spo2 = todouble(telemetry.spo2), current_pr = toint(telemetry.pr), current_pi = todouble(telemetry.pi), current_sphb = todouble(telemetry.sphb), signal_iq = toint(telemetry.signal_iq); vitals | join kind=leftouter spo2_alerts on device_id | join kind=leftouter pr_alerts on device_id | where isnotempty(spo2_tier) or isnotempty(pr_tier) | join kind=leftouter device_patient_map on $left.device_id == $right.device_identifier | join kind=leftouter patient_info on patient_orig_id | join kind=leftouter high_risk_conditions on patient_orig_id | extend has_high_risk = isnotempty(conditions_str), base_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL", spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING") | extend final_tier = case(base_tier == "CRITICAL", "CRITICAL", base_tier == "URGENT" and has_high_risk, "CRITICAL", base_tier == "WARNING" and has_high_risk, "URGENT", base_tier), alert_type = case(isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC", isnotempty(spo2_tier), "SPO2_LOW", "PR_ABNORMAL") | project alert_id = strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss")), alert_time = coalesce(alert_time, alert_time1, now()), device_id, patient_id = coalesce(patient_orig_id, ""), patient_name = coalesce(patient_name, "(not linked)"), alert_tier = final_tier, alert_type, spo2 = current_spo2, pr = current_pr, pi = current_pi, sphb = current_sphb, signal_iq, qualifying_conditions = coalesce(conditions_str, ""), escalated = (final_tier != base_tier), message = strcat(final_tier, " ALERT", iff(final_tier != base_tier, " (ESCALATED)", ""), " | Patient: ", coalesce(patient_name, "Unknown"), " | Device: ", device_id, " | SpO2: ", tostring(current_spo2), "%", " | PR: ", tostring(current_pr), " bpm", iff(has_high_risk, strcat(" | Conditions: ", conditions_str), "")) | order by alert_tier asc, device_id asc }'
     if (Invoke-KustoMgmt -Command $cmd -Label "fn_ClinicalAlerts (enriched with Silver LH)" @kqlParams) { $p2Success++ } else { $p2Fail++ }
 
     # Deploy fn_AlertLocationMap — joins alerts with Encounter → Location for map visualization
@@ -1265,6 +1297,25 @@ try {
 }
 
 # ============================================================================
+# PREFLIGHT: CHECK FOR HEALTHCARE DATA SOLUTIONS (informational)
+# ============================================================================
+
+Write-Host ""
+Write-Host "--- PREFLIGHT: Healthcare Data Solutions Check ---" -ForegroundColor Cyan
+
+$allItems = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items"
+$hdsItem = $allItems.value | Where-Object { $_.type -eq 'Healthcaredatasolution' } | Select-Object -First 1
+
+if ($hdsItem) {
+    Write-Host "  ✓ HDS deployed: $($hdsItem.displayName) ($($hdsItem.id))" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ Healthcare Data Solutions not yet deployed." -ForegroundColor Yellow
+    Write-Host "    Phase 1 will continue (Eventhouse, Eventstream, KQL)." -ForegroundColor DarkGray
+    Write-Host "    Deploy HDS before running Phase 2:" -ForegroundColor DarkGray
+    Write-Host "    Fabric portal → '$FabricWorkspaceName' → + New Item → Healthcare data solution" -ForegroundColor DarkGray
+}
+
+# ============================================================================
 # STEP 2: CREATE EVENTHOUSE + KQL DATABASE
 # ============================================================================
 
@@ -1277,7 +1328,7 @@ $kqlDbName = "MasimoKQLDB"
 # 2.1 Create Eventhouse
 Write-Host "  Checking for existing Eventhouse..." -ForegroundColor Gray
 try {
-    $existingEh = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/eventhouses"
+    $existingEh = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=Eventhouse"
     $eventhouse = $existingEh.value | Where-Object { $_.displayName -eq $eventhouseName }
 } catch {
     $eventhouse = $null
@@ -1840,27 +1891,44 @@ Write-Host ""
 
 # 6a. Discover the Kusto Query URI from the KQL Database
 Write-Host "  Discovering Kusto endpoint..." -ForegroundColor White
-$kqlDbInfo = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases"
+$kqlDbInfo = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=KQLDatabase"
 $kqlDbObj = $kqlDbInfo.value | Where-Object { $_.displayName -eq $kqlDbName }
 if (-not $kqlDbObj) {
     Write-Host "  ⚠ KQL Database '$kqlDbName' not found — skipping KQL deployment." -ForegroundColor Yellow
     Write-Host "    Run the KQL scripts manually: .\run-kql-scripts.ps1" -ForegroundColor Yellow
 } else {
     $kqlDbId = $kqlDbObj.id
-    $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId"
-    $kustoUri = $kqlDbDetail.queryServiceUri
-    if (-not $kustoUri) {
-        # Fallback: try queryUri or properties
-        $kustoUri = $kqlDbDetail.queryUri
+    # Try kqlDatabases/{id} detail first, fall back to items/{id}
+    $kqlDbDetail = $null
+    try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId" } catch {}
+    if (-not $kqlDbDetail) {
+        try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items/$kqlDbId" } catch {}
     }
-    if (-not $kustoUri) {
-        # Last resort: try to extract from properties
-        try { $kustoUri = $kqlDbDetail.properties.queryUri } catch {}
+    $kustoUri = $null
+    if ($kqlDbDetail) {
+        $kustoUri = $kqlDbDetail.queryServiceUri
+        if (-not $kustoUri) { $kustoUri = $kqlDbDetail.queryUri }
+        if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryUri } catch {} }
+        if (-not $kustoUri) { try { $kustoUri = $kqlDbDetail.properties.queryServiceUri } catch {} }
     }
 
     if (-not $kustoUri) {
+        # Fallback: try Eventhouse detail for queryServiceUri
+        Write-Host "  ⚠ kqlDatabases detail unavailable. Trying Eventhouse discovery..." -ForegroundColor Yellow
+        try {
+            $ehDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/eventhouses/$eventhouseId"
+            if ($ehDetail.properties.queryServiceUri) { $kustoUri = $ehDetail.properties.queryServiceUri }
+            elseif ($ehDetail.queryServiceUri) { $kustoUri = $ehDetail.queryServiceUri }
+        } catch {}
+    }
+    if (-not $kustoUri -and $KustoUri) {
+        $kustoUri = $KustoUri
+        Write-Host "  ✓ Using provided Kusto URI: $kustoUri" -ForegroundColor Green
+    }
+    if (-not $kustoUri) {
         Write-Host "  ⚠ Could not determine Kusto Query URI automatically." -ForegroundColor Yellow
-        Write-Host "    Run the KQL scripts manually: .\run-kql-scripts.ps1" -ForegroundColor Yellow
+        Write-Host "    Provide it: -KustoUri 'https://...kusto.fabric.microsoft.com'" -ForegroundColor Yellow
+        Write-Host "    Or run KQL scripts manually: .\run-kql-scripts.ps1" -ForegroundColor Yellow
     } else {
         Write-Host "  ✓ Kusto URI: $kustoUri" -ForegroundColor Green
         Write-Host "  ✓ KQL DB:    $kqlDbName (ID: $kqlDbId)" -ForegroundColor Green
@@ -1900,7 +1968,13 @@ if (-not $kqlDbObj) {
         $cmd = ".create-or-alter table AlertHistory ingestion json mapping 'AlertHistoryMapping' @'$mappingBody'"
         if (Invoke-KustoMgmt -Command $cmd -Label "AlertHistory JSON mapping" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
 
-        # --- 6d. Telemetry Functions ---
+        # --- 6d. Create TelemetryRaw table (in case Eventstream didn't auto-create it) ---
+        Write-Host ""
+        Write-Host "  Ensuring TelemetryRaw table exists..." -ForegroundColor White
+        $cmd = '.create-merge table TelemetryRaw (device_id:string, timestamp:string, telemetry:dynamic, source:string, metadata:dynamic) with (folder="Masimo")'
+        if (Invoke-KustoMgmt -Command $cmd -Label "TelemetryRaw table" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
+
+        # --- 6e. Telemetry Functions ---
         Write-Host ""
         Write-Host "  Creating telemetry functions..." -ForegroundColor White
 

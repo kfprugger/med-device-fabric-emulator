@@ -8,6 +8,8 @@
 #   .\deploy-fhir.ps1 -RunLoader               # Load FHIR data only (infra + blobs must exist)
 #   .\deploy-fhir.ps1 -RunSynthea -RunLoader   # Generate + load (infra must exist)
 #   .\deploy-fhir.ps1 -RunSynthea -RebuildContainers  # Force rebuild of container images
+#   .\deploy-fhir.ps1 -RunDicom                # DICOM infra + TCIA download + upload only
+#   .\deploy-fhir.ps1 -SkipDicom               # Full run but skip DICOM steps
 
 param (
     [string]$ResourceGroupName = "rg-medtech-rti-fhir",
@@ -17,16 +19,35 @@ param (
     [switch]$InfraOnly,
     [switch]$RunSynthea,
     [switch]$RunLoader,
-    [switch]$RebuildContainers
+    [switch]$RebuildContainers,
+    [switch]$SkipDicom,
+    [switch]$RunDicom,
+    [hashtable]$Tags = @{}
 )
 
 # Determine which steps to run
-$selectiveMode = $InfraOnly -or $RunSynthea -or $RunLoader
+$selectiveMode = $InfraOnly -or $RunSynthea -or $RunLoader -or $RunDicom
 $doInfra = -not $selectiveMode -or $InfraOnly
 $doSynthea = -not $selectiveMode -or $RunSynthea
 $doLoader = -not $selectiveMode -or $RunLoader
+$doDicom = (-not $selectiveMode -and -not $SkipDicom) -or $RunDicom
 
 $ErrorActionPreference = "Stop"
+
+# Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
+$env:PYTHONIOENCODING = "utf-8"
+
+# Serialize tags for Bicep parameter passing
+# az CLI cannot reliably receive JSON objects inline on Windows
+# Write a temp params file and reference it
+$tagsParamFile = Join-Path $env:TEMP "deploy-tags-$(Get-Random).json"
+$tagsParamContent = @{
+    '`$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+    contentVersion = '1.0.0.0'
+    parameters = @{ resourceTags = @{ value = if ($Tags.Count -gt 0) { $Tags } else { @{} } } }
+}
+$tagsParamContent | ConvertTo-Json -Depth 5 | Set-Content $tagsParamFile -Encoding utf8
+$tagsParamRef = "@$tagsParamFile"
 
 # Change to script directory so relative paths work
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -46,6 +67,7 @@ if ($selectiveMode) {
     if ($InfraOnly) { $modes += "InfraOnly" }
     if ($RunSynthea) { $modes += "RunSynthea" }
     if ($RunLoader) { $modes += "RunLoader" }
+    if ($RunDicom) { $modes += "RunDicom" }
     if ($RebuildContainers) { $modes += "RebuildContainers" }
     Write-Host "Mode: $($modes -join ' + ')" -ForegroundColor Yellow
 } else {
@@ -149,6 +171,7 @@ if (-not $infraExists) {
         --resource-group $ResourceGroupName `
         --template-file bicep/fhir-infra.bicep `
         --parameters adminGroupObjectId="$adminGroupObjectId" `
+        --parameters $tagsParamRef `
         --query properties.outputs 2>&1
 
     if ($LASTEXITCODE -ne 0) {
@@ -254,7 +277,8 @@ az deployment group create `
                  containerName=$containerName `
                  patientCount=$PatientCount `
                  aciIdentityId=$aciIdentityId `
-                 aciIdentityClientId=$aciIdentityClientId
+                 aciIdentityClientId=$aciIdentityClientId `
+    --parameters $tagsParamRef
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR deploying Synthea job" -ForegroundColor Red
@@ -393,7 +417,8 @@ az deployment group create `
                  containerName=$containerName `
                  fhirServiceUrl=$fhirServiceUrl `
                  aciIdentityId=$aciIdentityId `
-                 aciIdentityClientId=$aciIdentityClientId
+                 aciIdentityClientId=$aciIdentityClientId `
+    --parameters $tagsParamRef
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR deploying FHIR Loader job" -ForegroundColor Red
@@ -478,7 +503,145 @@ az container logs --resource-group $ResourceGroupName --name fhir-loader-job 2>$
 }
 
 # ============================================
-# STEP 6: Verification & Summary
+# STEP 6: Build DICOM Loader Container
+# ============================================
+if ($doDicom) {
+Write-Host ""
+Write-Host "--- STEP 6: DICOM LOADER CONTAINER IMAGE ---" -ForegroundColor Cyan
+
+$dicomImageExists = az acr repository show-tags --name $acrName --repository dicom-loader --query "contains(@, 'v1')" -o tsv 2>$null
+
+if ($dicomImageExists -eq "true" -and -not $RebuildContainers) {
+    Write-Host "DICOM Loader image already exists in ACR - skipping build" -ForegroundColor Green
+    Write-Host "  Use -RebuildContainers to force a rebuild" -ForegroundColor DarkGray
+} else {
+    if ($RebuildContainers) {
+        Write-Host "Rebuilding DICOM Loader container (forced)..." -ForegroundColor Cyan
+    } else {
+        Write-Host "Building DICOM Loader container (first time)..." -ForegroundColor Cyan
+    }
+    Push-Location dicom-loader
+    try {
+        az acr build --registry $acrName --image "dicom-loader:v1" .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR building DICOM Loader container" -ForegroundColor Red
+            exit 1
+        }
+    } finally {
+        Pop-Location
+    }
+    Write-Host "DICOM Loader container built successfully" -ForegroundColor Green
+}
+
+# ============================================
+# STEP 7: Run DICOM Loader Job
+# ============================================
+Write-Host ""
+Write-Host "--- STEP 7: RUNNING DICOM LOADER ---" -ForegroundColor Cyan
+Write-Host "Downloading TCIA studies, re-tagging, and uploading to ADLS Gen2..."
+Write-Host "This may take 30-60 minutes..." -ForegroundColor Yellow
+
+# Delete existing DICOM loader job
+Write-Host "Removing previous DICOM Loader container job..." -ForegroundColor DarkGray
+az container delete --resource-group $ResourceGroupName --name dicom-loader-job --yes 2>$null | Out-Null
+
+$dicomImage = "$acrLoginServer/dicom-loader:v1"
+
+az deployment group create `
+    --resource-group $ResourceGroupName `
+    --template-file bicep/dicom-loader-job.bicep `
+    --parameters acrName=$acrName `
+                 imageName=$dicomImage `
+                 storageAccountName=$storageAccountName `
+                 fhirServiceUrl=$fhirServiceUrl `
+                 aciIdentityId=$aciIdentityId `
+                 aciIdentityClientId=$aciIdentityClientId `
+    --parameters $tagsParamRef
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR deploying DICOM Loader job" -ForegroundColor Red
+    exit 1
+}
+
+# Wait for DICOM Loader to complete with live log streaming
+Write-Host "Waiting for DICOM processing to complete..."
+Write-Host ""
+$maxWaitMinutes = 120
+$waitedMinutes = 0
+$lastLogLines = 0
+
+while ($waitedMinutes -lt $maxWaitMinutes) {
+    $state = az container show `
+        --resource-group $ResourceGroupName `
+        --name dicom-loader-job `
+        --query "instanceView.state" -o tsv 2>$null
+
+    if ($state -eq "Succeeded") {
+        Write-Host ""
+        Write-Host "DICOM processing completed successfully!" -ForegroundColor Green
+        break
+    } elseif ($state -eq "Failed") {
+        Write-Host ""
+        Write-Host "ERROR: DICOM processing failed" -ForegroundColor Red
+        az container logs --resource-group $ResourceGroupName --name dicom-loader-job
+        exit 1
+    } elseif ($state -eq "Terminated") {
+        $exitCode = az container show `
+            --resource-group $ResourceGroupName `
+            --name dicom-loader-job `
+            --query "containers[0].instanceView.currentState.exitCode" -o tsv 2>$null
+
+        if ($exitCode -eq "0") {
+            Write-Host ""
+            Write-Host "DICOM processing completed successfully!" -ForegroundColor Green
+            break
+        } else {
+            Write-Host ""
+            Write-Host "ERROR: DICOM processing failed with exit code $exitCode" -ForegroundColor Red
+            az container logs --resource-group $ResourceGroupName --name dicom-loader-job
+            exit 1
+        }
+    }
+
+    # Stream progress from container logs
+    if ($state -eq "Running") {
+        $logs = az container logs --resource-group $ResourceGroupName --name dicom-loader-job 2>$null
+        if ($logs) {
+            $logLines = @($logs -split "`n")
+            if ($logLines.Count -gt $lastLogLines) {
+                $newLines = $logLines[$lastLogLines..($logLines.Count - 1)]
+                foreach ($line in $newLines) {
+                    if ($line -match "Patient|Download|Upload|Re-tag|DICOM|study|Complete|Error|series|instances") {
+                        Write-Host "  [DICOM] $line" -ForegroundColor DarkCyan
+                    }
+                }
+                $lastLogLines = $logLines.Count
+            }
+        }
+    }
+
+    Write-Host "  Status: $state (waited $waitedMinutes min)" -ForegroundColor DarkGray
+    Start-Sleep -Seconds 30
+    $waitedMinutes += 0.5
+}
+
+if ($waitedMinutes -ge $maxWaitMinutes) {
+    Write-Host "ERROR: DICOM processing timed out" -ForegroundColor Red
+    exit 1
+}
+
+# Show DICOM Loader logs
+Write-Host ""
+Write-Host "DICOM Loader logs (last 30 lines):" -ForegroundColor Gray
+az container logs --resource-group $ResourceGroupName --name dicom-loader-job 2>$null | Select-Object -Last 30
+
+} else {
+    Write-Host ""
+    Write-Host "--- STEP 6-7: SKIPPING DICOM (not selected or --SkipDicom) ---" -ForegroundColor DarkGray
+}
+
+# ============================================
+# STEP 9: Verification & Summary
 # ============================================
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
@@ -513,3 +676,5 @@ Write-Host "  az rest --method GET --url '$fhirServiceUrl/Patient?_count=10' --r
 } finally {
     Pop-Location
 }
+
+

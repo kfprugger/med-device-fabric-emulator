@@ -6,11 +6,13 @@ param workspaceName string = 'hdws${uniqueString(resourceGroup().id)}'
 param fhirServiceName string = 'fhir${uniqueString(resourceGroup().id)}'
 param storageAccountName string = 'stfhir${uniqueString(resourceGroup().id)}'
 param adminGroupObjectId string = ''
+param resourceTags object = {}
 
 // Storage Account for Synthea output (ADLS Gen 2 with Hierarchical Namespace)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
+  tags: resourceTags
   sku: {
     name: 'Standard_LRS'
   }
@@ -52,10 +54,20 @@ resource fhirExportContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
+// Blob container for re-tagged DICOM files (ready for Fabric import)
+resource dicomOutputContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobServices
+  name: 'dicom-output'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // Health Data Services Workspace
 resource healthWorkspace 'Microsoft.HealthcareApis/workspaces@2023-11-01' = {
   name: workspaceName
   location: location
+  tags: resourceTags
   properties: {}
 }
 
@@ -64,6 +76,7 @@ resource fhirService 'Microsoft.HealthcareApis/workspaces/fhirservices@2023-11-0
   parent: healthWorkspace
   name: fhirServiceName
   location: location
+  tags: resourceTags
   kind: 'fhir-R4'
   identity: {
     type: 'SystemAssigned'
@@ -165,6 +178,7 @@ resource healthWorkspaceReaderRole 'Microsoft.Authorization/roleAssignments@2022
 resource aciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-aci-fhir-jobs'
   location: location
+  tags: resourceTags
 }
 
 // Storage Blob Data Contributor — Synthea needs to write, Loader needs to read

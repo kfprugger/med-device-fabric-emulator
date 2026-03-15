@@ -1,0 +1,688 @@
+WARNING: Packing source code into tar to upload...
+WARNING: Excluding '.git' based on default ignore rules
+WARNING: Uploading archived source code from 'C:\Users\joeyb\AppData\Local\Temp\build_archive_9363337386b5437a83861b716d5c829b.tar.gz'...
+WARNING: Sending context (578.670 KiB) to registry: masimoth5y4kfhjahpmacr...
+WARNING: Queued a build with ID: ca1
+WARNING: Waiting for an agent...
+2026/03/13 13:48:23 Downloading source code...
+
+2026/03/13 13:48:23 Finished downloading source code
+
+2026/03/13 13:48:24 Using acb_vol_13dd8f5c-663d-4367-bd59-1f9c37e0c022 as the home volume
+2026/03/13 13:48:24 Setting up Docker configuration...
+2026/03/13 13:48:24 Successfully set up Docker configuration
+2026/03/13 13:48:24 Logging in to registry: masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 13:48:25 Successfully logged into masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 13:48:25 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/03/13 13:48:25 Scanning for dependencies...
+2026/03/13 13:48:25 Successfully scanned dependencies
+2026/03/13 13:48:25 Launching container with name: build
+Sending build context to Docker daemon  1.411MB
+
+
+
+Step 1/6 : FROM python:3.9-slim
+3.9-slim: Pulling from library/python
+38513bd72563: Pulling fs layer
+b3ec39b36ae8: Pulling fs layer
+fc7443084902: Pulling fs layer
+ea56f685404a: Pulling fs layer
+ea56f685404a: Waiting
+b3ec39b36ae8: Download complete
+fc7443084902: Verifying Checksum
+fc7443084902: Download complete
+ea56f685404a: Verifying Checksum
+ea56f685404a: Download complete
+38513bd72563: Verifying Checksum
+38513bd72563: Download complete
+38513bd72563: Pull complete
+
+b3ec39b36ae8: Pull complete
+fc7443084902: Pull complete
+ea56f685404a: Pull complete
+Digest: sha256:2d97f6910b16bd338d3060f261f53f144965f755599aab1acda1e13cf1731b1b
+Status: Downloaded newer image for python:3.9-slim
+ ---> 085da638e1b8
+Step 2/6 : ENV PYTHONUNBUFFERED=1
+ ---> Running in 3219ad2e3f42
+Removing intermediate container 3219ad2e3f42
+ ---> fd3643acd2e1
+Step 3/6 : RUN pip install azure-eventhub azure-identity azure-keyvault-secrets
+ ---> Running in 9599d267689a
+Collecting azure-eventhub
+
+ERROR: The command failed with an unexpected error. Here is the traceback:
+ERROR: 'charmap' codec can't encode characters in position 68-105: character maps to <undefined>
+Traceback (most recent call last):
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 737, in _run_jobs_serially
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 706, in _run_job
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 336, in __call__
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/command_operation.py", line 120, in handler
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/build.py", line 149, in acr_build
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 56, in stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 126, in _stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 47, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 177, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
+  File "encodings\cp1252.py", line 19, in encode
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 68-105: character maps to <undefined>
+To check existing issues, please visit: https://github.com/Azure/azure-cli/issues
+ERROR: {"status":"Failed","error":{"code":"DeploymentFailed","target":"/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.Resources/deployments/emulator","message":"At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/arm-deployment-operations for usage details.","details":[{"code":"InaccessibleImage","message":"The image 'masimoth5y4kfhjahpmacr.azurecr.io/masimo-emulator:v1' in container group 'masimo-emulator-grp' is not accessible. Please check the image and registry credential."}]}}
+WARNING: Packing source code into tar to upload...
+WARNING: Uploading archived source code from 'C:\Users\joeyb\AppData\Local\Temp\build_archive_e2ed99582183432d9b4ad4faa14edcce.tar.gz'...
+WARNING: Sending context (3.416 KiB) to registry: masimoth5y4kfhjahpmacr...
+WARNING: Queued a build with ID: ca2
+WARNING: Waiting for an agent...
+2026/03/13 13:58:40 Downloading source code...
+
+2026/03/13 13:58:41 Finished downloading source code
+
+2026/03/13 13:58:41 Using acb_vol_80b0d434-d92a-4db9-b621-abcb6ff74251 as the home volume
+2026/03/13 13:58:41 Setting up Docker configuration...
+2026/03/13 13:58:42 Successfully set up Docker configuration
+2026/03/13 13:58:42 Logging in to registry: masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 13:58:42 Successfully logged into masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 13:58:42 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/03/13 13:58:42 Scanning for dependencies...
+2026/03/13 13:58:43 Successfully scanned dependencies
+2026/03/13 13:58:43 Launching container with name: build
+Sending build context to Docker daemon  20.99kB
+
+
+
+Step 1/12 : FROM eclipse-temurin:17-jre
+17-jre: Pulling from library/eclipse-temurin
+01d7766a2e4a: Pulling fs layer
+0e61c1c7634c: Pulling fs layer
+8b1d73e22a56: Pulling fs layer
+69cbb3f549f1: Pulling fs layer
+a61892f0e6a4: Pulling fs layer
+69cbb3f549f1: Waiting
+a61892f0e6a4: Waiting
+0e61c1c7634c: Verifying Checksum
+0e61c1c7634c: Download complete
+69cbb3f549f1: Download complete
+a61892f0e6a4: Verifying Checksum
+a61892f0e6a4: Download complete
+01d7766a2e4a: Verifying Checksum
+01d7766a2e4a: Download complete
+01d7766a2e4a: Pull complete
+
+0e61c1c7634c: Pull complete
+8b1d73e22a56: Verifying Checksum
+8b1d73e22a56: Download complete
+8b1d73e22a56: Pull complete
+
+69cbb3f549f1: Pull complete
+a61892f0e6a4: Pull complete
+Digest: sha256:7a7b6ad2ab918a29b9b2b87b34158a4b5ad20d23dee33687306359eca2d8063e
+Status: Downloaded newer image for eclipse-temurin:17-jre
+ ---> 9745e979779d
+Step 2/12 : RUN apt-get update && apt-get install -y wget unzip curl apt-transport-https lsb-release gnupg ca-certificates     && curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg     && echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list     && apt-get update && apt-get install -y azure-cli     && rm -rf /var/lib/apt/lists/*
+ ---> Running in 2d847e9bdaa8
+Get:1 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+Get:2 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:3 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1,261 kB]
+Get:4 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:5 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:6 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+Get:7 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [3,315 kB]
+Get:8 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [34.8 kB]
+Get:9 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1,906 kB]
+Get:10 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+
+Get:11 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1,808 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [2,027 kB]
+Get:14 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2,287 kB]
+Get:15 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [38.1 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [3,486 kB]
+Get:17 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [79.5 kB]
+Get:18 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [40.6 kB]
+Get:19 http://archive.ubuntu.com/ubuntu noble-backports/multiverse amd64 Packages [695 B]
+Fetched 36.7 MB in 3s (14.2 MB/s)
+Reading package lists...
+Reading package lists...
+
+Building dependency tree...
+Reading state information...
+wget is already the newest version (1.21.4-1ubuntu4.1).
+gnupg is already the newest version (2.4.4-2ubuntu17.4).
+ca-certificates is already the newest version (20240203).
+The following additional packages will be installed:
+  libcurl4t64
+Suggested packages:
+  zip
+The following NEW packages will be installed:
+  apt-transport-https lsb-release unzip
+The following packages will be upgraded:
+  curl libcurl4t64
+2 upgraded, 3 newly installed, 0 to remove and 13 not upgraded.
+Need to get 753 kB of archives.
+After this operation, 438 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu noble/main amd64 lsb-release all 12.0-2 [6,564 B]
+Get:2 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 apt-transport-https all 2.8.3 [3,970 B]
+Get:3 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 curl amd64 8.5.0-2ubuntu10.8 [227 kB]
+Get:4 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libcurl4t64 amd64 8.5.0-2ubuntu10.8 [342 kB]
+Get:5 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 unzip amd64 6.0-28ubuntu4.1 [174 kB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 753 kB in 1s (828 kB/s)
+Selecting previously unselected package lsb-release.
+
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6592 files and directories currently installed.)
+
+Preparing to unpack .../lsb-release_12.0-2_all.deb ...
+
+Unpacking lsb-release (12.0-2) ...
+
+Selecting previously unselected package apt-transport-https.
+
+Preparing to unpack .../apt-transport-https_2.8.3_all.deb ...
+
+Unpacking apt-transport-https (2.8.3) ...
+
+Preparing to unpack .../curl_8.5.0-2ubuntu10.8_amd64.deb ...
+
+Unpacking curl (8.5.0-2ubuntu10.8) over (8.5.0-2ubuntu10.6) ...
+
+Preparing to unpack .../libcurl4t64_8.5.0-2ubuntu10.8_amd64.deb ...
+
+Unpacking libcurl4t64:amd64 (8.5.0-2ubuntu10.8) over (8.5.0-2ubuntu10.6) ...
+
+Selecting previously unselected package unzip.
+
+Preparing to unpack .../unzip_6.0-28ubuntu4.1_amd64.deb ...
+
+Unpacking unzip (6.0-28ubuntu4.1) ...
+
+Setting up apt-transport-https (2.8.3) ...
+
+Setting up libcurl4t64:amd64 (8.5.0-2ubuntu10.8) ...
+
+Setting up unzip (6.0-28ubuntu4.1) ...
+
+Setting up curl (8.5.0-2ubuntu10.8) ...
+
+Setting up lsb-release (12.0-2) ...
+
+Processing triggers for libc-bin (2.39-0ubuntu8.7) ...
+
+Get:1 https://packages.microsoft.com/repos/azure-cli noble InRelease [3,564 B]
+Get:2 https://packages.microsoft.com/repos/azure-cli noble/main amd64 Packages [2,072 B]
+Hit:3 http://archive.ubuntu.com/ubuntu noble InRelease
+
+Hit:4 http://security.ubuntu.com/ubuntu noble-security InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:6 http://archive.ubuntu.com/ubuntu noble-backports InRelease
+Fetched 5,636 B in 0s (12.1 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+
+Reading state information...
+The following NEW packages will be installed:
+  azure-cli
+0 upgraded, 1 newly installed, 0 to remove and 13 not upgraded.
+Need to get 54.2 MB of archives.
+After this operation, 610 MB of additional disk space will be used.
+Get:1 https://packages.microsoft.com/repos/azure-cli noble/main amd64 azure-cli amd64 2.84.0-1~noble [54.2 MB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 54.2 MB in 0s (228 MB/s)
+Selecting previously unselected package azure-cli.
+
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6619 files and directories currently installed.)
+
+Preparing to unpack .../azure-cli_2.84.0-1~noble_amd64.deb ...
+
+Unpacking azure-cli (2.84.0-1~noble) ...
+
+Setting up azure-cli (2.84.0-1~noble) ...
+
+
+Removing intermediate container 2d847e9bdaa8
+ ---> 98f1525bcc29
+Step 3/12 : WORKDIR /synthea
+
+ ---> Running in a5bd7593fb05
+Removing intermediate container a5bd7593fb05
+ ---> 0d28c3331ab4
+Step 4/12 : RUN wget -q https://github.com/synthetichealth/synthea/releases/download/master-branch-latest/synthea-with-dependencies.jar
+ ---> Running in 8733a4f1174d
+Removing intermediate container 8733a4f1174d
+ ---> 86b63748bee2
+Step 5/12 : COPY synthea.properties /synthea/synthea.properties
+
+ ---> f58111f1d183
+Step 6/12 : COPY atlanta_providers.json /synthea/atlanta_providers.json
+ ---> ea73dcbf5e8b
+Step 7/12 : COPY run-synthea.sh /synthea/run-synthea.sh
+
+ ---> 20845303befe
+Step 8/12 : RUN chmod +x /synthea/run-synthea.sh
+ ---> Running in ad939ec4ff4a
+Removing intermediate container ad939ec4ff4a
+ ---> 93a1dd06e64a
+Step 9/12 : RUN mkdir -p /output
+
+ ---> Running in 92a81f549e28
+Removing intermediate container 92a81f549e28
+ ---> eb8fee44d00b
+Step 10/12 : ENV PATIENT_COUNT=10000
+ ---> Running in d6fac851223b
+Removing intermediate container d6fac851223b
+ ---> 628ce6942f75
+Step 11/12 : ENV JAVA_OPTS="-Xms4g -Xmx7g"
+
+ ---> Running in c18a63dcb514
+Removing intermediate container c18a63dcb514
+ ---> 72662f90048a
+Step 12/12 : ENTRYPOINT ["/synthea/run-synthea.sh"]
+ ---> Running in 2557d354079f
+Removing intermediate container 2557d354079f
+ ---> 67d448ab6e76
+Successfully built 67d448ab6e76
+
+Successfully tagged masimoth5y4kfhjahpmacr.azurecr.io/synthea-generator:v1
+2026/03/13 13:59:24 Successfully executed container: build
+2026/03/13 13:59:24 Executing step ID: push. Timeout(sec): 3600, Working directory: '', Network: ''
+2026/03/13 13:59:24 Pushing image: masimoth5y4kfhjahpmacr.azurecr.io/synthea-generator:v1, attempt 1
+The push refers to repository [masimoth5y4kfhjahpmacr.azurecr.io/synthea-generator]
+b3a05ca624a5: Preparing
+8865e02686e3: Preparing
+887645e03b5b: Preparing
+70903573699a: Preparing
+777747356712: Preparing
+652648cecf69: Preparing
+2bbeb8e07468: Preparing
+f24ff006134e: Preparing
+7f1c413e5beb: Preparing
+b8855460b017: Preparing
+3a6c9fd2622f: Preparing
+56cec5c0bb4a: Preparing
+efafae78d70c: Preparing
+652648cecf69: Waiting
+2bbeb8e07468: Waiting
+f24ff006134e: Waiting
+7f1c413e5beb: Waiting
+b8855460b017: Waiting
+3a6c9fd2622f: Waiting
+56cec5c0bb4a: Waiting
+efafae78d70c: Waiting
+8865e02686e3: Pushed
+777747356712: Pushed
+887645e03b5b: Pushed
+b3a05ca624a5: Pushed
+70903573699a: Pushed
+7f1c413e5beb: Pushed
+
+2bbeb8e07468: Pushed
+b8855460b017: Pushed
+652648cecf69: Pushed
+
+efafae78d70c: Pushed
+56cec5c0bb4a: Pushed
+
+3a6c9fd2622f: Pushed
+f24ff006134e: Pushed
+
+v1: digest: sha256:35e04bf5c867bd5d6382d495111f8f88ad7f39fbc0d551bafffe442ebbd86b74 size: 3035
+2026/03/13 13:59:52 Successfully pushed image: masimoth5y4kfhjahpmacr.azurecr.io/synthea-generator:v1
+2026/03/13 13:59:52 Step ID: build marked as successful (elapsed time in seconds: 41.945103)
+2026/03/13 13:59:52 Populating digests for step ID: build...
+2026/03/13 13:59:53 Successfully populated digests for step ID: build
+2026/03/13 13:59:53 Step ID: push marked as successful (elapsed time in seconds: 27.707451)
+2026/03/13 13:59:53 The following dependencies were found:
+2026/03/13 13:59:53 
+- image:
+    registry: masimoth5y4kfhjahpmacr.azurecr.io
+    repository: synthea-generator
+    tag: v1
+    digest: sha256:35e04bf5c867bd5d6382d495111f8f88ad7f39fbc0d551bafffe442ebbd86b74
+  runtime-dependency:
+    registry: registry.hub.docker.com
+    repository: library/eclipse-temurin
+    tag: 17-jre
+    digest: sha256:7a7b6ad2ab918a29b9b2b87b34158a4b5ad20d23dee33687306359eca2d8063e
+  git: {}
+
+
+
+Run ID: ca2 was successful after 1m13s
+
+{
+  "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.Resources/deployments/synthea-job",
+  "location": null,
+  "name": "synthea-job",
+  "properties": {
+    "correlationId": "25f48df1-cf2d-404d-999f-a2e7fdb49401",
+    "debugSetting": null,
+    "dependencies": [
+      {
+        "dependsOn": [
+          {
+            "apiVersion": "2023-01-01-preview",
+            "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ContainerRegistry/registries/masimoth5y4kfhjahpmacr",
+            "resourceGroup": "rg-medtech-rti-fhir",
+            "resourceName": "masimoth5y4kfhjahpmacr",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          },
+          {
+            "actionName": "listCredentials",
+            "apiVersion": "2023-01-01-preview",
+            "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ContainerRegistry/registries/masimoth5y4kfhjahpmacr",
+            "resourceGroup": "rg-medtech-rti-fhir",
+            "resourceName": "masimoth5y4kfhjahpmacr",
+            "resourceType": "Microsoft.ContainerRegistry/registries"
+          }
+        ],
+        "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ContainerInstance/containerGroups/synthea-generator-job",
+        "resourceGroup": "rg-medtech-rti-fhir",
+        "resourceName": "synthea-generator-job",
+        "resourceType": "Microsoft.ContainerInstance/containerGroups"
+      }
+    ],
+    "diagnostics": null,
+    "duration": "PT1M3.9078063S",
+    "error": null,
+    "extensions": [],
+    "mode": "Incremental",
+    "onErrorDeployment": null,
+    "outputResources": [
+      {
+        "apiVersion": null,
+        "extension": null,
+        "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ContainerInstance/containerGroups/synthea-generator-job",
+        "identifiers": null,
+        "resourceGroup": "rg-medtech-rti-fhir",
+        "resourceType": "Microsoft.ContainerInstance/containerGroups"
+      }
+    ],
+    "outputs": {
+      "containerGroupId": {
+        "type": "String",
+        "value": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ContainerInstance/containerGroups/synthea-generator-job"
+      },
+      "containerGroupName": {
+        "type": "String",
+        "value": "synthea-generator-job"
+      }
+    },
+    "parameters": {
+      "aciIdentityClientId": {
+        "type": "String",
+        "value": "1c426833-fca8-40eb-81ef-bcb9a9f6da55"
+      },
+      "aciIdentityId": {
+        "type": "String",
+        "value": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-medtech-rti-fhir/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-aci-fhir-jobs"
+      },
+      "acrName": {
+        "type": "String",
+        "value": "masimoth5y4kfhjahpmacr"
+      },
+      "containerName": {
+        "type": "String",
+        "value": "synthea-output"
+      },
+      "imageName": {
+        "type": "String",
+        "value": "masimoth5y4kfhjahpmacr.azurecr.io/synthea-generator:v1"
+      },
+      "location": {
+        "type": "String",
+        "value": "eastus"
+      },
+      "patientCount": {
+        "type": "Int",
+        "value": 500
+      },
+      "storageAccountName": {
+        "type": "String",
+        "value": "stfhirth5y4kfhjahpm"
+      }
+    },
+    "parametersLink": null,
+    "providers": [
+      {
+        "id": null,
+        "namespace": "Microsoft.ContainerInstance",
+        "providerAuthorizationConsentState": null,
+        "registrationPolicy": null,
+        "registrationState": null,
+        "resourceTypes": [
+          {
+            "aliases": null,
+            "apiProfiles": null,
+            "apiVersions": null,
+            "capabilities": null,
+            "defaultApiVersion": null,
+            "locationMappings": null,
+            "locations": [
+              "eastus"
+            ],
+            "properties": null,
+            "resourceType": "containerGroups",
+            "zoneMappings": null
+          }
+        ]
+      }
+    ],
+    "provisioningState": "Succeeded",
+    "templateHash": "3553790334219979018",
+    "templateLink": null,
+    "timestamp": "2026-03-13T14:01:14.579574+00:00",
+    "validatedResources": null,
+    "validationLevel": null
+  },
+  "resourceGroup": "rg-medtech-rti-fhir",
+  "tags": null,
+  "type": "Microsoft.Resources/deployments"
+}
+    "Last Modified": "2026-03-13T14:03:14+00:00",
+    "Type": "application/json",
+    "eTag": "\"0x8DE810944B3A66C\""
+  },
+  {
+    "Blob": "https://stfhirth5y4kfhjahpm.blob.core.windows.net/synthea-output/Keitha498_Padberg411_3841e41b-7ef9-95ce-d924-85a9790e8f9a.json",
+    "Last Modified": "2026-03-13T14:03:14+00:00",
+    "Type": "application/json",
+    "eTag": "\"0x8DE810944B88E64\""
+  },
+  {
+    "Blob": "https://stfhirth5y4kfhjahpm.blob.core.windows.net/synthea-output/Benjamin360_Johns824_13e4ee71-db22-22f1-db4b-82ca4909c855.json",
+    "Last Modified": "2026-03-13T14:03:14+00:00",
+    "Type": "application/json",
+    "eTag": "\"0x8DE810944C0D9CC\""
+  }
+]
+=== UPLOAD COMPLETE ===
+Total blobs uploaded: 502
+
+WARNING: Packing source code into tar to upload...
+WARNING: Uploading archived source code from 'C:\Users\joeyb\AppData\Local\Temp\build_archive_7010a6e169d74430a67bb094f82ff1d0.tar.gz'...
+WARNING: Sending context (14.074 KiB) to registry: masimoth5y4kfhjahpmacr...
+WARNING: Queued a build with ID: ca3
+WARNING: Waiting for an agent...
+2026/03/13 14:03:39 Downloading source code...
+
+2026/03/13 14:03:40 Finished downloading source code
+
+2026/03/13 14:03:41 Using acb_vol_713350dd-0d39-4454-8662-ec7e2677d815 as the home volume
+2026/03/13 14:03:41 Setting up Docker configuration...
+2026/03/13 14:03:41 Successfully set up Docker configuration
+2026/03/13 14:03:41 Logging in to registry: masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 14:03:42 Successfully logged into masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 14:03:42 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/03/13 14:03:42 Scanning for dependencies...
+2026/03/13 14:03:42 Successfully scanned dependencies
+2026/03/13 14:03:42 Launching container with name: build
+Sending build context to Docker daemon  77.82kB
+
+
+
+Step 1/12 : FROM python:3.11-slim
+3.11-slim: Pulling from library/python
+206356c42440: Pulling fs layer
+206709444425: Pulling fs layer
+bbf418262cbe: Pulling fs layer
+43272e9c9d4b: Pulling fs layer
+43272e9c9d4b: Waiting
+206709444425: Verifying Checksum
+206709444425: Download complete
+43272e9c9d4b: Verifying Checksum
+43272e9c9d4b: Download complete
+bbf418262cbe: Verifying Checksum
+bbf418262cbe: Download complete
+206356c42440: Verifying Checksum
+206356c42440: Download complete
+206356c42440: Pull complete
+
+206709444425: Pull complete
+bbf418262cbe: Pull complete
+43272e9c9d4b: Pull complete
+Digest: sha256:d6e4d224f70f9e0172a06a3a2eba2f768eb146811a349278b38fff3a36463b47
+Status: Downloaded newer image for python:3.11-slim
+ ---> 7c68b5683872
+Step 2/12 : WORKDIR /app
+ ---> Running in 1d2615f2a594
+Removing intermediate container 1d2615f2a594
+ ---> 13f0d32e72f7
+Step 3/12 : COPY requirements.txt .
+ ---> a14c0a09b411
+Step 4/12 : RUN pip install --no-cache-dir -r requirements.txt
+
+ERROR: The command failed with an unexpected error. Here is the traceback:
+ERROR: 'charmap' codec can't encode characters in position 178-217: character maps to <undefined>
+Traceback (most recent call last):
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 737, in _run_jobs_serially
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 706, in _run_job
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 336, in __call__
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/command_operation.py", line 120, in handler
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/build.py", line 149, in acr_build
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 56, in stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 126, in _stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 47, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 177, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
+  File "encodings\cp1252.py", line 19, in encode
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 178-217: character maps to <undefined>
+To check existing issues, please visit: https://github.com/Azure/azure-cli/issues
+WARNING: Packing source code into tar to upload...
+WARNING: Uploading archived source code from 'C:\Users\joeyb\AppData\Local\Temp\build_archive_dd1a03c444b245db9dce02ef47d7a130.tar.gz'...
+WARNING: Sending context (17.414 KiB) to registry: masimoth5y4kfhjahpmacr...
+WARNING: Queued a build with ID: ca4
+WARNING: Waiting for an agent...
+2026/03/13 14:04:18 Downloading source code...
+
+2026/03/13 14:04:19 Finished downloading source code
+
+2026/03/13 14:04:19 Using acb_vol_8679b27b-0ce0-40b7-8467-c792590f827f as the home volume
+2026/03/13 14:04:19 Setting up Docker configuration...
+2026/03/13 14:04:20 Successfully set up Docker configuration
+2026/03/13 14:04:20 Logging in to registry: masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 14:04:20 Successfully logged into masimoth5y4kfhjahpmacr.azurecr.io
+2026/03/13 14:04:20 Executing step ID: build. Timeout(sec): 28800, Working directory: '', Network: ''
+2026/03/13 14:04:20 Scanning for dependencies...
+2026/03/13 14:04:21 Successfully scanned dependencies
+2026/03/13 14:04:21 Launching container with name: build
+Sending build context to Docker daemon  54.78kB
+
+
+
+Step 1/6 : FROM python:3.11-slim
+3.11-slim: Pulling from library/python
+206356c42440: Pulling fs layer
+206709444425: Pulling fs layer
+bbf418262cbe: Pulling fs layer
+43272e9c9d4b: Pulling fs layer
+43272e9c9d4b: Waiting
+206709444425: Verifying Checksum
+206709444425: Download complete
+bbf418262cbe: Verifying Checksum
+bbf418262cbe: Download complete
+206356c42440: Verifying Checksum
+206356c42440: Download complete
+206356c42440: Pull complete
+
+206709444425: Pull complete
+bbf418262cbe: Pull complete
+43272e9c9d4b: Verifying Checksum
+43272e9c9d4b: Download complete
+
+43272e9c9d4b: Pull complete
+Digest: sha256:d6e4d224f70f9e0172a06a3a2eba2f768eb146811a349278b38fff3a36463b47
+Status: Downloaded newer image for python:3.11-slim
+ ---> 7c68b5683872
+Step 2/6 : COPY requirements.txt .
+ ---> c23e246bc63a
+Step 3/6 : RUN pip install --no-cache-dir -r requirements.txt
+ ---> Running in 7def7e924628
+Collecting pydicom>=2.4.0 (from -r requirements.txt (line 1))
+
+ERROR: The command failed with an unexpected error. Here is the traceback:
+ERROR: 'charmap' codec can't encode characters in position 211-250: character maps to <undefined>
+Traceback (most recent call last):
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\knack/cli.py", line 233, in invoke
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 669, in execute
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 737, in _run_jobs_serially
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 706, in _run_job
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/__init__.py", line 336, in __call__
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/core/commands/command_operation.py", line 120, in handler
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/build.py", line 149, in acr_build
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 56, in stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\azure/cli/command_modules/acr/_stream_utils.py", line 126, in _stream_logs
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 47, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 177, in write
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 205, in write_and_convert
+  File "D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\site-packages\colorama/ansitowin32.py", line 210, in write_plain_text
+  File "encodings\cp1252.py", line 19, in encode
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 211-250: character maps to <undefined>
+To check existing issues, please visit: https://github.com/Azure/azure-cli/issues

@@ -6,6 +6,8 @@ param eventHubName string
 param eventHubNamespace string
 param deviceCount int = 100
 
+param resourceTags object = {}
+
 // 1. Get Reference to Registry (for credentials)
 resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
   name: acrName
@@ -20,6 +22,7 @@ resource ehNamespace 'Microsoft.EventHub/namespaces@2021-11-01' existing = {
 resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
   name: 'masimo-emulator-grp'
   location: location
+  tags: resourceTags
   identity: {
     type: 'SystemAssigned'
   }
