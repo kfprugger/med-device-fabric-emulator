@@ -418,18 +418,25 @@ if (-not $SkipFabric) {
     Write-Host "  What to do next:" -ForegroundColor White
     Write-Host "    [1] Open https://app.fabric.microsoft.com" -ForegroundColor DarkGray
     Write-Host "    [2] Navigate to workspace '$FabricWorkspaceName'" -ForegroundColor DarkGray
-    Write-Host "    [3] Deploy Healthcare Data Solutions (HDS) from the Data Hub" -ForegroundColor DarkGray
+    Write-Host "    [3] Deploy Healthcare Data Solutions (HDS) with Healthcare Data Foundations" -ForegroundColor DarkGray
     Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/deploy" -ForegroundColor DarkCyan
-    Write-Host "    [4] Configure the HDS clinical data pipeline" -ForegroundColor DarkGray
-    Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/healthcare-data-foundations" -ForegroundColor DarkCyan
-    Write-Host "    [5] Wait for the Silver Lakehouse to populate (5-15 min)" -ForegroundColor DarkGray
-    Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/deploy#deploy-healthcare-data-foundations" -ForegroundColor DarkCyan
+    Write-Host "    [4] Add the DICOM Data Transformation modality to HDS" -ForegroundColor DarkGray
+    Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/dicom-data-transformation-configure#deploy-dicom-data-transformation" -ForegroundColor DarkCyan
+    Write-Host "    [5] Wait for the modalities to finish deploying, then run Phase 2 below" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "  Once the Silver Lakehouse has data, run Phase 2:" -ForegroundColor White
-    Write-Host "    .\Deploy-All.ps1 -Phase2Only" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  Or specify the Silver Lakehouse ID explicitly:" -ForegroundColor White
-    Write-Host "    .\Deploy-All.ps1 -Phase2Only -SilverLakehouseId `"<id>`"" -ForegroundColor Cyan
+
+    # Build the Phase 2 example command with pre-populated values from Phase 1
+    $phase2Cmd = "    .\Deploy-All.ps1 -Phase2Only ``"
+    $phase2Cmd += "`n        -Location `"$Location`" ``"
+    $phase2Cmd += "`n        -FabricWorkspaceName `"$FabricWorkspaceName`""
+    if ($Tags.Count -gt 0) {
+        $tagPairs = ($Tags.GetEnumerator() | ForEach-Object { "$($_.Key)='$($_.Value)'" }) -join ';'
+        $phase2Cmd += " ``"
+        $phase2Cmd += "`n        -Tags @{$tagPairs}"
+    }
+
+    Write-Host "  Once the Bronze and Silver Lakehouses are deployed, run Phase 2:" -ForegroundColor White
+    Write-Host $phase2Cmd -ForegroundColor Cyan
     Write-Host ""
 
     $script:stepResults += @{

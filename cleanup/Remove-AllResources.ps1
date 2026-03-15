@@ -244,6 +244,41 @@ if (-not $SkipFabric) {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+# STEP 2b: DEPROVISION WORKSPACE IDENTITY
+# ═══════════════════════════════════════════════════════════════════════
+
+if (-not $SkipFabric) {
+    Write-Host ""
+    Write-Host "─── Step 2b: Deprovision Workspace Identity ───" -ForegroundColor Cyan
+
+    if (-not $wsId) {
+        $token = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        if ($token -is [System.Security.SecureString]) { $token = $token | ConvertFrom-SecureString -AsPlainText }
+        $headers = @{ "Authorization" = "Bearer $token"; "Content-Type" = "application/json" }
+        $wsResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $headers
+        $ws = $wsResp.value | Where-Object { $_.displayName -eq $FabricWorkspaceName }
+        $wsId = $ws.id
+    }
+
+    if ($wsId) {
+        try {
+            Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/deprovisionIdentity" `
+                -Headers $headers -Method POST | Out-Null
+            Write-Host "  ✓ Workspace identity deprovisioned." -ForegroundColor Green
+        } catch {
+            $sc = [int]$_.Exception.Response.StatusCode
+            if ($sc -eq 404 -or $_.Exception.Message -match 'not found|does not exist|not provisioned') {
+                Write-Host "  No workspace identity to deprovision." -ForegroundColor DarkGray
+            } else {
+                Write-Host "  ⚠ Could not deprovision workspace identity: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host "  Workspace not found — skipping identity deprovision." -ForegroundColor DarkGray
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 # STEP 3: DELETE FABRIC WORKSPACE (optional)
 # ═══════════════════════════════════════════════════════════════════════
 
