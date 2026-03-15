@@ -244,16 +244,17 @@ flowchart LR
 
 ### Configuration Options
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `-ResourceGroupName` | Required | Azure resource group name |
-| `-Location` | `eastus` | Azure region |
-| `-PatientCount` | `10000` | Number of patients to generate |
-| `-InfraOnly` | `false` | Deploy FHIR infrastructure only, skip data generation |
-| `-RunSynthea` | `false` | Generate patients only (infra must already exist) |
-| `-RunLoader` | `false` | Load FHIR data only (infra + blobs must exist) |
-| `-RunDicom` | `false` | DICOM only: build container, download TCIA, re-tag, upload to ADLS Gen2 |
-| `-SkipDicom` | `false` | Skip DICOM steps in full deployment |
+| Parameter | Default | Required | Description |
+|-----------|---------|----------|-------------|
+| `-ResourceGroupName` | `rg-medtech-rti-fhir` | Yes | Azure resource group name |
+| `-Location` | `eastus` | No | Azure region |
+| `-PatientCount` | `10000` | No | Number of patients to generate |
+| `-Tags` | `@{}` | No | Resource tags (e.g. `@{SecurityControl='Ignore'}`) |
+| `-InfraOnly` | `false` | No | Deploy FHIR infrastructure only, skip data generation |
+| `-RunSynthea` | `false` | No | Generate patients only (infra must already exist) |
+| `-RunLoader` | `false` | No | Load FHIR data only (infra + blobs must exist) |
+| `-RunDicom` | `false` | No | DICOM only: build container, download TCIA, re-tag, upload to ADLS Gen2 |
+| `-SkipDicom` | `false` | No | Skip DICOM steps in full deployment |
 
 ## 🔐 Authentication & Security
 
