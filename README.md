@@ -246,7 +246,7 @@ flowchart LR
 
 | Parameter | Default | Required | Description |
 |-----------|---------|----------|-------------|
-| `-ResourceGroupName` | `rg-medtech-rti-fhir` | Yes | Azure resource group name |
+| `-ResourceGroupName` | `rg-medtech-rti-fhir` | **Yes** | Azure resource group name |
 | `-Location` | — | **Yes** | Azure region (e.g. `eastus`, `westus3`) |
 | `-PatientCount` | `500` | No | Number of patients to generate |
 | `-Tags` | `@{}` | No | Resource tags (e.g. `@{SecurityControl='Ignore'}`) |
