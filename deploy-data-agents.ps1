@@ -1117,6 +1117,10 @@ Write-Host "    Cross-datasource (KQL + Lakehouse):" -ForegroundColor DarkGray
 Write-Host "    - Give me a full patient summary for device MASIMO-RADIUS7-0033" -ForegroundColor Gray
 Write-Host "    - Which patients with respiratory conditions have low SpO2 right now?" -ForegroundColor Gray
 Write-Host "    - Show the latest vitals and all conditions for the patient on device MASIMO-RADIUS7-0001" -ForegroundColor Gray
+Write-Host "    Cross-datasource + Imaging (KQL + Lakehouse + DICOM):" -ForegroundColor DarkGray
+Write-Host "    - Show imaging studies and current vitals for the patient on device MASIMO-RADIUS7-0033" -ForegroundColor Gray
+Write-Host "    - Which monitored patients have chest CT imaging? Show their latest SpO2 too" -ForegroundColor Gray
+Write-Host "    - Give me a complete clinical summary with imaging history for device MASIMO-RADIUS7-0001" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  SAMPLE QUESTIONS — Clinical Triage:" -ForegroundColor Yellow
 Write-Host "    KQL only:" -ForegroundColor DarkGray
@@ -1127,4 +1131,7 @@ Write-Host "    - Run a clinical triage" -ForegroundColor Gray
 Write-Host "    - Which devices have low SpO2 right now? Look up the patients and their conditions." -ForegroundColor Gray
 Write-Host "    - Show the 5 devices with the lowest SpO2 and get their patient info and diagnoses" -ForegroundColor Gray
 Write-Host "    - Find patients with COPD or asthma whose SpO2 is below 93%%" -ForegroundColor Gray
+Write-Host "    Cross-datasource + Imaging (KQL + Lakehouse + DICOM):" -ForegroundColor DarkGray
+Write-Host "    - Show patients with SpO2 alerts who also have radiology imaging studies" -ForegroundColor Gray
+Write-Host "    - Which patients with low SpO2 have had a chest CT? Include their diagnoses" -ForegroundColor Gray
 Write-Host ""

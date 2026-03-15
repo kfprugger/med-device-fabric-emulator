@@ -154,6 +154,8 @@ flowchart LR
         Shortcut["🔗 OneLake Shortcut\n(Bronze Lakehouse)"]
         Pipeline["⚡ HDS Imaging Pipeline"]
         Silver["🏥 Silver Lakehouse\n(ImagingStudy table)"]
+        OMOP["⚡ HDS OMOP Pipeline"]
+        Gold["📊 Gold Lakehouse\n(OMOP CDM v5.4)"]
         Agents["🤖 Data Agents"]
     end
 
@@ -162,6 +164,7 @@ flowchart LR
     DicomLoader -->|"Create\nImagingStudy"| FHIR
     ADLS -->|"Shortcut"| Shortcut
     Shortcut --> Pipeline --> Silver
+    Silver --> OMOP --> Gold
     Silver --> Agents
 
     style Azure fill:#e6f3ff,stroke:#0078d4
