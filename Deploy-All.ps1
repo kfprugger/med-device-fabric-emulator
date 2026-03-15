@@ -27,7 +27,7 @@ param (
     # ── Azure ──
     [Parameter(Mandatory)][string]$ResourceGroupName = "rg-medtech-rti-fhir",
     [Parameter(Mandatory)][string]$Location,
-    [string]$AdminSecurityGroup = "sg-azure-admins",
+    [string]$AdminSecurityGroup,
 
     # ── FHIR / Synthea ──
     [int]$PatientCount = 500,
@@ -54,6 +54,11 @@ param (
 )
 
 $ErrorActionPreference = "Stop"
+
+# Validate conditionally-required parameters
+if (-not $Teardown -and -not $Phase2Only -and -not $AdminSecurityGroup) {
+    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown and -Phase2Only can omit it."
+}
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir

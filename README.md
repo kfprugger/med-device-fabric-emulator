@@ -249,6 +249,7 @@ flowchart LR
 | `-ResourceGroupName` | `rg-medtech-rti-fhir` | **Yes** | Azure resource group name |
 | `-Location` | — | **Yes** | Azure region (e.g. `eastus`, `westus3`) |
 | `-FabricWorkspaceName` | — | **Yes** | Fabric workspace name (created if missing) |
+| `-AdminSecurityGroup` | — | **Yes**¹ | Azure AD security group for admin access (e.g. `sg-azure-admins`) |
 | `-PatientCount` | `500` | No | Number of patients to generate |
 | `-Tags` | `@{}` | No | Resource tags (e.g. `@{SecurityControl='Ignore'}`) |
 | `-InfraOnly` | `false` | No | Deploy FHIR infrastructure only, skip data generation |
@@ -256,6 +257,8 @@ flowchart LR
 | `-RunLoader` | `false` | No | Load FHIR data only (infra + blobs must exist) |
 | `-RunDicom` | `false` | No | DICOM only: build container, download TCIA, re-tag, upload to ADLS Gen2 |
 | `-SkipDicom` | `false` | No | Skip DICOM steps in full deployment |
+
+> ¹ `-AdminSecurityGroup` is not required when using `-Teardown` or `-Phase2Only`.
 
 ## 🔐 Authentication & Security
 
