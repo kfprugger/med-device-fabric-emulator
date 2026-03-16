@@ -258,12 +258,12 @@ Write-Host "Generating $PatientCount synthetic patients for Atlanta, GA..."
 Write-Host "This may take 15-30 minutes..." -ForegroundColor Yellow
 
 # Clear existing blobs so only the new batch is loaded
-Write-Host "Clearing previous Synthea output from blob storage..." -ForegroundColor DarkGray
+Write-Host "Clearing previous Synthea output from blob storage if it exists..." -ForegroundColor DarkGray
 az storage blob delete-batch --account-name $storageAccountName --source $containerName --auth-mode login --pattern "*.json" 2>$null | Out-Null
 Write-Host "  Previous files cleared" -ForegroundColor DarkGray
 
 # Delete existing Synthea job (new identity will get a unique role assignment via Bicep GUID)
-Write-Host "Removing previous Synthea container job..." -ForegroundColor DarkGray
+Write-Host "Removing previous Synthea container job if it exists..." -ForegroundColor DarkGray
 az container delete --resource-group $ResourceGroupName --name synthea-generator-job --yes 2>$null | Out-Null
 
 $syntheaImage = "$acrLoginServer/synthea-generator:v1"

@@ -34,7 +34,8 @@ param (
     [switch]$Phase2 = $false,                # Run Phase 2 only (post-HDS deployment)
     [string]$SilverLakehouseId = "",         # Silver Lakehouse ID (required for Phase 2)
     [string]$SilverLakehouseName = "",       # Silver Lakehouse display name (auto-detected if blank)
-    [string]$KustoUri = ""                   # Kusto Query URI (auto-detected; provide if capacity is paused)
+    [string]$KustoUri = "",                   # Kusto Query URI (auto-detected; provide if capacity is paused)
+    [hashtable]$Tags = @{}                     # Resource tags (e.g. @{SecurityControl='Ignore'})
 )
 
 $ErrorActionPreference = "Stop"
@@ -314,7 +315,7 @@ if ($Phase2) {
     # Discover Lakehouses (Silver + Bronze)
     Write-Host ""
     Write-Host "  Searching for Lakehouses in workspace..." -ForegroundColor White
-    $lakehouses = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/lakehouses"
+    $lakehouses = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=Lakehouse"
 
     if (-not $SilverLakehouseId) {
         $silverLh = $lakehouses.value | Where-Object { $_.displayName -match "[Ss]ilver" }
@@ -1498,6 +1499,15 @@ try {
     if ($ehLocalAuth -eq "true") {
         Write-Host "  ⚠ Event Hub namespace has local auth (SAS) disabled." -ForegroundColor Yellow
         Write-Host "    Attempting to enable it (required for Fabric cloud connections)..." -ForegroundColor Yellow
+
+        # Apply tags first (e.g. SecurityControl=Ignore) to satisfy Azure Policy
+        if ($Tags.Count -gt 0) {
+            $tagArgs = ($Tags.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' '
+            Write-Host "    Applying tags to Event Hub namespace: $tagArgs" -ForegroundColor Gray
+            az eventhubs namespace update --resource-group $ResourceGroupName `
+                --name $EventHubNamespace --tags $tagArgs 2>$null | Out-Null
+        }
+
         az eventhubs namespace update --resource-group $ResourceGroupName `
             --name $EventHubNamespace --disable-local-auth false 2>$null | Out-Null
         $ehLocalAuth = az eventhubs namespace show --resource-group $ResourceGroupName `

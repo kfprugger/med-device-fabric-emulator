@@ -232,6 +232,7 @@ if ($Phase2Only) {
         }
         if ($SilverLakehouseId) { $phase2Args['SilverLakehouseId'] = $SilverLakehouseId }
         if ($SilverLakehouseName) { $phase2Args['SilverLakehouseName'] = $SilverLakehouseName }
+        if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
 
         & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
     }
@@ -301,7 +302,8 @@ if (-not $SkipBaseInfra) {
             & "$ScriptDir\deploy.ps1" `
                 -ResourceGroupName $ResourceGroupName `
                 -Location $Location `
-                -AdminSecurityGroup $AdminSecurityGroup
+                -AdminSecurityGroup $AdminSecurityGroup `
+                -Tags $Tags
         }
     }
 } else {
@@ -397,6 +399,7 @@ if (-not $SkipFabric) {
             Location            = $Location
         }
         if ($SkipFhirExport) { $fabricArgs['SkipFhirExport'] = $true }
+        if ($Tags.Count -gt 0) { $fabricArgs['Tags'] = $Tags }
 
         & "$ScriptDir\deploy-fabric-rti.ps1" @fabricArgs
     }

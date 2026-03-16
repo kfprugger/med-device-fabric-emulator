@@ -222,24 +222,36 @@ flowchart LR
 ### Quick Start
 
 ```powershell
-# Full end-to-end deployment (Azure infra + FHIR data + Fabric RTI)
-.\Deploy-All.ps1
+# Full end-to-end deployment (Phase 1: Azure infra + FHIR data + Fabric RTI)
+.\Deploy-All.ps1 `
+    -ResourceGroupName "rg-medtech-rti-fhir" `
+    -Location "eastus" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -AdminSecurityGroup "sg-azure-admins" `
+    -Tags @{SecurityControl='Ignore'}
 
-# Or deploy just FHIR infrastructure and data
-.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -Location "eastus"
+# Phase 2 (after HDS is deployed manually in the Fabric portal)
+.\Deploy-All.ps1 -Phase2Only `
+    -Location "eastus" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -Tags @{SecurityControl='Ignore'}
 ```
 
 ### Step-by-Step Deployment
 
 ```powershell
 # 1. Deploy infrastructure only
-.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -InfraOnly
+.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -Location "eastus" -InfraOnly
 
 # 2. Run Synthea to generate patient data
-.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -RunSynthea
+.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -Location "eastus" -RunSynthea
 
 # 3. Load data into FHIR
-.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -RunLoader
+.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-demo" -Location "eastus" -RunLoader
+
+# 4. Teardown all resources (Azure + Fabric workspace)
+.\cleanup\Remove-AllResources.ps1 -Force -Wait -DeleteWorkspace `
+    -FabricWorkspaceName "med-device-rti-hds"
 ```
 
 ### Configuration Options
@@ -696,11 +708,19 @@ Supports rapid triage decisions with alert prioritization:
 The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 
 ```powershell
-# Full deploy: Azure infra + FHIR data + Fabric RTI
-.\Deploy-All.ps1
+# Phase 1: Azure infra + FHIR data + Fabric RTI
+.\Deploy-All.ps1 `
+    -ResourceGroupName "rg-medtech-rti-fhir" `
+    -Location "eastus" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -AdminSecurityGroup "sg-azure-admins" `
+    -Tags @{SecurityControl='Ignore'}
 
-# Phase 2 only (after HDS pipeline completes)
-.\Deploy-All.ps1 -Phase2Only
+# Phase 2 (after deploying HDS manually in Fabric portal)
+.\Deploy-All.ps1 -Phase2Only `
+    -Location "eastus" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -Tags @{SecurityControl='Ignore'}
 ```
 
 | Step | Script Called | What It Does |
@@ -719,11 +739,16 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 Teardown scripts are in the `cleanup/` folder:
 
 ```powershell
-# Remove all Azure resources (resource group + contents)
-.\cleanup\Remove-AzureInfra.ps1
+# Full teardown: Azure RG + Fabric items + workspace identity + workspace
+.\cleanup\Remove-AllResources.ps1 -Force -Wait -DeleteWorkspace `
+    -FabricWorkspaceName "med-device-rti-hds"
 
-# Delete the Fabric workspace and all items
-.\cleanup\Remove-FabricWorkspace.ps1
+# Azure only (keep Fabric workspace)
+.\cleanup\Remove-AllResources.ps1 -SkipFabric -Force -Wait
+
+# Fabric only (keep Azure resources)
+.\cleanup\Remove-AllResources.ps1 -SkipAzure -Force `
+    -FabricWorkspaceName "med-device-rti-hds"
 
 # Purge FHIR data only (keep infrastructure)
 .\cleanup\Remove-FhirData.ps1
