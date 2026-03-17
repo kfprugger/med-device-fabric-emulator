@@ -151,7 +151,7 @@ if ($LASTEXITCODE -eq 0 -and $fhirDeployment) {
 }
 
 if (-not $infraExists) {
-    if (-not $doInfra -and -not $doSynthea -and -not $doLoader) {
+    if (-not $doInfra -and -not $doSynthea -and -not $doLoader -and -not $doDicom) {
         Write-Host "ERROR: FHIR infrastructure not found. Run without mode flags or with -InfraOnly first." -ForegroundColor Red
         exit 1
     }
@@ -174,7 +174,8 @@ if (-not $infraExists) {
         --template-file bicep/fhir-infra.bicep `
         --parameters adminGroupObjectId="$adminGroupObjectId" `
         --parameters $tagsParamRef `
-        --query properties.outputs 2>&1
+        --query properties.outputs `
+        --only-show-errors 2>&1
 
     if ($LASTEXITCODE -ne 0) {
         $fhirInfraStr = $fhirInfra -join "`n"
@@ -203,7 +204,8 @@ if (-not $infraExists) {
                 --template-file bicep/fhir-infra.bicep `
                 --parameters adminGroupObjectId="$adminGroupObjectId" `
                 --parameters $tagsParamRef `
-                --query properties.outputs 2>&1
+                --query properties.outputs `
+                --only-show-errors 2>&1
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "ERROR: FHIR infrastructure deployment failed after retry." -ForegroundColor Red
                 Write-Host "  $fhirInfra" -ForegroundColor Red

@@ -203,7 +203,8 @@ $infra = az deployment group create `
     --template-file bicep/infra.bicep `
     --parameters adminGroupObjectId="$adminGroupObjectId" `
     --parameters $tagsParamRef `
-    --query properties.outputs 2>&1
+    --query properties.outputs `
+    --only-show-errors 2>&1
 
 if ($LASTEXITCODE -ne 0) {
     $infraStr = $infra -join "`n"
@@ -215,7 +216,8 @@ if ($LASTEXITCODE -ne 0) {
             --template-file bicep/infra.bicep `
             --parameters adminGroupObjectId="$adminGroupObjectId" `
             --parameters $tagsParamRef `
-            --query properties.outputs 2>&1
+            --query properties.outputs `
+            --only-show-errors 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR: Infrastructure deployment failed after retry." -ForegroundColor Red
             Write-Host "  $infra" -ForegroundColor Red

@@ -16,7 +16,7 @@ COPY synthea.properties /synthea/synthea.properties
 COPY atlanta_providers.json /synthea/atlanta_providers.json
 COPY run-synthea.sh /synthea/run-synthea.sh
 
-RUN chmod +x /synthea/run-synthea.sh
+RUN sed -i 's/\r$//' /synthea/run-synthea.sh && chmod +x /synthea/run-synthea.sh
 
 # Create output directory
 RUN mkdir -p /output
