@@ -73,7 +73,36 @@ if (-not $Force) {
     }
 }
 
-# ── Delete ──
+# ── Deprovision workspace identity ──
+Write-Host "Deprovisioning workspace identity..." -ForegroundColor Cyan
+try {
+    Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$workspaceId/deprovisionIdentity" `
+        -Headers $headers -Method POST | Out-Null
+    Write-Host "  ✓ Workspace identity deprovisioned." -ForegroundColor Green
+} catch {
+    $sc = [int]$_.Exception.Response.StatusCode
+    if ($sc -eq 404 -or $_.Exception.Message -match 'not found|does not exist|not provisioned') {
+        Write-Host "  No workspace identity to deprovision." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  ⚠ Could not deprovision workspace identity: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+# ── Delete Entra app registration (created by workspace identity) ──
+Write-Host "Checking for Entra app registration '$FabricWorkspaceName'..." -ForegroundColor Cyan
+try {
+    $appId = az ad app list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
+    if ($appId) {
+        az ad app delete --id $appId 2>$null | Out-Null
+        Write-Host "  ✓ Entra app registration deleted." -ForegroundColor Green
+    } else {
+        Write-Host "  No matching app registration found." -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Host "  ⚠ Could not delete app registration: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+# ── Delete workspace ──
 Write-Host ""
 Write-Host "Deleting workspace '$FabricWorkspaceName'..." -ForegroundColor Yellow
 Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$workspaceId" `
