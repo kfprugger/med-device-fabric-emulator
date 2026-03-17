@@ -25,12 +25,12 @@
 
 param (
     # ── Azure ──
-    [Parameter(Mandatory)][string]$ResourceGroupName = "rg-medtech-rti-fhir",
+    [string]$ResourceGroupName = "rg-medtech-rti-fhir",
     [Parameter(Mandatory)][string]$Location,
-    [string]$AdminSecurityGroup,
+    [string]$AdminSecurityGroup = "sg-msft-hds-dicom-project",
 
     # ── FHIR / Synthea ──
-    [int]$PatientCount = 500,
+    [int]$PatientCount = 100,
 
     # ── Fabric ──
     [Parameter(Mandatory)][string]$FabricWorkspaceName,
@@ -281,9 +281,48 @@ if (-not $SkipBaseInfra) {
     if ($baseInfraExists) {
         $script:stepNumber++
         Write-Host ""
-        Write-Host "  Base Azure infrastructure already exists -- skipping" -ForegroundColor Green
+        Write-Host "  Base Azure infrastructure already exists -- skipping deployment" -ForegroundColor Green
         Write-Host "    ACR             : $existingAcr" -ForegroundColor DarkGray
         Write-Host "    Event Hub NS    : $existingEhNs" -ForegroundColor DarkGray
+
+        # Verify emulator ACI exists and is running
+        Write-Host "  Verifying emulator container..." -ForegroundColor DarkGray
+        $emulatorContainers = az container list -g $ResourceGroupName `
+            --query "[?contains(name,'emulator')].{name:name, state:provisioningState, principalId:identity.principalId}" `
+            -o json 2>$null | ConvertFrom-Json
+        if ($emulatorContainers -and $emulatorContainers.Count -gt 0) {
+            $emulatorAci = $emulatorContainers[0]
+            Write-Host "    Emulator ACI    : $($emulatorAci.name) ($($emulatorAci.state))" -ForegroundColor DarkGray
+
+            # Verify RBAC: emulator MI must have Event Hubs Data Sender
+            if ($emulatorAci.principalId) {
+                $ehNsId = az eventhubs namespace show -g $ResourceGroupName -n $existingEhNs --query id -o tsv 2>$null
+                $senderRole = az role assignment list --assignee $emulatorAci.principalId `
+                    --scope $ehNsId --role "Azure Event Hubs Data Sender" `
+                    --query "[0].id" -o tsv 2>$null
+                if (-not $senderRole) {
+                    Write-Host "    ⚠ Emulator MI missing 'Event Hubs Data Sender' RBAC — assigning..." -ForegroundColor Yellow
+                    az role assignment create --assignee-object-id $emulatorAci.principalId `
+                        --assignee-principal-type ServicePrincipal `
+                        --role "Azure Event Hubs Data Sender" `
+                        --scope $ehNsId -o none 2>$null
+                    Write-Host "    ✓ RBAC assigned. Restarting emulator..." -ForegroundColor Green
+                    Start-Sleep -Seconds 30
+                    az container restart -g $ResourceGroupName -n $emulatorAci.name 2>$null
+                    Write-Host "    ✓ Emulator restarted" -ForegroundColor Green
+                } else {
+                    Write-Host "    ✓ Emulator RBAC verified (Event Hubs Data Sender)" -ForegroundColor DarkGray
+                }
+            }
+        } else {
+            Write-Host "    ⚠ Emulator ACI not found — running deploy.ps1 to create it..." -ForegroundColor Yellow
+            & "$ScriptDir\deploy.ps1" `
+                -ResourceGroupName $ResourceGroupName `
+                -Location $Location `
+                -AdminSecurityGroup $AdminSecurityGroup `
+                -Tags $Tags
+        }
+
         Write-Host ""
         $script:stepResults += @{
             Name     = "Base Azure Infrastructure"

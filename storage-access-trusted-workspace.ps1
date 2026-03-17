@@ -529,12 +529,70 @@ Record-Step -Name 'Resolve Infrastructure' -Status 'OK' -Seconds $step1Timer.Ela
 $step2Timer = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Log '─── Step 2: Resolving Fabric workspace identity ───' 'INFO'
 
-$workspaceSP = Get-AzADServicePrincipal -DisplayName $FabricWorkspaceName -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $workspaceSP) {
+# Get workspace identity from Fabric API (preferred) with az ad fallback
+$workspacePrincipalId = $null
+$workspaceAppId = $null
+
+# First, try Fabric API to get workspace identity
+try {
+    $earlyFabToken = Get-FabricApiAccessToken
+    $earlyFabHeaders = Get-FabricApiHeaders -AccessToken $earlyFabToken
+
+    # Try provisionIdentity (returns identity if already exists or creates one)
+    try {
+        $identityResult = Invoke-FabricApiRequest -Method Post `
+            -Uri "$FabricManagementEndpoint/v1/workspaces" `
+            -Headers $earlyFabHeaders -Description 'List workspaces for identity'
+
+        # Actually, let's get workspace list first to find our workspace ID, then query identity
+        $wsListResult = Invoke-FabricApiRequest -Method Get `
+            -Uri "$FabricManagementEndpoint/v1/workspaces" `
+            -Headers $earlyFabHeaders -Description 'List workspaces'
+        $targetWs = $wsListResult.Response.value | Where-Object { $_.displayName -eq $FabricWorkspaceName } | Select-Object -First 1
+        if ($targetWs) {
+            $earlyWsId = $targetWs.id
+            # Try to provision identity (will return existing or create new)
+            try {
+                $idResult = Invoke-FabricApiRequest -Method Post `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$earlyWsId/provisionIdentity" `
+                    -Headers $earlyFabHeaders -Description 'Provision workspace identity'
+                if ($idResult.Response) {
+                    $workspacePrincipalId = $idResult.Response.servicePrincipalId
+                    $workspaceAppId = $idResult.Response.applicationId
+                }
+            } catch {
+                # Identity already exists — try getting workspace details
+                try {
+                    $wsDetailResult = Invoke-FabricApiRequest -Method Get `
+                        -Uri "$FabricManagementEndpoint/v1/workspaces/$earlyWsId" `
+                        -Headers $earlyFabHeaders -Description 'Get workspace details'
+                    if ($wsDetailResult.Response.identity) {
+                        $workspacePrincipalId = $wsDetailResult.Response.identity.servicePrincipalId
+                        $workspaceAppId = $wsDetailResult.Response.identity.applicationId
+                    }
+                } catch {}
+            }
+        }
+    } catch {}
+} catch {
+    Write-Log "  Could not query Fabric API for workspace identity: $($_.Exception.Message)" 'DEBUG'
+}
+
+# Fallback to az ad if Fabric API didn't return the SP ID
+if (-not $workspacePrincipalId) {
+    Write-Log "  Falling back to az ad sp lookup..." 'INFO'
+    $workspaceSP = Get-AzADServicePrincipal -DisplayName $FabricWorkspaceName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($workspaceSP) {
+        $workspacePrincipalId = $workspaceSP.Id
+        $workspaceAppId = $workspaceSP.AppId
+    }
+}
+
+if (-not $workspacePrincipalId) {
     throw "Cannot find service principal for workspace '$FabricWorkspaceName'. Ensure workspace managed identity exists."
 }
-$workspacePrincipalId = $workspaceSP.Id
 Write-Log "  Workspace '$FabricWorkspaceName' → Service Principal ID: $workspacePrincipalId" 'INFO'
+if ($workspaceAppId) { Write-Log "    App ID: $workspaceAppId" 'INFO' }
 $step2Timer.Stop()
 Record-Step -Name 'Resolve Workspace Identity' -Status 'OK' -Seconds $step2Timer.Elapsed.TotalSeconds
 
@@ -695,11 +753,43 @@ if ($existingShortcut) {
         $errMsg = $_.Exception.Message
         if ($errMsg -match '409|EntityConflict|shortcut.*already exists') {
             Write-Log "  Shortcut already exists (409 conflict). Continuing." 'WARN'
+        } elseif ($errMsg -match 'Unauthorized|denied|Access|400') {
+            Write-Log \"\" 'WARN'
+            Write-Log \"  ✗ Shortcut creation FAILED: $errMsg\" 'WARN'
+            Write-Log \"\" 'WARN'
+            Write-Host \"  ┌──────────────────────────────────────────────────────────────┐\" -ForegroundColor Yellow
+            Write-Host \"  │  HOW TO FIX: Create the shortcut manually in the Fabric     │\" -ForegroundColor Yellow
+            Write-Host \"  │  portal, then re-run this script.                            │\" -ForegroundColor Yellow
+            Write-Host \"  └──────────────────────────────────────────────────────────────┘\" -ForegroundColor Yellow
+            Write-Host \"\" -ForegroundColor White
+            Write-Host \"  Steps:\" -ForegroundColor White
+            Write-Host \"    1. Open the Fabric portal: https://app.fabric.microsoft.com\" -ForegroundColor Gray
+            Write-Host \"    2. Navigate to workspace '$FabricWorkspaceName'\" -ForegroundColor Gray
+            Write-Host \"    3. Open the Bronze Lakehouse\" -ForegroundColor Gray
+            Write-Host \"    4. Navigate to Files → $ShortcutFolderPath\" -ForegroundColor Gray
+            Write-Host \"    5. Right-click → 'New shortcut' → 'Azure Data Lake Storage Gen2'\" -ForegroundColor Gray
+            Write-Host \"    6. Connection URL: $dfsUrl\" -ForegroundColor Cyan
+            Write-Host \"    7. Container/subpath: $DicomContainerName\" -ForegroundColor Cyan
+            Write-Host \"    8. Shortcut name: $ShortcutName\" -ForegroundColor Cyan
+            Write-Host \"    9. Auth: Workspace Identity\" -ForegroundColor Gray
+            Write-Host \"\" -ForegroundColor White
+            Write-Host \"  Workspace Identity Details:\" -ForegroundColor White
+            Write-Host \"    SP Object ID: $workspacePrincipalId\" -ForegroundColor Cyan
+            if ($workspaceAppId) { Write-Host \"    App ID:       $workspaceAppId\" -ForegroundColor Cyan }
+            Write-Host \"\" -ForegroundColor White
+            Write-Host \"  After creating the shortcut, re-run:\" -ForegroundColor White
+            Write-Host \"    .\\storage-access-trusted-workspace.ps1 -FabricWorkspaceName '$FabricWorkspaceName'\" -ForegroundColor Cyan
+            Write-Host \"\" -ForegroundColor White
+
+            $step8Timer.Stop()
+            Record-Step -Name 'Create Lakehouse Shortcut' -Status 'FAILED (manual required)' -Seconds $step8Timer.Elapsed.TotalSeconds
+            throw \"Shortcut creation failed — manual step required. See instructions above.\"
         } else { throw }
     }
 }
 $step8Timer.Stop()
-Record-Step -Name 'Create Lakehouse Shortcut' -Status 'OK' -Seconds $step8Timer.Elapsed.TotalSeconds
+$shortcutStatus = if ($existingShortcut) { 'EXISTS' } else { 'OK' }
+Record-Step -Name 'Create Lakehouse Shortcut' -Status $shortcutStatus -Seconds $step8Timer.Elapsed.TotalSeconds
 
 # ── Step 9: Run Clinical Data Foundation pipeline (must complete first) ──
 $step9Timer = [System.Diagnostics.Stopwatch]::StartNew()

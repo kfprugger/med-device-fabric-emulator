@@ -409,33 +409,60 @@ if ($Phase2) {
                 Write-Host "  ✓ Container: $exportContainerName" -ForegroundColor Green
             }
 
-            # Ensure workspace identity has Storage Blob Data Reader on the storage account
+            # Ensure workspace identity has Storage Blob Data Contributor on the storage account
             Write-Host "  Granting workspace identity access to storage..." -ForegroundColor Gray
             try {
-                # Try to provision workspace identity (returns existing identity or creates one)
+                # Get workspace identity from Fabric API
                 $wsSPId = $null
+                $wsAppId = $null
                 try {
                     $wsIdentity = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/provisionIdentity"
                     $wsSPId = if ($wsIdentity) { $wsIdentity.servicePrincipalId } else { $null }
+                    $wsAppId = if ($wsIdentity) { $wsIdentity.applicationId } else { $null }
                 } catch {
-                    # 400 "WorkspaceIdentityAlreadyExists" is expected — fall through to lookup
-                    Write-Host "  Identity already provisioned — looking up SP..." -ForegroundColor Gray
+                    # 400 "WorkspaceIdentityAlreadyExists" is expected — look up from workspace details
+                    Write-Host "  Identity already provisioned — retrieving from workspace..." -ForegroundColor Gray
                 }
                 if (-not $wsSPId) {
-                    # Lookup SP by workspace display name
+                    # Get identity from workspace details via Fabric API
+                    try {
+                        $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
+                        if ($wsDetail.identity) {
+                            $wsSPId = $wsDetail.identity.servicePrincipalId
+                            $wsAppId = $wsDetail.identity.applicationId
+                        }
+                    } catch {}
+                }
+                if (-not $wsSPId) {
+                    # Final fallback: lookup SP by workspace display name via az ad
                     $wsSP = az ad sp list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
                     if ($wsSP) { $wsSPId = $wsSP }
                 }
                 if ($wsSPId) {
-                    $storageBlobReaderRole = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"  # Storage Blob Data Reader
+                    Write-Host "  ✓ Workspace identity SP: $wsSPId" -ForegroundColor Green
+                    if ($wsAppId) { Write-Host "    App ID: $wsAppId" -ForegroundColor Gray }
+                    $storageBlobContribRole = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"  # Storage Blob Data Contributor
                     $existingRole = az role assignment list --assignee $wsSPId `
-                        --scope $exportStorage.id --role $storageBlobReaderRole `
+                        --scope $exportStorage.id --role $storageBlobContribRole `
                         --query "[0].id" -o tsv 2>$null
                     if (-not $existingRole) {
                         az role assignment create --assignee $wsSPId `
-                            --role $storageBlobReaderRole `
+                            --role $storageBlobContribRole `
                             --scope $exportStorage.id 2>$null | Out-Null
-                        Write-Host "  ✓ Workspace identity → Storage Blob Data Reader" -ForegroundColor Green
+                        Write-Host "  ✓ Workspace identity → Storage Blob Data Contributor" -ForegroundColor Green
+                        Write-Host "  Waiting 60s for RBAC propagation..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 60
+
+                        # Verify RBAC propagated by checking role assignment is visible
+                        $verifyRole = az role assignment list --assignee $wsSPId `
+                            --scope $exportStorage.id --role $storageBlobContribRole `
+                            --query "[0].id" -o tsv 2>$null
+                        if ($verifyRole) {
+                            Write-Host "  ✓ RBAC propagation confirmed" -ForegroundColor Green
+                        } else {
+                            Write-Host "  ⚠ RBAC not yet visible — waiting 30s more..." -ForegroundColor Yellow
+                            Start-Sleep -Seconds 30
+                        }
                     } else {
                         Write-Host "  ✓ Workspace identity RBAC already assigned" -ForegroundColor Green
                     }
@@ -444,16 +471,17 @@ if ($Phase2) {
                 }
             } catch {
                 Write-Host "  ⚠ Could not assign RBAC: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Host "    Grant 'Storage Blob Data Reader' to the workspace identity on $exportStorageAccountName" -ForegroundColor Yellow
+                Write-Host "    Grant 'Storage Blob Data Contributor' to the workspace identity on $exportStorageAccountName" -ForegroundColor Yellow
             }
 
-            # Find an existing Fabric cloud connection to the storage account
-            Write-Host "  Searching for existing Fabric connection to $storageUrl..." -ForegroundColor Gray
+            # Find an existing Fabric cloud connection for FHIR export (match by display name)
+            $fhirConnName = "fhir-export-$exportStorageAccountName"
+            Write-Host "  Searching for existing Fabric connection '$fhirConnName'..." -ForegroundColor Gray
             $connectionId = $null
             try {
                 $allConnections = Invoke-FabricApi -Endpoint "/connections"
                 $existingConn = $allConnections.value | Where-Object {
-                    $_.connectionDetails -and $_.connectionDetails.path -match [regex]::Escape($exportStorageAccountName)
+                    $_.displayName -eq $fhirConnName
                 }
                 if ($existingConn) {
                     if ($existingConn -is [array]) { $existingConn = $existingConn[0] }
@@ -466,6 +494,8 @@ if ($Phase2) {
 
             if (-not $connectionId) {
                 # Create a new Fabric cloud connection using Workspace Identity
+                # Use hostname (not full URL) + container as path — matches storage-access-trusted-workspace.ps1 pattern
+                $storageHost = "$exportStorageAccountName.dfs.core.windows.net"
                 Write-Host "  Creating Fabric cloud connection (Workspace Identity)..." -ForegroundColor White
                 try {
                     $connBody = @{
@@ -475,7 +505,8 @@ if ($Phase2) {
                             type           = "AzureDataLakeStorage"
                             creationMethod = "AzureDataLakeStorage"
                             parameters     = @(
-                                @{ dataType = "Text"; name = "server"; value = $storageUrl }
+                                @{ dataType = "Text"; name = "server"; value = $storageHost }
+                                @{ dataType = "Text"; name = "path";   value = $exportContainerName }
                             )
                         }
                         privacyLevel      = "Organizational"
@@ -509,6 +540,29 @@ if ($Phase2) {
 
             # Create the ADLS Gen2 shortcut in Bronze Lakehouse
             if ($connectionId) {
+                # Preflight: verify RBAC access by listing blobs in the container
+                Write-Host "  Preflight: verifying storage access for workspace identity..." -ForegroundColor Gray
+                $preflightOk = $false
+                for ($attempt = 1; $attempt -le 3; $attempt++) {
+                    try {
+                        $testBlobs = az storage blob list --container-name $exportContainerName `
+                            --account-name $exportStorageAccountName --auth-mode login `
+                            --num-results 1 -o tsv 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "  ✓ Storage access verified" -ForegroundColor Green
+                            $preflightOk = $true
+                            break
+                        }
+                    } catch {}
+                    if ($attempt -lt 3) {
+                        Write-Host "  ⚠ Storage access not ready (attempt $attempt/3). Waiting 30s..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 30
+                    }
+                }
+                if (-not $preflightOk) {
+                    Write-Host "  ⚠ Storage access preflight failed — shortcut may fail. Continuing anyway..." -ForegroundColor Yellow
+                }
+
                 $shortcutPath = "Files/Ingest/Clinical/FHIR-NDJSON"
                 $shortcutName = "AHDS-FHIR"
                 Write-Host "  Creating shortcut: $shortcutPath/$shortcutName → $storageUrl/$exportContainerName" -ForegroundColor White
@@ -544,33 +598,69 @@ if ($Phase2) {
                         path   = $shortcutPath
                         target = @{
                             adlsGen2 = @{
-                                location     = $storageUrl
+                                location     = "https://$exportStorageAccountName.dfs.core.windows.net"
                                 subpath      = "/$exportContainerName"
                                 connectionId = $connectionId
                             }
                         }
                     }
 
-                    try {
-                        $null = Invoke-FabricApi -Method POST `
-                            -Endpoint "/workspaces/$workspaceId/items/$BronzeLakehouseId/shortcuts" `
-                            -Body $scBody
-                        Write-Host "  ✓ Bronze LH shortcut: $shortcutPath/$shortcutName" -ForegroundColor Green
-                        $bronzeShortcutOk = $true
-                        $p2Success++
-                    } catch {
-                        $errMsg = $_.Exception.Message
+                    $scMaxRetries = 3
+                    for ($scAttempt = 1; $scAttempt -le $scMaxRetries; $scAttempt++) {
                         try {
-                            $errDetail = $_.ErrorDetails.Message | ConvertFrom-Json
-                            $errMsg = $errDetail.message
-                            if ($errDetail.moreDetails) {
-                                foreach ($d in $errDetail.moreDetails) {
-                                    $errMsg += " | $($d.errorCode): $($d.message)"
+                            $null = Invoke-FabricApi -Method POST `
+                                -Endpoint "/workspaces/$workspaceId/items/$BronzeLakehouseId/shortcuts" `
+                                -Body $scBody
+                            Write-Host "  ✓ Bronze LH shortcut: $shortcutPath/$shortcutName" -ForegroundColor Green
+                            $bronzeShortcutOk = $true
+                            $p2Success++
+                            break
+                        } catch {
+                            $errMsg = $_.Exception.Message
+                            try {
+                                $errDetail = $_.ErrorDetails.Message | ConvertFrom-Json
+                                $errMsg = $errDetail.message
+                                if ($errDetail.moreDetails) {
+                                    foreach ($d in $errDetail.moreDetails) {
+                                        $errMsg += " | $($d.errorCode): $($d.message)"
+                                    }
                                 }
+                            } catch {}
+
+                            if ($errMsg -match 'Unauthorized|denied|Access' -and $scAttempt -lt $scMaxRetries) {
+                                Write-Host "  ⚠ Shortcut auth failed (attempt $scAttempt/$scMaxRetries). RBAC may still be propagating — waiting 60s..." -ForegroundColor Yellow
+                                Start-Sleep -Seconds 60
+                            } else {
+                                Write-Host "" -ForegroundColor Red
+                                Write-Host "  ✗ Bronze LH shortcut FAILED: $errMsg" -ForegroundColor Red
+                                Write-Host "" -ForegroundColor Red
+                                Write-Host "  ┌──────────────────────────────────────────────────────────┐" -ForegroundColor Yellow
+                                Write-Host "  │  HOW TO FIX: Create the shortcut manually in the         │" -ForegroundColor Yellow
+                                Write-Host "  │  Fabric portal, then re-run Phase 2.                      │" -ForegroundColor Yellow
+                                Write-Host "  └──────────────────────────────────────────────────────────┘" -ForegroundColor Yellow
+                                Write-Host "" -ForegroundColor White
+                                Write-Host "  Steps:" -ForegroundColor White
+                                Write-Host "    1. Open the Fabric portal: https://app.fabric.microsoft.com" -ForegroundColor Gray
+                                Write-Host "    2. Navigate to workspace '$FabricWorkspaceName'" -ForegroundColor Gray
+                                Write-Host "    3. Open the Bronze Lakehouse ('$BronzeLakehouseName')" -ForegroundColor Gray
+                                Write-Host "    4. Navigate to Files → right-click in $shortcutPath" -ForegroundColor Gray
+                                Write-Host "    5. Select 'New shortcut' → 'Azure Data Lake Storage Gen2'" -ForegroundColor Gray
+                                Write-Host "    6. Connection URL: https://$exportStorageAccountName.dfs.core.windows.net" -ForegroundColor Cyan
+                                Write-Host "    7. Container/subpath: $exportContainerName" -ForegroundColor Cyan
+                                Write-Host "    8. Shortcut name: $shortcutName" -ForegroundColor Cyan
+                                Write-Host "    9. Auth: Workspace Identity" -ForegroundColor Gray
+                                Write-Host "" -ForegroundColor White
+                                Write-Host "  Workspace Identity Details:" -ForegroundColor White
+                                if ($wsSPId) { Write-Host "    SP Object ID: $wsSPId" -ForegroundColor Cyan }
+                                if ($wsAppId) { Write-Host "    App ID:       $wsAppId" -ForegroundColor Cyan }
+                                Write-Host "" -ForegroundColor White
+                                Write-Host "  After creating the shortcut, re-run Phase 2:" -ForegroundColor White
+                                Write-Host "    .\Deploy-All.ps1 -Phase2Only -Location '$Location' -FabricWorkspaceName '$FabricWorkspaceName'" -ForegroundColor Cyan
+                                Write-Host "" -ForegroundColor White
+                                $p2Fail++
+                                break
                             }
-                        } catch {}
-                        Write-Host "  ✗ Bronze LH shortcut failed: $errMsg" -ForegroundColor Red
-                        $p2Fail++
+                        }
                     }
                 }
             }
@@ -741,81 +831,29 @@ dependencies:
     }
 
     # ================================================================
-    # PHASE 2-post: Trigger HDS Clinical Pipeline via REST API
+    # NOTE: Clinical pipeline is triggered by storage-access-trusted-workspace.ps1
+    # which orchestrates Clinical → Imaging → OMOP pipeline sequence.
+    # Removed duplicate trigger from here to avoid running it twice.
     # ================================================================
-    if ($bronzeShortcutOk) {
-        Write-Host ""
-        Write-Host "--- PHASE 2-post: TRIGGER HDS CLINICAL PIPELINE ---" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "  Searching for 'clinical data foundation ingestion' pipeline..." -ForegroundColor White
-
-        $pipelines = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=DataPipeline"
-        $clinicalPipeline = $pipelines.value | Where-Object { $_.displayName -match "clinical.*ingestion|clinical_data_foundation" }
-        if ($clinicalPipeline) {
-            if ($clinicalPipeline -is [array]) { $clinicalPipeline = $clinicalPipeline[0] }
-            $pipelineId = $clinicalPipeline.id
-            $pipelineName = $clinicalPipeline.displayName
-            Write-Host "  ✓ Pipeline: $pipelineName ($pipelineId)" -ForegroundColor Green
-
-            Write-Host "  Triggering pipeline run..." -ForegroundColor White
-            try {
-                $jobResp = Invoke-FabricApi -Method POST `
-                    -Endpoint "/workspaces/$workspaceId/items/$pipelineId/jobs/Pipeline/instances"
-                Write-Host "  ✓ Pipeline triggered — ingesting NDJSON → Bronze → Silver" -ForegroundColor Green
-
-                # Poll for completion (max 30 min)
-                Write-Host "  Waiting for pipeline to complete (may take 10-30 min)..." -ForegroundColor White
-                $pipelineStart = Get-Date
-                $maxPipelineMin = 30
-                $pollSec = 30
-
-                while ((New-TimeSpan -Start $pipelineStart).TotalMinutes -lt $maxPipelineMin) {
-                    Start-Sleep -Seconds $pollSec
-                    $elapsed = [math]::Round((New-TimeSpan -Start $pipelineStart).TotalMinutes, 1)
-
-                    try {
-                        $jobInstances = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items/$pipelineId/jobs/instances?`$top=1&`$orderby=startTimeUtc desc"
-                        $latestJob = $jobInstances.value | Select-Object -First 1
-                        if ($latestJob) {
-                            $jobStatus = $latestJob.status
-                            if ($jobStatus -eq "Completed") {
-                                Write-Host "  ✓ Pipeline complete! Silver Lakehouse populated." -ForegroundColor Green
-                                $p2Success++
-                                break
-                            } elseif ($jobStatus -eq "Failed" -or $jobStatus -eq "Cancelled" -or $jobStatus -eq "Deduped") {
-                                Write-Host "  ✗ Pipeline $jobStatus" -ForegroundColor Red
-                                $p2Fail++
-                                break
-                            } else {
-                                Write-Host "    Status: $jobStatus (${elapsed}m elapsed)" -ForegroundColor Gray
-                            }
-                        }
-                    } catch {
-                        Write-Host "    Poll error: $($_.Exception.Message)" -ForegroundColor Yellow
-                    }
-                }
-
-                if ((New-TimeSpan -Start $pipelineStart).TotalMinutes -ge $maxPipelineMin) {
-                    Write-Host "  ⚠ Pipeline still running after ${maxPipelineMin}m." -ForegroundColor Yellow
-                    Write-Host "    Check status in Fabric portal → Data Pipelines." -ForegroundColor Yellow
-                    $p2Success++  # treat as success for scoring; it's running
-                }
-            } catch {
-                $pipeErr = $_.Exception.Message
-                try { $pipeErr = ($_.ErrorDetails.Message | ConvertFrom-Json).message } catch {}
-                Write-Host "  ✗ Failed to trigger pipeline: $pipeErr" -ForegroundColor Red
-                $p2Fail++
-            }
-        } else {
-            Write-Host "  ⚠ Clinical pipeline not found in workspace." -ForegroundColor Yellow
-            Write-Host "    Ensure HDS Clinical Foundations is deployed, then run the" -ForegroundColor Yellow
-            Write-Host "    'clinical data foundation ingestion' pipeline manually." -ForegroundColor Yellow
-        }
-    }
 
     # ================================================================
     # PHASE 2a: Create OneLake Shortcuts + KQL External Tables to Silver Lakehouse
     # ================================================================
+
+    # Refresh Kusto token (may have expired during scipy publish + pipeline wait)
+    Write-Host "  Refreshing Kusto access token..." -ForegroundColor Gray
+    $kustoToken = Get-KustoAccessToken
+    $kustoHeaders = @{
+        "Authorization" = "Bearer $kustoToken"
+        "Content-Type"  = "application/json"
+    }
+    $kqlParams = @{
+        KustoUri     = $kustoUri
+        DatabaseName = $kqlDbName
+        KustoHeaders = $kustoHeaders
+    }
+    Write-Host "  ✓ Kusto token refreshed" -ForegroundColor Green
+
     Write-Host ""
     Write-Host "--- PHASE 2a: KQL EXTERNAL TABLES → SILVER LAKEHOUSE ---" -ForegroundColor Cyan
     Write-Host ""

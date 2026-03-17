@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 
 # Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
 $env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # Serialize tags for Bicep parameter passing
 $tagsParamFile = Join-Path $env:TEMP "deploy-tags-$(Get-Random).json"
@@ -204,8 +206,32 @@ $infra = az deployment group create `
     --query properties.outputs 2>&1
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: $infra" -ForegroundColor Red
-    exit 1
+    $infraStr = $infra -join "`n"
+    if ($infraStr -match 'DeploymentActive') {
+        Write-Host "  A previous deployment is still active. Waiting 60s and retrying..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 60
+        $infra = az deployment group create `
+            --resource-group $ResourceGroupName `
+            --template-file bicep/infra.bicep `
+            --parameters adminGroupObjectId="$adminGroupObjectId" `
+            --parameters $tagsParamRef `
+            --query properties.outputs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Infrastructure deployment failed after retry." -ForegroundColor Red
+            Write-Host "  $infra" -ForegroundColor Red
+            Write-Host "" -ForegroundColor Red
+            Write-Host "  To retry, wait for the active deployment to finish, then run:" -ForegroundColor Yellow
+            Write-Host "    .\Deploy-All.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location' ..." -ForegroundColor Cyan
+            exit 1
+        }
+    } else {
+        Write-Host "ERROR: Infrastructure deployment failed." -ForegroundColor Red
+        Write-Host "  $infra" -ForegroundColor Red
+        Write-Host "" -ForegroundColor Red
+        Write-Host "  To retry:" -ForegroundColor Yellow
+        Write-Host "    .\Deploy-All.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location' ..." -ForegroundColor Cyan
+        exit 1
+    }
 }
 
 $infraJson = $infra | ConvertFrom-Json

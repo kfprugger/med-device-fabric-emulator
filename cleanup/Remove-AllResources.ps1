@@ -273,6 +273,20 @@ if (-not $SkipFabric) {
                 Write-Host "  ⚠ Could not deprovision workspace identity: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
+
+        # Also delete the Entra ID app registration created for the workspace identity
+        Write-Host "  Checking for Entra app registration '$FabricWorkspaceName'..." -ForegroundColor Gray
+        try {
+            $appId = az ad app list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
+            if ($appId) {
+                az ad app delete --id $appId 2>$null | Out-Null
+                Write-Host "  ✓ Entra app registration '$FabricWorkspaceName' deleted." -ForegroundColor Green
+            } else {
+                Write-Host "  No matching app registration found." -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "  ⚠ Could not delete app registration: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  Workspace not found — skipping identity deprovision." -ForegroundColor DarkGray
     }

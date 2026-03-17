@@ -36,6 +36,8 @@ $ErrorActionPreference = "Stop"
 
 # Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
 $env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # Serialize tags for Bicep parameter passing
 # az CLI cannot reliably receive JSON objects inline on Windows
@@ -175,8 +177,49 @@ if (-not $infraExists) {
         --query properties.outputs 2>&1
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR deploying FHIR infrastructure: $fhirInfra" -ForegroundColor Red
-        exit 1
+        $fhirInfraStr = $fhirInfra -join "`n"
+
+        # RoleAssignmentExists is non-fatal — the resources were created, just the RBAC already existed
+        if ($fhirInfraStr -match 'RoleAssignmentExists') {
+            Write-Host "  ⚠ Bicep reported RoleAssignmentExists (non-fatal — role already assigned)" -ForegroundColor Yellow
+            Write-Host "  Fetching deployment outputs..." -ForegroundColor Gray
+            $fhirInfra = az deployment group show `
+                --resource-group $ResourceGroupName `
+                --name fhir-infra `
+                --query properties.outputs 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $fhirInfra) {
+                Write-Host "ERROR: Could not retrieve FHIR deployment outputs after RoleAssignmentExists." -ForegroundColor Red
+                Write-Host "  The FHIR infrastructure may not have deployed correctly." -ForegroundColor Red
+                Write-Host "" -ForegroundColor Red
+                Write-Host "  To retry:" -ForegroundColor Yellow
+                Write-Host "    .\deploy-fhir.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location'" -ForegroundColor Cyan
+                exit 1
+            }
+        } elseif ($fhirInfraStr -match 'DeploymentActive') {
+            Write-Host "  A previous FHIR deployment is still active. Waiting 60s and retrying..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 60
+            $fhirInfra = az deployment group create `
+                --resource-group $ResourceGroupName `
+                --template-file bicep/fhir-infra.bicep `
+                --parameters adminGroupObjectId="$adminGroupObjectId" `
+                --parameters $tagsParamRef `
+                --query properties.outputs 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "ERROR: FHIR infrastructure deployment failed after retry." -ForegroundColor Red
+                Write-Host "  $fhirInfra" -ForegroundColor Red
+                Write-Host "" -ForegroundColor Red
+                Write-Host "  To retry, wait for the active deployment to finish, then run:" -ForegroundColor Yellow
+                Write-Host "    .\deploy-fhir.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location'" -ForegroundColor Cyan
+                exit 1
+            }
+        } else {
+            Write-Host "ERROR: FHIR infrastructure deployment failed." -ForegroundColor Red
+            Write-Host "  $fhirInfra" -ForegroundColor Red
+            Write-Host "" -ForegroundColor Red
+            Write-Host "  To retry:" -ForegroundColor Yellow
+            Write-Host "    .\deploy-fhir.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location'" -ForegroundColor Cyan
+            exit 1
+        }
     }
 
     $fhirJson = $fhirInfra | ConvertFrom-Json
