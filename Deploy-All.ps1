@@ -2,18 +2,18 @@
 # End-to-end orchestrator for the Masimo Medical Device + Fabric RTI pipeline.
 #
 # Sequence:
-#   Step 1 — Base Azure infrastructure (Event Hub, ACR, emulator container)
-#   Step 2 — FHIR Service + Synthea patient generation + FHIR data load
-#   Step 2b— DICOM infrastructure + TCIA download, re-tag, upload
-#   Step 3 — Fabric RTI Phase 1 (workspace, Eventhouse, KQL, FHIR $export)
-#   Step 4 — Guidance for Healthcare Data Solutions (manual Fabric portal step)
-#   Step 5 — Fabric RTI Phase 2 [optional, after HDS deployed]:
+#   Step 1  — Base Azure infrastructure (Event Hub, ACR, emulator container)
+#   Step 1b — Fabric workspace (created early so HDS can be deployed in parallel)
+#   Step 2  — FHIR Service + Synthea patient generation + FHIR data load
+#   Step 2b — DICOM infrastructure + TCIA download, re-tag, upload
+#   Step 3  — Fabric RTI Phase 1 (Eventhouse, KQL, Eventstream, FHIR $export)
+#   Step 4  — Guidance for Healthcare Data Solutions (manual Fabric portal step)
+#   Step 5  — Fabric RTI Phase 2 [optional, after HDS deployed]:
 #              a. Bronze LH shortcut → FHIR export ADLS Gen2 storage
-#              b. Trigger HDS clinical pipeline (NDJSON → Bronze → Silver)
-#              c. KQL shortcuts to Silver Lakehouse
-#              d. Enriched fn_ClinicalAlerts function
-#   Step 5b— DICOM shortcut + HDS clinical, imaging, and OMOP pipelines
-#   Step 6 — Data Agents (Patient 360 + Clinical Triage)
+#              b. KQL shortcuts to Silver Lakehouse
+#              c. Enriched fn_ClinicalAlerts function
+#   Step 5b — DICOM shortcut + HDS imaging (incl. clinical) and OMOP pipelines
+#   Step 6  — Data Agents (Patient 360 + Clinical Triage)
 #
 # Usage:
 #   .\Deploy-All.ps1                                                  # Full pipeline up to Phase 1
@@ -350,6 +350,89 @@ if (-not $SkipBaseInfra) {
 }
 
 # ============================================================================
+# STEP 1b — FABRIC WORKSPACE (created early so HDS can be deployed during FHIR/DICOM steps)
+# ============================================================================
+
+if (-not $SkipFabric) {
+    Invoke-Step -StepName "Fabric Workspace" `
+        -Description "Create workspace '$FabricWorkspaceName' + assign capacity + provision identity" -Action {
+
+        function Get-FabricToken {
+            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            if ($t -is [System.Security.SecureString]) {
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
+                try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+            return $t
+        }
+
+        $fabToken = Get-FabricToken
+        $fabHeaders = @{ "Authorization" = "Bearer $fabToken"; "Content-Type" = "application/json" }
+        $fabBase = "https://api.fabric.microsoft.com/v1"
+
+        # Check if workspace exists
+        $wsResp = Invoke-RestMethod -Uri "$fabBase/workspaces" -Headers $fabHeaders
+        $existingWs = $wsResp.value | Where-Object { $_.displayName -eq $FabricWorkspaceName }
+
+        if ($existingWs) {
+            $script:fabricWorkspaceId = $existingWs.id
+            Write-Host "  ✓ Workspace already exists: $FabricWorkspaceName ($($script:fabricWorkspaceId))" -ForegroundColor Green
+        } else {
+            Write-Host "  Creating workspace '$FabricWorkspaceName'..." -ForegroundColor White
+            $newWs = Invoke-RestMethod -Uri "$fabBase/workspaces" -Headers $fabHeaders -Method POST `
+                -Body (@{
+                    displayName = $FabricWorkspaceName
+                    description = "Masimo Clinical Alert System — Real-Time Intelligence workspace for medical device telemetry monitoring and clinical alerting."
+                } | ConvertTo-Json)
+            $script:fabricWorkspaceId = $newWs.id
+            Write-Host "  ✓ Workspace created: $FabricWorkspaceName ($($script:fabricWorkspaceId))" -ForegroundColor Green
+        }
+
+        # Ensure capacity is assigned
+        $wsDetail = Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)" -Headers $fabHeaders
+        if (-not $wsDetail.capacityId) {
+            Write-Host "  Searching for an active Fabric capacity..." -ForegroundColor Yellow
+            $caps = Invoke-RestMethod -Uri "$fabBase/capacities" -Headers $fabHeaders
+            $activeCap = $caps.value | Where-Object {
+                $_.state -eq "Active" -and $_.sku -ne "PP3"
+            } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } elseif ($_.sku -eq "FT1") { 1 } else { 2 }}} | Select-Object -First 1
+
+            if ($activeCap) {
+                Write-Host "  Assigning capacity: $($activeCap.displayName) (SKU: $($activeCap.sku))..." -ForegroundColor White
+                Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)/assignToCapacity" `
+                    -Headers $fabHeaders -Method POST `
+                    -Body (@{ capacityId = $activeCap.id } | ConvertTo-Json) | Out-Null
+                Start-Sleep -Seconds 5
+                Write-Host "  ✓ Capacity assigned" -ForegroundColor Green
+            } else {
+                throw "No active Fabric capacity found. Start a trial at https://app.fabric.microsoft.com"
+            }
+        } else {
+            Write-Host "  ✓ Capacity already assigned" -ForegroundColor Green
+        }
+
+        # Provision workspace managed identity
+        Write-Host "  Provisioning workspace managed identity..." -ForegroundColor White
+        try {
+            Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)/provisionIdentity" `
+                -Headers $fabHeaders -Method POST | Out-Null
+            Write-Host "  ✓ Workspace identity provisioned" -ForegroundColor Green
+        } catch {
+            if ($_.Exception.Message -match "already|exists") {
+                Write-Host "  ✓ Workspace identity already exists" -ForegroundColor Green
+            } else {
+                Write-Host "  ⚠ Could not provision workspace identity: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+
+        Write-Host ""
+        Write-Host "  Workspace is ready. You can now deploy HDS in the Fabric portal" -ForegroundColor DarkGray
+        Write-Host "  while the remaining Azure steps (FHIR, DICOM) continue below." -ForegroundColor DarkGray
+    }
+}
+
+# ============================================================================
 # STEP 2 — FHIR SERVICE + SYNTHEA + LOADER
 # ============================================================================
 
@@ -372,6 +455,7 @@ if (-not $SkipFhir) {
             Location           = $Location
             AdminSecurityGroup = $AdminSecurityGroup
             PatientCount       = $PatientCount
+            SkipDicom          = $true
         }
         if ($RebuildContainers) { $fhirArgs['RebuildContainers'] = $true }
         if ($Tags.Count -gt 0) { $fhirArgs['Tags'] = $Tags }

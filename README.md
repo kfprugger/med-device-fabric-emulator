@@ -48,7 +48,7 @@ flowchart LR
     end
     
     subgraph Step7["7️⃣ Ingest"]
-        S7["OneLake shortcut +<br/>HDS clinical, imaging,<br/>and OMOP pipelines"]
+        S7["OneLake shortcut +<br/>HDS imaging (incl. clinical)<br/>and OMOP pipelines"]
     end
     
     Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7
@@ -184,7 +184,7 @@ flowchart LR
 # Deploy DICOM loader (build container, download TCIA, re-tag, upload to ADLS Gen2)
 .\deploy-fhir.ps1 -RunDicom
 
-# Create OneLake shortcut + invoke HDS clinical, imaging, and OMOP pipelines
+# Create OneLake shortcut + invoke HDS imaging and OMOP pipelines
 .\storage-access-trusted-workspace.ps1 -FabricWorkspaceName "med-device-rti-hds"
 ```
 
@@ -312,7 +312,7 @@ med-device-fabric-emulator/
 ├── deploy-data-agents.ps1   # Fabric Data Agents (Patient 360 + Clinical Triage)
 ├── update-agents-inline.ps1 # Quick-update agent definitions (hardcoded IDs)
 ├── deploy-ontology.ps1       # Fabric IQ Ontology deployment (REST API)
-├── storage-access-trusted-workspace.ps1  # DICOM OneLake shortcut + HDS pipeline trigger (clinical, imaging, OMOP)
+├── storage-access-trusted-workspace.ps1  # DICOM OneLake shortcut + HDS pipeline trigger (imaging, OMOP)
 ├── deploy.ps1               # Legacy emulator-only deployment
 ├── run-kql-scripts.ps1      # Standalone KQL script runner
 ├── create-device-associations.py  # Link Masimo devices to FHIR patients
@@ -726,10 +726,11 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 | Step | Script Called | What It Does |
 |------|-------------|---------------|
 | 1 | `deploy.ps1` | Deploys Event Hub, ACR, Key Vault, builds + deploys emulator ACI |
-| 2 | `deploy-fhir.ps1` | Deploys FHIR Service, runs Synthea + FHIR Loader |
-| 3 | `deploy-fabric-rti.ps1` | Creates Fabric workspace, Eventhouse, Eventstream, KQL schema, dashboard |
-| 3 | `deploy-fhir.ps1 -RunDicom` | Builds DICOM loader container, downloads TCIA, re-tags, uploads to ADLS Gen2 |
-| 3b | `storage-access-trusted-workspace.ps1` | Creates OneLake shortcut + invokes HDS clinical, imaging, and OMOP pipelines |
+| 1b | Fabric API (inline) | Creates Fabric workspace, assigns capacity, provisions identity |
+| 2 | `deploy-fhir.ps1 -SkipDicom` | Deploys FHIR Service, runs Synthea + FHIR Loader (no DICOM) |
+| 2b | `deploy-fhir.ps1 -RunDicom` | Builds DICOM loader container, downloads TCIA, re-tags, uploads to ADLS Gen2 |
+| 3 | `deploy-fabric-rti.ps1` | Creates Eventhouse, Eventstream, KQL schema, dashboard, FHIR $export |
+| 3b | `storage-access-trusted-workspace.ps1` | Creates OneLake shortcut + invokes HDS imaging (incl. clinical) and OMOP pipelines |
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
 | 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
 | 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) |

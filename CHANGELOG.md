@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased] — March 14-16, 2026
+## [Unreleased] — March 14-18, 2026
+
+### Deployment Flow
+- **Added** Step 1b: Fabric workspace creation early in Phase 1 (before FHIR/DICOM)
+- **Fixed** Step 2 to use `-SkipDicom` to prevent duplicate DICOM execution
+- **Removed** redundant clinical pipeline trigger — imaging pipeline includes clinical data foundation
+- Pipeline sequence: Imaging (includes clinical) → OMOP (was: Clinical → Imaging → OMOP)
 
 ### Data Agents
 - **Fixed** invalid Observation fewshot query — changed `valueQuantity_value`/`valueQuantity_unit` to `JSON_VALUE(valueQuantity_string, '$.value')`/`JSON_VALUE(valueQuantity_string, '$.unit')`

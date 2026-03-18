@@ -45,7 +45,6 @@ param(
     [string]$ShortcutName = "dicom-output",
     [string]$ShortcutFolderPath = "Files/Ingest/Imaging/DICOM/DICOM-HDS",
 
-    [string]$ClinicalPipelineName = "healthcare1_msft_clinical_data_foundation_ingestion",
     [string]$ImagingPipelineName = "healthcare1_msft_imaging_with_clinical_foundation_ingestion",
     [string]$OmopPipelineName = "healthcare1_msft_omop_analytics"
 )
@@ -801,9 +800,11 @@ $step8Timer.Stop()
 $shortcutStatus = if ($existingShortcut) { 'EXISTS' } else { 'OK' }
 Record-Step -Name 'Create Lakehouse Shortcut' -Status $shortcutStatus -Seconds $step8Timer.Elapsed.TotalSeconds
 
-# ── Step 9: Run Clinical Data Foundation pipeline (must complete first) ──
+# ── Step 9: Run Imaging pipeline (includes clinical data foundation) ──
+# NOTE: The imaging pipeline (healthcare1_msft_imaging_with_clinical_foundation_ingestion)
+# encompasses the clinical data foundation steps, so we skip the separate clinical pipeline.
 $step9Timer = [System.Diagnostics.Stopwatch]::StartNew()
-Write-Log '─── Step 9: Running Clinical Data Foundation pipeline ───' 'INFO'
+Write-Log '─── Step 9: Running Imaging with Clinical Foundation pipeline ───' 'INFO'
 
 # Refresh token
 $fabricToken = Get-FabricApiAccessToken
@@ -819,107 +820,14 @@ if ($pipelineResult.Response.PSObject.Properties['value']) {
     $pipelines = @($pipelineResult.Response.value)
 }
 
-# Find clinical pipeline
-$clinicalPipeline = $pipelines | Where-Object { $_.displayName -eq $ClinicalPipelineName } | Select-Object -First 1
-if (-not $clinicalPipeline) {
-    Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found. Available:" 'WARN'
-    foreach ($p in $pipelines) { Write-Log "    - $($p.displayName)" 'INFO' }
-    Write-Log "  Skipping clinical pipeline — imaging pipeline will run independently." 'WARN'
-    $step9Timer.Stop()
-    Record-Step -Name 'Clinical Pipeline' -Status 'SKIPPED' -Seconds $step9Timer.Elapsed.TotalSeconds
-} else {
-    $clinicalId = $clinicalPipeline.id
-    Write-Log "  Found '$ClinicalPipelineName' (ID: $clinicalId)" 'INFO'
-
-    # Invoke clinical pipeline
-    $clinRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/Pipeline/instances"
-    Write-Log "  Invoking clinical pipeline run..." 'INFO'
-    $clinRunOk = $false
-    try {
-        Invoke-FabricApiRequest -Method Post -Uri $clinRunUri -Headers $fabHeaders -Description "Run pipeline '$ClinicalPipelineName'"
-        Write-Log "  Clinical pipeline invoked (202 Accepted)." 'INFO'
-        $clinRunOk = $true
-    } catch {
-        if ($_.Exception.Message -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log "  Clinical pipeline is already running. Will poll for completion." 'WARN'
-            $clinRunOk = $true
-        } else { throw }
-    }
-
-    # Poll for clinical pipeline completion via Job Scheduler
-    if ($clinRunOk) {
-        Write-Log "  Waiting for clinical pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
-        $maxPollMin = 60
-        $pollElapsed = 0
-        $clinCompleted = $false
-
-        while ($pollElapsed -lt $maxPollMin) {
-            Start-Sleep -Seconds 30
-            $pollElapsed += 0.5
-
-            # Refresh token periodically
-            if ($pollElapsed % 10 -eq 0) {
-                $fabricToken = Get-FabricApiAccessToken
-                $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
-            }
-
-            # Check latest job instance status
-            $jobsUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/instances?limit=1"
-            try {
-                $jobsResult = Invoke-FabricApiRequest -Method Get -Uri $jobsUri -Headers $fabHeaders -Description 'Poll clinical pipeline status'
-                $latestJob = $null
-                if ($jobsResult.Response.PSObject.Properties['value']) {
-                    $latestJob = $jobsResult.Response.value | Select-Object -First 1
-                }
-
-                if ($latestJob) {
-                    $jobStatus = $latestJob.status
-                    Write-Log "  Clinical pipeline status: $jobStatus ($pollElapsed min elapsed)" 'INFO'
-
-                    if ($jobStatus -eq 'Completed') {
-                        Write-Log "  Clinical pipeline completed successfully!" 'INFO'
-                        $clinCompleted = $true
-                        break
-                    } elseif ($jobStatus -eq 'Failed') {
-                        Write-Log "  Clinical pipeline FAILED. Proceeding to imaging pipeline anyway." 'WARN'
-                        break
-                    } elseif ($jobStatus -eq 'Cancelled') {
-                        Write-Log "  Clinical pipeline was cancelled. Proceeding to imaging pipeline." 'WARN'
-                        break
-                    }
-                    # InProgress, NotStarted → keep polling
-                } else {
-                    Write-Log "  No job instance found ($pollElapsed min)" 'DEBUG'
-                }
-            } catch {
-                Write-Log "  Poll error: $($_.Exception.Message). Retrying..." 'WARN'
-            }
-        }
-
-        if (-not $clinCompleted -and $pollElapsed -ge $maxPollMin) {
-            Write-Log "  Clinical pipeline did not complete within $maxPollMin min. Proceeding to imaging pipeline." 'WARN'
-        }
-    }
-
-    $step9Timer.Stop()
-    Record-Step -Name 'Clinical Pipeline' -Status $(if ($clinCompleted) { 'COMPLETED' } else { 'TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
-}
-
-# ── Step 10: Run Imaging pipeline (after clinical pipeline completes) ──
-$step10Timer = [System.Diagnostics.Stopwatch]::StartNew()
-Write-Log '─── Step 10: Running Imaging pipeline ───' 'INFO'
-
-# Refresh token
-$fabricToken = Get-FabricApiAccessToken
-$fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
-
+# Find imaging pipeline (includes clinical data foundation)
 $imagingPipeline = $pipelines | Where-Object { $_.displayName -eq $ImagingPipelineName } | Select-Object -First 1
 if (-not $imagingPipeline) {
     Write-Log "  Imaging pipeline '$ImagingPipelineName' not found." 'ERROR'
     Write-Log "  Available pipelines:" 'INFO'
     foreach ($p in $pipelines) { Write-Log "    - $($p.displayName) ($($p.id))" 'INFO' }
-    $step10Timer.Stop()
-    Record-Step -Name 'Imaging Pipeline' -Status 'NOT FOUND' -Seconds $step10Timer.Elapsed.TotalSeconds
+    $step9Timer.Stop()
+    Record-Step -Name 'Imaging Pipeline' -Status 'NOT FOUND' -Seconds $step9Timer.Elapsed.TotalSeconds
     throw "Pipeline '$ImagingPipelineName' does not exist in workspace '$FabricWorkspaceName'."
 }
 
@@ -932,24 +840,24 @@ Write-Log "  Invoking imaging pipeline run..." 'INFO'
 try {
     Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
     Write-Log "  Imaging pipeline invoked successfully (202 Accepted)." 'INFO'
-    $step10Timer.Stop()
-    Record-Step -Name 'Imaging Pipeline' -Status 'INVOKED' -Seconds $step10Timer.Elapsed.TotalSeconds
+    $step9Timer.Stop()
+    Record-Step -Name 'Imaging Pipeline' -Status 'INVOKED' -Seconds $step9Timer.Elapsed.TotalSeconds
 } catch {
     $errMsg = $_.Exception.Message
     if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
         Write-Log "  Imaging pipeline is already running or recently invoked." 'WARN'
-        $step10Timer.Stop()
-        Record-Step -Name 'Imaging Pipeline' -Status 'ALREADY RUNNING' -Seconds $step10Timer.Elapsed.TotalSeconds
+        $step9Timer.Stop()
+        Record-Step -Name 'Imaging Pipeline' -Status 'ALREADY RUNNING' -Seconds $step9Timer.Elapsed.TotalSeconds
     } else {
-        $step10Timer.Stop()
-        Record-Step -Name 'Imaging Pipeline' -Status 'FAILED' -Seconds $step10Timer.Elapsed.TotalSeconds
+        $step9Timer.Stop()
+        Record-Step -Name 'Imaging Pipeline' -Status 'FAILED' -Seconds $step9Timer.Elapsed.TotalSeconds
         throw
     }
 }
 
-# ── Step 11: Run OMOP Analytics pipeline (after imaging pipeline) ──
-$step11Timer = [System.Diagnostics.Stopwatch]::StartNew()
-Write-Log '─── Step 11: Running OMOP Analytics pipeline ───' 'INFO'
+# ── Step 10: Run OMOP Analytics pipeline (after imaging pipeline) ──
+$step10Timer = [System.Diagnostics.Stopwatch]::StartNew()
+Write-Log '─── Step 10: Running OMOP Analytics pipeline ───' 'INFO'
 
 # Refresh token
 $fabricToken = Get-FabricApiAccessToken
@@ -971,8 +879,8 @@ if (-not $omopPipeline) {
     Write-Log "  Available pipelines:" 'INFO'
     foreach ($p in $pipelines2) { Write-Log "    - $($p.displayName) ($($p.id))" 'INFO' }
     Write-Log "  Skipping OMOP pipeline — it may not be deployed yet." 'WARN'
-    $step11Timer.Stop()
-    Record-Step -Name 'OMOP Pipeline' -Status 'NOT FOUND' -Seconds $step11Timer.Elapsed.TotalSeconds
+    $step10Timer.Stop()
+    Record-Step -Name 'OMOP Pipeline' -Status 'NOT FOUND' -Seconds $step10Timer.Elapsed.TotalSeconds
 } else {
     $omopId = $omopPipeline.id
     Write-Log "  Found '$OmopPipelineName' (ID: $omopId)" 'INFO'
@@ -983,17 +891,17 @@ if (-not $omopPipeline) {
     try {
         Invoke-FabricApiRequest -Method Post -Uri $omopRunUri -Headers $fabHeaders -Description "Run pipeline '$OmopPipelineName'"
         Write-Log "  OMOP pipeline invoked successfully (202 Accepted)." 'INFO'
-        $step11Timer.Stop()
-        Record-Step -Name 'OMOP Pipeline' -Status 'INVOKED' -Seconds $step11Timer.Elapsed.TotalSeconds
+        $step10Timer.Stop()
+        Record-Step -Name 'OMOP Pipeline' -Status 'INVOKED' -Seconds $step10Timer.Elapsed.TotalSeconds
     } catch {
         $errMsg = $_.Exception.Message
         if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
             Write-Log "  OMOP pipeline is already running or recently invoked." 'WARN'
-            $step11Timer.Stop()
-            Record-Step -Name 'OMOP Pipeline' -Status 'ALREADY RUNNING' -Seconds $step11Timer.Elapsed.TotalSeconds
+            $step10Timer.Stop()
+            Record-Step -Name 'OMOP Pipeline' -Status 'ALREADY RUNNING' -Seconds $step10Timer.Elapsed.TotalSeconds
         } else {
-            $step11Timer.Stop()
-            Record-Step -Name 'OMOP Pipeline' -Status 'FAILED' -Seconds $step11Timer.Elapsed.TotalSeconds
+            $step10Timer.Stop()
+            Record-Step -Name 'OMOP Pipeline' -Status 'FAILED' -Seconds $step10Timer.Elapsed.TotalSeconds
             throw
         }
     }
