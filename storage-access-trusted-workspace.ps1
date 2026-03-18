@@ -499,11 +499,21 @@ $step1Timer = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Log '─── Step 1: Resolving infrastructure from deployment outputs ───' 'INFO'
 
 $fhirOutputs = az deployment group show --resource-group $ResourceGroupName --name fhir-infra --query properties.outputs 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $fhirOutputs) {
-    throw "Cannot find fhir-infra deployment in resource group '$ResourceGroupName'."
+$storageAccountName = $null
+if ($LASTEXITCODE -eq 0 -and $fhirOutputs) {
+    $fhirJson = $fhirOutputs | ConvertFrom-Json
+    $storageAccountName = $fhirJson.storageAccountName.value
 }
-$fhirJson = $fhirOutputs | ConvertFrom-Json
-$storageAccountName = $fhirJson.storageAccountName.value
+
+# Fallback: if deployment failed (e.g. RoleAssignmentExists) but resources exist, find storage account directly
+if (-not $storageAccountName) {
+    Write-Log "  Deployment outputs not available — searching for storage account in resource group..." 'WARN'
+    $storageAccountName = az storage account list -g $ResourceGroupName `
+        --query "[?starts_with(name,'stfhir')].name" -o tsv 2>$null
+    if (-not $storageAccountName) {
+        throw "Cannot find FHIR storage account in resource group '$ResourceGroupName'. Ensure deploy-fhir.ps1 has been run."
+    }
+}
 
 Write-Log "  Storage Account: $storageAccountName" 'INFO'
 
