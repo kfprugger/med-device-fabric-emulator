@@ -734,6 +734,7 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
 | 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
 | 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) |
+| 7 | Phase 3: FabricDicomCohortingToolkit | Cohorting Agent + DICOM Viewer + Imaging Report |
 
 ## 🧹 Cleanup
 

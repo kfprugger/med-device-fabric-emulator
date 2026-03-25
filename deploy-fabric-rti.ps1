@@ -254,6 +254,77 @@ if ($Phase2) {
     }
     Write-Host "  ✓ HDS: $($hdsItem.displayName)" -ForegroundColor Green
 
+    # ================================================================
+    # PREFLIGHT: Workspace Identity Validation
+    # Ensures the correct SP is used for all RBAC and shortcut operations.
+    # Detects and cleans stale SPs from previous deployments.
+    # ================================================================
+    Write-Host ""
+    Write-Host "--- PREFLIGHT: Workspace Identity Validation ---" -ForegroundColor Cyan
+
+    $verifiedSPId = $null
+    $verifiedAppId = $null
+
+    # Step 1: Get the CURRENT workspace identity from Fabric API
+    try {
+        $wsIdentityResult = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/provisionIdentity"
+        $verifiedSPId = $wsIdentityResult.servicePrincipalId
+        $verifiedAppId = $wsIdentityResult.applicationId
+    } catch {
+        # Identity already exists — get from workspace details
+        try {
+            $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
+            if ($wsDetail.identity) {
+                $verifiedSPId = $wsDetail.identity.servicePrincipalId
+                $verifiedAppId = $wsDetail.identity.applicationId
+            }
+        } catch {}
+    }
+
+    if (-not $verifiedSPId) {
+        # Fallback: use az ad sp list but warn about potential staleness
+        $allSPs = az ad sp list --display-name $FabricWorkspaceName --query "[].{id:id, appId:appId, created:createdDateTime}" -o json 2>$null | ConvertFrom-Json
+        if ($allSPs -and $allSPs.Count -eq 1) {
+            $verifiedSPId = $allSPs[0].id
+            $verifiedAppId = $allSPs[0].appId
+        } elseif ($allSPs -and $allSPs.Count -gt 1) {
+            Write-Host "  ⚠ Multiple SPs found for '$FabricWorkspaceName':" -ForegroundColor Yellow
+            foreach ($sp in $allSPs) { Write-Host "    $($sp.id) (appId: $($sp.appId), created: $($sp.created))" -ForegroundColor DarkGray }
+            # Use the most recently created one
+            $verifiedSPId = ($allSPs | Sort-Object -Property created -Descending | Select-Object -First 1).id
+            $verifiedAppId = ($allSPs | Sort-Object -Property created -Descending | Select-Object -First 1).appId
+            Write-Host "  Using most recent: $verifiedSPId" -ForegroundColor Yellow
+        }
+    }
+
+    if (-not $verifiedSPId) {
+        Write-Host "  ERROR: Cannot resolve workspace identity SP. Provision it manually." -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "  ✓ Workspace Identity SP: $verifiedSPId" -ForegroundColor Green
+    if ($verifiedAppId) { Write-Host "    App ID: $verifiedAppId" -ForegroundColor Gray }
+
+    # Step 2: Detect and clean stale SPs from previous deployments
+    $allSPs = az ad sp list --display-name $FabricWorkspaceName --query "[].{id:id, appId:appId}" -o json 2>$null | ConvertFrom-Json
+    if ($allSPs -and $allSPs.Count -gt 1) {
+        Write-Host "  ⚠ Found $($allSPs.Count) SPs named '$FabricWorkspaceName' — cleaning stale ones..." -ForegroundColor Yellow
+        foreach ($sp in $allSPs) {
+            if ($sp.id -ne $verifiedSPId) {
+                Write-Host "    Deleting stale SP: $($sp.id) (appId: $($sp.appId))..." -NoNewline
+                try {
+                    az ad app delete --id $sp.appId 2>$null | Out-Null
+                    Write-Host " ✓" -ForegroundColor Green
+                } catch {
+                    Write-Host " ✗" -ForegroundColor Red
+                }
+            }
+        }
+    } else {
+        Write-Host "  ✓ No stale SPs detected" -ForegroundColor Green
+    }
+    Write-Host ""
+
     # Re-discover KQL Database (use generic items API — kqlDatabases endpoint deprecated)
     $kqlDbName = "MasimoKQLDB"
     $eventhouseName = "MasimoEventhouse"
@@ -412,34 +483,12 @@ if ($Phase2) {
             # Ensure workspace identity has Storage Blob Data Contributor on the storage account
             Write-Host "  Granting workspace identity access to storage..." -ForegroundColor Gray
             try {
-                # Get workspace identity from Fabric API
-                $wsSPId = $null
-                $wsAppId = $null
-                try {
-                    $wsIdentity = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/provisionIdentity"
-                    $wsSPId = if ($wsIdentity) { $wsIdentity.servicePrincipalId } else { $null }
-                    $wsAppId = if ($wsIdentity) { $wsIdentity.applicationId } else { $null }
-                } catch {
-                    # 400 "WorkspaceIdentityAlreadyExists" is expected — look up from workspace details
-                    Write-Host "  Identity already provisioned — retrieving from workspace..." -ForegroundColor Gray
-                }
-                if (-not $wsSPId) {
-                    # Get identity from workspace details via Fabric API
-                    try {
-                        $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
-                        if ($wsDetail.identity) {
-                            $wsSPId = $wsDetail.identity.servicePrincipalId
-                            $wsAppId = $wsDetail.identity.applicationId
-                        }
-                    } catch {}
-                }
-                if (-not $wsSPId) {
-                    # Final fallback: lookup SP by workspace display name via az ad
-                    $wsSP = az ad sp list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
-                    if ($wsSP) { $wsSPId = $wsSP }
-                }
+                # Use the verified workspace identity from preflight check
+                $wsSPId = $verifiedSPId
+                $wsAppId = $verifiedAppId
+
                 if ($wsSPId) {
-                    Write-Host "  ✓ Workspace identity SP: $wsSPId" -ForegroundColor Green
+                    Write-Host "  ✓ Workspace identity SP: $wsSPId (verified in preflight)" -ForegroundColor Green
                     if ($wsAppId) { Write-Host "    App ID: $wsAppId" -ForegroundColor Gray }
                     $storageBlobContribRole = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"  # Storage Blob Data Contributor
                     $existingRole = az role assignment list --assignee $wsSPId `
@@ -564,7 +613,7 @@ if ($Phase2) {
                 }
 
                 $shortcutPath = "Files/Ingest/Clinical/FHIR-NDJSON"
-                $shortcutName = "AHDS-FHIR"
+                $shortcutName = "AHDS"
                 Write-Host "  Creating shortcut: $shortcutPath/$shortcutName → $storageUrl/$exportContainerName" -ForegroundColor White
 
                 # Check if shortcut already exists (idempotent)
@@ -1111,7 +1160,7 @@ dependencies:
     Write-Host "║  Phase 2 Results: $p2Success / $p2Total succeeded                        ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║                                                              ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║  Created:                                                    ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
-    Write-Host "║    • Bronze LH → FHIR export (Ingest/.../AHDS-FHIR)        ║" -ForegroundColor Gray
+    Write-Host "║    • Bronze LH → FHIR export (Ingest/.../AHDS)             ║" -ForegroundColor Gray
     Write-Host "║    • scipy==1.11.4 → HDS Spark environment                  ║" -ForegroundColor Gray
     Write-Host "║    • Clinical pipeline triggered (NDJSON → Silver)           ║" -ForegroundColor Gray
     Write-Host "║    • SilverPatient external table (OneLake shortcut)         ║" -ForegroundColor Gray
@@ -2016,6 +2065,74 @@ if (-not $kqlDbObj) {
         $cmd = ".create-or-alter table AlertHistory ingestion json mapping 'AlertHistoryMapping' @'$mappingBody'"
         if (Invoke-KustoMgmt -Command $cmd -Label "AlertHistory JSON mapping" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
 
+        # --- 6c-ii. AlertHistory Update Policy (auto-populate from TelemetryRaw) ---
+        Write-Host "  Creating AlertHistory update policy (auto-detect alerts)..." -ForegroundColor White
+
+        $fnBody = @'
+{
+    let spo2_alerts = TelemetryRaw
+        | extend spo2_val = todouble(telemetry.spo2)
+        | where spo2_val < 94
+        | extend
+            alert_tier = case(spo2_val < 85, "CRITICAL", spo2_val < 90, "URGENT", "WARNING"),
+            alert_type = "SPO2_LOW",
+            metric_name = "spo2",
+            metric_value = spo2_val,
+            threshold_value = case(spo2_val < 85, 85.0, spo2_val < 90, 90.0, 94.0)
+        | project
+            alert_id = strcat("SPO2-", device_id, "-", format_datetime(todatetime(timestamp), "yyyyMMddHHmmss")),
+            alert_time = todatetime(timestamp),
+            device_id,
+            patient_id = "",
+            patient_name = "",
+            alert_tier,
+            alert_type,
+            metric_name,
+            metric_value,
+            threshold_value,
+            qualifying_conditions = "",
+            message = strcat(alert_tier, ": Device ", device_id, " SpO2=", tostring(round(spo2_val,1)), "% (threshold: ", tostring(threshold_value), "%)"),
+            acknowledged = false,
+            acknowledged_by = "",
+            acknowledged_at = datetime(null);
+    let pr_alerts = TelemetryRaw
+        | extend pr_val = toint(telemetry.pr)
+        | where pr_val > 110 or pr_val < 50
+        | extend
+            is_high = pr_val > 110,
+            alert_tier = case(pr_val > 150 or pr_val < 40, "CRITICAL", pr_val > 130 or pr_val < 45, "URGENT", "WARNING"),
+            alert_type = iff(pr_val > 110, "PR_HIGH", "PR_LOW"),
+            metric_name = "pr",
+            metric_value = todouble(pr_val),
+            threshold_value = case(
+                pr_val > 150, 150.0, pr_val > 130, 130.0, pr_val > 110, 110.0,
+                pr_val < 40, 40.0, pr_val < 45, 45.0, 50.0)
+        | project
+            alert_id = strcat("PR-", device_id, "-", format_datetime(todatetime(timestamp), "yyyyMMddHHmmss")),
+            alert_time = todatetime(timestamp),
+            device_id,
+            patient_id = "",
+            patient_name = "",
+            alert_tier,
+            alert_type,
+            metric_name,
+            metric_value,
+            threshold_value,
+            qualifying_conditions = "",
+            message = strcat(alert_tier, ": Device ", device_id, " PR=", tostring(pr_val), " bpm (threshold: ", tostring(threshold_value), ")"),
+            acknowledged = false,
+            acknowledged_by = "",
+            acknowledged_at = datetime(null);
+    spo2_alerts | union pr_alerts
+}
+'@
+        $cmd = ".create-or-alter function with (docstring='Update policy transform: detects SpO2 and PR alerts in each TelemetryRaw batch', folder='ClinicalAlerts') fn_AlertHistoryTransform() $fnBody"
+        if (Invoke-KustoMgmt -Command $cmd -Label "fn_AlertHistoryTransform (update policy function)" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
+
+        $updatePolicyJson = '[{"IsEnabled":true,"Source":"TelemetryRaw","Query":"fn_AlertHistoryTransform()","IsTransactional":false,"PropagateIngestionProperties":false}]'
+        $cmd = ".alter table AlertHistory policy update @'$updatePolicyJson'"
+        if (Invoke-KustoMgmt -Command $cmd -Label "AlertHistory update policy (auto-populate from TelemetryRaw)" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
+
         # --- 6d. Create TelemetryRaw table (in case Eventstream didn't auto-create it) ---
         Write-Host ""
         Write-Host "  Ensuring TelemetryRaw table exists..." -ForegroundColor White
@@ -2311,7 +2428,7 @@ if (-not $SkipHdsGuidance) {
         Write-Host "      5. Select the fhir-export container" -ForegroundColor Gray
     }
     Write-Host "      6. Create the shortcut at:" -ForegroundColor Gray
-    Write-Host "         Files/Ingest/Clinical/FHIR-NDJSON/AHDS-FHIR" -ForegroundColor Gray
+    Write-Host "         Files/Ingest/Clinical/FHIR-NDJSON/AHDS" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  7c. UPDATE HDS CONFIG:" -ForegroundColor Yellow
     Write-Host "      1. Open Admin Lakehouse → Files/system-configurations/" -ForegroundColor Gray

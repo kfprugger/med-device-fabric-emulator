@@ -274,18 +274,25 @@ if (-not $SkipFabric) {
             }
         }
 
-        # Also delete the Entra ID app registration created for the workspace identity
-        Write-Host "  Checking for Entra app registration '$FabricWorkspaceName'..." -ForegroundColor Gray
+        # Delete ALL Entra ID app registrations matching the workspace name (handles stale SPs from previous deployments)
+        Write-Host "  Checking for Entra app registrations matching '$FabricWorkspaceName'..." -ForegroundColor Gray
         try {
-            $appId = az ad app list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
-            if ($appId) {
-                az ad app delete --id $appId 2>$null | Out-Null
-                Write-Host "  ✓ Entra app registration '$FabricWorkspaceName' deleted." -ForegroundColor Green
+            $allApps = az ad app list --display-name $FabricWorkspaceName --query "[].{id:id, appId:appId}" -o json 2>$null | ConvertFrom-Json
+            if ($allApps -and $allApps.Count -gt 0) {
+                Write-Host "  Found $($allApps.Count) app registration(s) to delete" -ForegroundColor Gray
+                foreach ($app in $allApps) {
+                    try {
+                        az ad app delete --id $app.id 2>$null | Out-Null
+                        Write-Host "  ✓ Deleted app registration: $($app.id) (appId: $($app.appId))" -ForegroundColor Green
+                    } catch {
+                        Write-Host "  ⚠ Could not delete app $($app.id): $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
+                }
             } else {
-                Write-Host "  No matching app registration found." -ForegroundColor DarkGray
+                Write-Host "  No matching app registrations found." -ForegroundColor DarkGray
             }
         } catch {
-            Write-Host "  ⚠ Could not delete app registration: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  ⚠ Could not list app registrations: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     } else {
         Write-Host "  Workspace not found — skipping identity deprovision." -ForegroundColor DarkGray

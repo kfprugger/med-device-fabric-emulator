@@ -840,14 +840,12 @@ Write-Log "  Invoking imaging pipeline run..." 'INFO'
 try {
     Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
     Write-Log "  Imaging pipeline invoked successfully (202 Accepted)." 'INFO'
-    $step9Timer.Stop()
-    Record-Step -Name 'Imaging Pipeline' -Status 'INVOKED' -Seconds $step9Timer.Elapsed.TotalSeconds
+    $imgInvoked = $true
 } catch {
     $errMsg = $_.Exception.Message
     if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
         Write-Log "  Imaging pipeline is already running or recently invoked." 'WARN'
-        $step9Timer.Stop()
-        Record-Step -Name 'Imaging Pipeline' -Status 'ALREADY RUNNING' -Seconds $step9Timer.Elapsed.TotalSeconds
+        $imgInvoked = $true
     } else {
         $step9Timer.Stop()
         Record-Step -Name 'Imaging Pipeline' -Status 'FAILED' -Seconds $step9Timer.Elapsed.TotalSeconds
@@ -855,9 +853,75 @@ try {
     }
 }
 
-# ── Step 10: Run OMOP Analytics pipeline (after imaging pipeline) ──
+# Wait for imaging pipeline to complete before starting OMOP (OMOP cannot run in parallel)
+if ($imgInvoked) {
+    Write-Log "  Waiting for imaging pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
+    $maxPollMin = 60
+    $pollStart = Get-Date
+    $imgCompleted = $false
+
+    while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt $maxPollMin) {
+        Start-Sleep -Seconds 30
+        $pollElapsed = [math]::Round((New-TimeSpan -Start $pollStart).TotalMinutes, 1)
+
+        # Refresh token periodically
+        if ([math]::Floor($pollElapsed) % 10 -eq 0 -and $pollElapsed -gt 0) {
+            $fabricToken = Get-FabricApiAccessToken
+            $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
+        }
+
+        try {
+            $jobsResult = Invoke-FabricApiRequest -Method Get `
+                -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/instances?limit=1" `
+                -Headers $fabHeaders -Description 'Poll imaging pipeline status'
+            $latestJob = $null
+            if ($jobsResult.Response.PSObject.Properties['value']) {
+                $latestJob = $jobsResult.Response.value | Select-Object -First 1
+            }
+
+            if ($latestJob) {
+                $jobStatus = $latestJob.status
+                Write-Log "  Imaging pipeline status: $jobStatus ($pollElapsed min elapsed)" 'INFO'
+
+                if ($jobStatus -eq 'Completed') {
+                    Write-Log "  ✓ Imaging pipeline completed successfully!" 'INFO'
+                    $imgCompleted = $true
+                    break
+                } elseif ($jobStatus -eq 'Failed') {
+                    Write-Log "  ✗ Imaging pipeline FAILED. OMOP pipeline will NOT be started." 'WARN'
+                    break
+                } elseif ($jobStatus -eq 'Cancelled') {
+                    Write-Log "  Imaging pipeline was cancelled. OMOP pipeline will NOT be started." 'WARN'
+                    break
+                }
+            }
+        } catch {
+            Write-Log "  Poll error: $($_.Exception.Message). Retrying..." 'WARN'
+        }
+    }
+
+    if (-not $imgCompleted -and (New-TimeSpan -Start $pollStart).TotalMinutes -ge $maxPollMin) {
+        Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min. OMOP will NOT be started." 'WARN'
+    }
+}
+
+$step9Timer.Stop()
+Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' } else { 'TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
+
+# ── Step 10: Run OMOP Analytics pipeline (MUST run AFTER imaging pipeline completes) ──
+# IMPORTANT: OMOP cannot run in parallel with any other HDS pipeline.
 $step10Timer = [System.Diagnostics.Stopwatch]::StartNew()
+
+if (-not $imgCompleted) {
+    Write-Log '─── Step 10: SKIPPING OMOP pipeline (imaging pipeline did not complete) ───' 'WARN'
+    Write-Log "  OMOP cannot run in parallel with other HDS pipelines." 'WARN'
+    Write-Log "  Run OMOP manually after the imaging pipeline finishes." 'WARN'
+    $step10Timer.Stop()
+    Record-Step -Name 'OMOP Pipeline' -Status 'SKIPPED (imaging incomplete)' -Seconds $step10Timer.Elapsed.TotalSeconds
+} else {
+
 Write-Log '─── Step 10: Running OMOP Analytics pipeline ───' 'INFO'
+Write-Log "  (Imaging pipeline completed — safe to start OMOP)" 'INFO'
 
 # Refresh token
 $fabricToken = Get-FabricApiAccessToken
@@ -906,6 +970,7 @@ if (-not $omopPipeline) {
         }
     }
 }
+} # end: if ($imgCompleted) — OMOP only runs after imaging completes
 
 # ── Summary ──
 $overallTimer.Stop()
@@ -936,10 +1001,50 @@ Write-Host "    Target:    https://$storageAccountName.dfs.core.windows.net/$Dic
 Write-Host "    Lakehouse: $BronzeLakehouseName ($lakehouseId)" -ForegroundColor DarkGray
 Write-Host "    Workspace: $FabricWorkspaceName ($workspaceId)" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  The HDS pipeline sequence has commenced. The clinical data" -ForegroundColor Cyan
-Write-Host "  foundation pipeline ran first, followed by the imaging pipeline," -ForegroundColor Cyan
-Write-Host "  then the OMOP analytics pipeline." -ForegroundColor Cyan
+Write-Host "  The HDS pipeline sequence:" -ForegroundColor Cyan
+Write-Host "    1. Imaging with Clinical Foundation pipeline — $(if ($imgCompleted) { 'COMPLETED ✓' } else { 'IN PROGRESS / NOT COMPLETED' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
+if ($omopPipeline) {
+    Write-Host "    2. OMOP Analytics pipeline — $(if ($imgCompleted) { 'INVOKED ✓' } else { 'SKIPPED (waiting for imaging)' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
+}
 Write-Host ""
+
+# Build direct pipeline URLs
+$fabricPortalBase = "https://app.fabric.microsoft.com/groups/$workspaceId"
+if ($imagingPipeline) {
+    Write-Host "  Pipeline URLs:" -ForegroundColor White
+    Write-Host "    Imaging Pipeline:  $fabricPortalBase/datapipelines/$imagingId" -ForegroundColor DarkCyan
+}
+if ($omopPipeline) {
+    $omopUrl = "$fabricPortalBase/datapipelines/$omopId"
+    Write-Host "    OMOP Pipeline:     $omopUrl" -ForegroundColor DarkCyan
+}
+Write-Host ""
+
+if (-not $imgCompleted) {
+    Write-Host "  ┌──────────────────────────────────────────────────────────────┐" -ForegroundColor Yellow
+    Write-Host "  │  NEXT STEP: Launch the OMOP Gold pipeline manually after    │" -ForegroundColor Yellow
+    Write-Host "  │  the Imaging pipeline completes.                            │" -ForegroundColor Yellow
+    Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  1. Wait for the Imaging pipeline to finish:" -ForegroundColor White
+    if ($imagingPipeline) {
+        Write-Host "     $fabricPortalBase/datapipelines/$imagingId" -ForegroundColor Cyan
+    }
+    Write-Host "  2. Then launch the OMOP Gold pipeline:" -ForegroundColor White
+    if ($omopPipeline) {
+        Write-Host "     $omopUrl" -ForegroundColor Cyan
+    }
+    Write-Host ""
+} elseif (-not $omopPipeline) {
+    Write-Host "  ⚠ OMOP pipeline not found — deploy it via HDS, then run manually." -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "  ┌──────────────────────────────────────────────────────────────┐" -ForegroundColor Green
+    Write-Host "  │  OMOP Gold pipeline has been launched. Monitor progress:    │" -ForegroundColor Green
+    Write-Host "  │  $($omopUrl.PadRight(58))│" -ForegroundColor Green
+    Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Green
+    Write-Host ""
+}
 Write-Host "  Monitor pipeline progress in the Fabric portal:" -ForegroundColor DarkGray
 Write-Host "  https://app.fabric.microsoft.com" -ForegroundColor DarkGray
 Write-Host ""

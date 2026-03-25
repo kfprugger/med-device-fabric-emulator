@@ -14,6 +14,8 @@
 #              c. Enriched fn_ClinicalAlerts function
 #   Step 5b — DICOM shortcut + HDS imaging (incl. clinical) and OMOP pipelines
 #   Step 6  — Data Agents (Patient 360 + Clinical Triage)
+#   Step 7  — Phase 3: Cohorting Agent + DICOM Viewer + Imaging Report
+#              (requires Gold OMOP pipeline to have completed)
 #
 # Usage:
 #   .\Deploy-All.ps1                                                  # Full pipeline up to Phase 1
@@ -45,9 +47,14 @@ param (
     [switch]$SkipDicom,              # Skip DICOM infra + loader
     [switch]$SkipFabric,             # Skip deploy-fabric-rti.ps1 entirely
     [switch]$Phase2Only,             # Run only Fabric Phase 2
+    [switch]$Phase3Only,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$RebuildContainers,      # Force container image rebuilds
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
+
+    # ── Phase 3 (FabricDicomCohortingToolkit) ──
+    [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
+    [string]$DicomViewerResourceGroup = "rg-hds-dicom-viewer",
 
     # ── Cleanup ──
     [switch]$Teardown                # Run cleanup scripts instead of deployment
@@ -56,8 +63,8 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Validate conditionally-required parameters
-if (-not $Teardown -and -not $Phase2Only -and -not $AdminSecurityGroup) {
-    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown and -Phase2Only can omit it."
+if (-not $Teardown -and -not $Phase2Only -and -not $Phase3Only -and -not $AdminSecurityGroup) {
+    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2Only, and -Phase3Only can omit it."
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -180,6 +187,8 @@ if ($Teardown) {
     Write-Host "  MODE: TEARDOWN (destroying all resources)" -ForegroundColor Red
 } elseif ($Phase2Only) {
     Write-Host "  MODE: Fabric Phase 2 only" -ForegroundColor Yellow
+} elseif ($Phase3Only) {
+    Write-Host "  MODE: Phase 3 only (Cohorting Agent + DICOM Viewer)" -ForegroundColor Magenta
 } else {
     $skips = @()
     if ($SkipBaseInfra) { $skips += "Base Infra" }
@@ -252,8 +261,7 @@ if ($Phase2Only) {
 # STEP 1 — BASE AZURE INFRASTRUCTURE
 # ============================================================================
 
-if (-not $SkipBaseInfra) {
-    # Check if base infra already exists
+if (-not $Phase3Only -and -not $SkipBaseInfra) {
     Write-Host "  Checking for existing base infrastructure..." -ForegroundColor DarkGray
     $baseInfraExists = $false
     $baseDeployment = az deployment group show `
@@ -353,7 +361,7 @@ if (-not $SkipBaseInfra) {
 # STEP 1b — FABRIC WORKSPACE (created early so HDS can be deployed during FHIR/DICOM steps)
 # ============================================================================
 
-if (-not $SkipFabric) {
+if (-not $Phase3Only -and -not $SkipFabric) {
     Invoke-Step -StepName "Fabric Workspace" `
         -Description "Create workspace '$FabricWorkspaceName' + assign capacity + provision identity" -Action {
 
@@ -436,7 +444,7 @@ if (-not $SkipFabric) {
 # STEP 2 — FHIR SERVICE + SYNTHEA + LOADER
 # ============================================================================
 
-if (-not $SkipFhir) {
+if (-not $Phase3Only -and -not $SkipFhir) {
     Invoke-Step -StepName "FHIR Service + Synthea + Loader" `
         -Description "$PatientCount patients -> FHIR (deploy-fhir.ps1)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -470,7 +478,7 @@ if (-not $SkipFhir) {
 # STEP 2b — DICOM SERVICE + TCIA LOADER
 # ============================================================================
 
-if (-not $SkipDicom -and -not $SkipFhir) {
+if (-not $Phase3Only -and -not $SkipDicom -and -not $SkipFhir) {
     Invoke-Step -StepName "DICOM Service + Loader" `
         -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -500,7 +508,7 @@ if (-not $SkipDicom -and -not $SkipFhir) {
 # STEP 3 — FABRIC RTI PHASE 1
 # ============================================================================
 
-if (-not $SkipFabric) {
+if (-not $Phase3Only -and -not $SkipFabric) {
     Invoke-Step -StepName "Fabric RTI Phase 1" `
         -Description "Workspace, Eventhouse, KQL DB, Eventstream, FHIR export" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -534,7 +542,7 @@ if (-not $SkipFabric) {
 # STEP 4 — HDS GUIDANCE (informational only)
 # ============================================================================
 
-if (-not $SkipFabric) {
+if (-not $Phase3Only -and -not $SkipFabric) {
     $script:stepNumber++
     Write-Banner -Text "STEP $($script:stepNumber): HEALTHCARE DATA SOLUTIONS (MANUAL)" -Color Yellow
     Write-Host ""
@@ -593,8 +601,104 @@ if ($Phase2Only) {
 }
 
 # ============================================================================
+# STEP 7 — PHASE 3: COHORTING AGENT + DICOM VIEWER (FabricDicomCohortingToolkit)
+# Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
+# ============================================================================
+
+if ($Phase2Only -or $Phase3Only) {
+    # Phase 3 preflight: verify Gold OMOP lakehouse has data
+    $runPhase3 = $true
+
+    if ($Phase3Only -or $Phase2Only) {
+        Invoke-Step -StepName "Phase 3: Imaging Toolkit" `
+            -Description "Cohorting Agent + DICOM Viewer (FabricDicomCohortingToolkit)" -Action {
+
+            # Validate toolkit path
+            if (-not (Test-Path "$DicomToolkitPath\Deploy-DataAgent.ps1")) {
+                throw "FabricDicomCohortingToolkit not found at '$DicomToolkitPath'. Clone it: git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$DicomToolkitPath'"
+            }
+
+            Write-Host "  ┌──────────────────────────────────────────────────────────────┐" -ForegroundColor Magenta
+            Write-Host "  │  PHASE 3: FabricDicomCohortingToolkit Deployment            │" -ForegroundColor Magenta
+            Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Magenta
+            Write-Host ""
+
+            # Preflight: Check Gold OMOP lakehouse has data
+            Write-Host "  --- PREFLIGHT: Gold OMOP Lakehouse Check ---" -ForegroundColor Cyan
+            try {
+                function Get-FabricTokenLocal {
+                    $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+                    if ($t -is [System.Security.SecureString]) {
+                        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
+                        try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+                    }
+                    return $t
+                }
+                $p3Token = Get-FabricTokenLocal
+                $p3Headers = @{ Authorization = "Bearer $p3Token"; "Content-Type" = "application/json" }
+                $p3Base = "https://api.fabric.microsoft.com/v1"
+
+                $p3Ws = (Invoke-RestMethod -Uri "$p3Base/workspaces" -Headers $p3Headers).value |
+                    Where-Object { $_.displayName -eq $FabricWorkspaceName }
+                $p3WsId = $p3Ws.id
+
+                $p3Items = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/items?type=Lakehouse" -Headers $p3Headers).value
+                $goldLh = $p3Items | Where-Object { $_.displayName -match 'gold_omop' } | Select-Object -First 1
+
+                if (-not $goldLh) {
+                    throw "Gold OMOP Lakehouse not found. Ensure the OMOP pipeline has completed before running Phase 3."
+                }
+                Write-Host "  ✓ Gold OMOP Lakehouse: $($goldLh.displayName) ($($goldLh.id))" -ForegroundColor Green
+            } catch {
+                Write-Host "  ✗ Gold OMOP preflight failed: $($_.Exception.Message)" -ForegroundColor Red
+                throw "Phase 3 requires the Gold OMOP pipeline to have completed. Run the OMOP pipeline first."
+            }
+
+            # Step 3a: Deploy Cohorting Data Agent
+            Write-Host ""
+            Write-Host "  --- Step 3a: Cohorting Data Agent ---" -ForegroundColor Cyan
+            Write-Host "  Deploying HDS Multi-Layer Imaging Cohort Agent..." -ForegroundColor White
+            Write-Host "    Source: $DicomToolkitPath\Deploy-DataAgent.ps1" -ForegroundColor DarkGray
+            Write-Host ""
+
+            & "$DicomToolkitPath\Deploy-DataAgent.ps1" `
+                -FabricWorkspaceName $FabricWorkspaceName
+
+            Write-Host ""
+
+            # Step 3b: Deploy DICOM Viewer (Azure infra + OHIF)
+            Write-Host "  --- Step 3b: DICOM Viewer ---" -ForegroundColor Cyan
+            Write-Host "  Deploying OHIF Viewer + DICOMweb Proxy to Azure..." -ForegroundColor White
+            Write-Host "    Source: $DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" -ForegroundColor DarkGray
+            Write-Host "    Resource Group: $DicomViewerResourceGroup" -ForegroundColor DarkGray
+            Write-Host ""
+
+            & "$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" `
+                -ResourceGroup $DicomViewerResourceGroup `
+                -FabricWorkspaceName $FabricWorkspaceName `
+                -Location $Location
+
+            Write-Host ""
+
+            # Step 3c: Imaging Report guidance
+            Write-Host "  --- Step 3c: Power BI Imaging Report ---" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  The Power BI Imaging Report must be opened in Power BI Desktop:" -ForegroundColor White
+            Write-Host "    1. Open: $DicomToolkitPath\ImagingReport.pbip" -ForegroundColor DarkGray
+            Write-Host "    2. Authenticate to Fabric SQL endpoint (Microsoft Entra)" -ForegroundColor DarkGray
+            Write-Host "    3. Update OhifViewerBaseUrl parameter:" -ForegroundColor DarkGray
+            Write-Host "       Transform Data → Manage Parameters → set OHIF URL" -ForegroundColor DarkGray
+            Write-Host "    4. Publish to workspace '$FabricWorkspaceName'" -ForegroundColor DarkGray
+            Write-Host ""
+        }
+    }
+}
+
+# ============================================================================
 # SUMMARY
 # ============================================================================
 
 Write-Summary
 Pop-Location
+

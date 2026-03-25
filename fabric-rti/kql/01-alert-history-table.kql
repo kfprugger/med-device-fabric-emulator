@@ -56,3 +56,92 @@
     {"column": "acknowledged_at",        "path": "$.acknowledged_at",        "datatype": "datetime"}
 ]
 ```
+
+// ============================================================================
+// UPDATE POLICY: Auto-populate AlertHistory from TelemetryRaw
+//
+// This function runs on every batch ingested into TelemetryRaw.
+// It evaluates SpO2 and Pulse Rate thresholds and inserts rows
+// into AlertHistory for any breaches detected in the batch.
+//
+// NOTE: Update policy functions receive the INGESTED BATCH as the
+// implicit source (not the full table). So we evaluate thresholds
+// on the batch data, not a time window.
+// ============================================================================
+
+// Transform function: evaluates each ingested batch for alert thresholds
+.create-or-alter function with (
+    docstring = "Update policy transform: detects SpO2 and PR alerts in each TelemetryRaw batch",
+    folder = "ClinicalAlerts"
+) fn_AlertHistoryTransform() {
+    // Evaluate the incoming batch (implicit source = TelemetryRaw batch)
+    let spo2_alerts = TelemetryRaw
+        | extend spo2_val = todouble(telemetry.spo2)
+        | where spo2_val < 94
+        | extend
+            alert_tier = case(spo2_val < 85, "CRITICAL", spo2_val < 90, "URGENT", "WARNING"),
+            alert_type = "SPO2_LOW",
+            metric_name = "spo2",
+            metric_value = spo2_val,
+            threshold_value = case(spo2_val < 85, 85.0, spo2_val < 90, 90.0, 94.0)
+        | project
+            alert_id = strcat("SPO2-", device_id, "-", format_datetime(todatetime(timestamp), "yyyyMMddHHmmss")),
+            alert_time = todatetime(timestamp),
+            device_id,
+            patient_id = "",
+            patient_name = "",
+            alert_tier,
+            alert_type,
+            metric_name,
+            metric_value,
+            threshold_value,
+            qualifying_conditions = "",
+            message = strcat(alert_tier, ": Device ", device_id, " SpO2=", tostring(round(spo2_val,1)), "% (threshold: ", tostring(threshold_value), "%)"),
+            acknowledged = false,
+            acknowledged_by = "",
+            acknowledged_at = datetime(null);
+    let pr_alerts = TelemetryRaw
+        | extend pr_val = toint(telemetry.pr)
+        | where pr_val > 110 or pr_val < 50
+        | extend
+            is_high = pr_val > 110,
+            alert_tier = case(pr_val > 150 or pr_val < 40, "CRITICAL", pr_val > 130 or pr_val < 45, "URGENT", "WARNING"),
+            alert_type = iff(pr_val > 110, "PR_HIGH", "PR_LOW"),
+            metric_name = "pr",
+            metric_value = todouble(pr_val),
+            threshold_value = case(
+                pr_val > 150, 150.0, pr_val > 130, 130.0, pr_val > 110, 110.0,
+                pr_val < 40, 40.0, pr_val < 45, 45.0, 50.0)
+        | project
+            alert_id = strcat("PR-", device_id, "-", format_datetime(todatetime(timestamp), "yyyyMMddHHmmss")),
+            alert_time = todatetime(timestamp),
+            device_id,
+            patient_id = "",
+            patient_name = "",
+            alert_tier,
+            alert_type,
+            metric_name,
+            metric_value,
+            threshold_value,
+            qualifying_conditions = "",
+            message = strcat(alert_tier, ": Device ", device_id, " PR=", tostring(pr_val), " bpm (threshold: ", tostring(threshold_value), ")"),
+            acknowledged = false,
+            acknowledged_by = "",
+            acknowledged_at = datetime(null);
+    spo2_alerts
+    | union pr_alerts
+}
+
+// Attach update policy: runs fn_AlertHistoryTransform on every TelemetryRaw batch
+.alter table AlertHistory policy update
+```
+[
+    {
+        "IsEnabled": true,
+        "Source": "TelemetryRaw",
+        "Query": "fn_AlertHistoryTransform()",
+        "IsTransactional": false,
+        "PropagateIngestionProperties": false
+    }
+]
+```
