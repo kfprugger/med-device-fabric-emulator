@@ -690,7 +690,7 @@ $workspaceId = $workspace.id
 Write-Log "  Workspace ID: $workspaceId" 'INFO'
 
 # Resolve lakehouse ID from name
-$lhResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/lakehouses" -Headers $fabHeaders -Description 'List lakehouses'
+$lhResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items?type=Lakehouse" -Headers $fabHeaders -Description 'List lakehouses'
 $lakehouse = $lhResult.Response.value | Where-Object { $_.displayName -eq $BronzeLakehouseName } | Select-Object -First 1
 if (-not $lakehouse) {
     throw "Lakehouse '$BronzeLakehouseName' not found in workspace '$FabricWorkspaceName'."
