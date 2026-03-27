@@ -692,14 +692,16 @@ if ($Phase2Only -or $Phase3Only) {
             Write-Host ""
 
             # Step 3b: Deploy DICOM Viewer (Azure infra + OHIF)
+            # Step 3b: Deploy DICOM Viewer FIRST (viewer URL needed by notebook)
+            # Use the main Azure RG so all resources stay together
+            $viewerRg = if ($DicomViewerResourceGroup -eq "rg-hds-dicom-viewer") { $ResourceGroupName } else { $DicomViewerResourceGroup }
             Write-Host "  --- Step 3b: DICOM Viewer ---" -ForegroundColor Cyan
             Write-Host "  Deploying OHIF Viewer + DICOMweb Proxy to Azure..." -ForegroundColor White
-            Write-Host "    Source: $DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" -ForegroundColor DarkGray
-            Write-Host "    Resource Group: $DicomViewerResourceGroup" -ForegroundColor DarkGray
+            Write-Host "    Resource Group: $viewerRg (shared with Phase 1)" -ForegroundColor DarkGray
             Write-Host ""
 
             & "$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" `
-                -ResourceGroup $DicomViewerResourceGroup `
+                -ResourceGroup $viewerRg `
                 -FabricWorkspaceName $FabricWorkspaceName `
                 -Location $Location
 
@@ -726,7 +728,7 @@ if ($Phase2Only -or $Phase3Only) {
             # Deploy + run notebook (auto-discovers OHIF URL from Azure)
             & "$DicomToolkitPath\deploy-notebook.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName `
-                -DicomViewerResourceGroup $DicomViewerResourceGroup
+                -DicomViewerResourceGroup $viewerRg
             Write-Host ""
 
             # Step 3d: Deploy Power BI Direct Lake Report

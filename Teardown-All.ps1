@@ -59,7 +59,7 @@ Write-Host "|             COMPLETE TEARDOWN — ALL PHASES                 |" -F
 Write-Host "+============================================================+" -ForegroundColor Red
 Write-Host ""
 Write-Host "  Phase 1 RG:        $ResourceGroupName" -ForegroundColor White
-Write-Host "  Phase 3 RG:        $DicomViewerResourceGroup" -ForegroundColor White
+Write-Host "  Viewer RG:         $DicomViewerResourceGroup $(if ($DicomViewerResourceGroup -eq $ResourceGroupName) { '(same as Phase 1)' })" -ForegroundColor White
 Write-Host "  Fabric Workspace:  $FabricWorkspaceName" -ForegroundColor White
 Write-Host ""
 
@@ -78,8 +78,8 @@ if ($Wait) { $removeArgs['Wait'] = $true }
 
 & "$ScriptDir\cleanup\Remove-AllResources.ps1" @removeArgs
 
-# ── Step 2: Teardown DICOM Viewer RG (Phase 3) ──
-if (-not $SkipAzure) {
+# ── Step 2: Teardown DICOM Viewer RG (if separate from Phase 1) ──
+if (-not $SkipAzure -and $DicomViewerResourceGroup -ne $ResourceGroupName) {
     $viewerExists = az group exists --name $DicomViewerResourceGroup 2>$null
     if ($viewerExists -eq "true") {
         Write-Host ""
