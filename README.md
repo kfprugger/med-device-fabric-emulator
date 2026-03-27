@@ -9,6 +9,7 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **Healthcare Data Solutions** — 10K synthetic FHIR R4 patients (5M+ clinical resources) flow into a Silver Lakehouse via Fabric's native HDS connector with zero custom ETL
 - **DICOM Medical Imaging** — Real TCIA chest CT studies are downloaded, re-tagged with Synthea patient identifiers, stored in ADLS Gen2, and ingested into Fabric HDS via a OneLake shortcut and the imaging pipeline
 - **Data Agents** — Two natural-language AI agents (Patient 360 + Clinical Triage) let users ask questions like *"Show me all patients with SpO2 below 90 and their active conditions"* — federating across KQL telemetry and Lakehouse clinical data in one response
+- **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
 The entire solution deploys in under 2 hours with a single command (`Deploy-All.ps1`) and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
@@ -173,6 +174,7 @@ flowchart LR
 
 - Downloads chest CT studies from **LIDC-IDRI** collection (or RSNA Pneumonia for CR modality)
 - **Re-tags** DICOM files with Synthea patient identifiers using pydicom — preserves pixel data, replaces patient demographics and UIDs
+- Compatible with **Python 3.9** runtime (Azure Container Instances); uses `Optional[str]` / `Tuple` syntax, `from __future__ import annotations` at file top
 - Matches imaging modality to patient conditions via SNOMED code mapping (COPD→CT, Asthma→CR, etc.)
 - Uploads re-tagged `.dcm` files to **ADLS Gen2** (`dicom-output` container), organized by `{patientId}/{studyUID}/{seriesUID}/`
 - Creates **FHIR ImagingStudy** resources linking each study to the Synthea patient
@@ -734,7 +736,28 @@ The `Deploy-All.ps1` script orchestrates the complete end-to-end deployment:
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Silver Lakehouse shortcuts + enriched alerts |
 | 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents |
 | 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) |
-| 7 | Phase 3: FabricDicomCohortingToolkit | Cohorting Agent + DICOM Viewer + Imaging Report |
+| 7 | Phase 3: FabricDicomCohortingToolkit | Cohorting Agent + DICOM Viewer + Imaging Report (see [FabricDicomCohortingToolkit README](../FabricDicomCohortingToolkit/README.md)) |
+
+### Phase 3: Imaging Report & DICOM Viewer
+
+After Phase 2 completes and Silver Lakehouse tables are populated, deploy the Cohorting Toolkit from the companion repo. **Deploy in this order** — the viewer must be deployed first so its URL flows into the reporting data:
+
+```powershell
+cd ../FabricDicomCohortingToolkit
+
+# 1. Deploy DICOM Viewer (must be first — generates the OHIF URL)
+cd dicom-viewer
+.\Deploy-DicomViewer.ps1 -ResourceGroup rg-hds-dicom-viewer -FabricWorkspaceName "med-device-rti-hds"
+cd ..
+
+# 2. Deploy materialization notebook (auto-discovers OHIF URL from Azure)
+.\deploy-notebook.ps1 -FabricWorkspaceName "med-device-rti-hds"
+
+# 3. Deploy Power BI report (Direct Lake — no PBI Desktop needed)
+.\Deploy-ImagingReport.ps1 -FabricWorkspaceName "med-device-rti-hds"
+```
+
+The materialization notebook uses `notebookutils` to dynamically resolve workspace and lakehouse IDs — no hardcoded GUIDs required. The `deploy-notebook.ps1` script auto-discovers the OHIF Viewer URL from Azure and patches it into the notebook before upload.
 
 ## 🧹 Cleanup
 
@@ -776,3 +799,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Healthcare Data Solutions](https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview) - FHIR data foundations on Fabric
 - [Fabric IQ](https://learn.microsoft.com/fabric/iq/overview) - Unified semantic layer and ontology workload
 - [Ontology (preview)](https://learn.microsoft.com/fabric/iq/ontology/overview) - Enterprise vocabulary and data binding
+- [OHIF Viewer](https://ohif.org) - Open-source DICOM viewer (MIT)
+- [TCIA](https://www.cancerimagingarchive.net/) - The Cancer Imaging Archive (public DICOM studies)

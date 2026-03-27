@@ -567,7 +567,7 @@ if ($dicomImageExists -eq "true" -and -not $RebuildContainers) {
     }
     Push-Location dicom-loader
     try {
-        az acr build --registry $acrName --image "dicom-loader:v1" .
+        az acr build --registry $acrName --image "dicom-loader:v1" --no-logs .
         if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR building DICOM Loader container" -ForegroundColor Red
             exit 1

@@ -38,8 +38,8 @@
 # Requires Az.Accounts, Az.Resources, Az.Storage (loaded in Step 0)
 [CmdletBinding()]
 param(
-    [string]$FabricWorkspaceName = "med-device-rti-hds",
-    [string]$ResourceGroupName = "rg-medtech-rti-fhir",
+    [Parameter(Mandatory)][string]$FabricWorkspaceName,
+    [Parameter(Mandatory)][string]$ResourceGroupName,
     [string]$BronzeLakehouseName = "healthcare1_msft_bronze",
     [string]$DicomContainerName = "dicom-output",
     [string]$ShortcutName = "dicom-output",

@@ -42,8 +42,8 @@
 #>
 
 param(
-    [string]$ResourceGroupName = "rg-medtech-rti-fhir",
-    [string]$FabricWorkspaceName = "med-device-rti-hds",
+    [Parameter(Mandatory)][string]$ResourceGroupName,
+    [Parameter(Mandatory)][string]$FabricWorkspaceName,
     [switch]$SkipAzure,
     [switch]$SkipFabric,
     [switch]$Force,

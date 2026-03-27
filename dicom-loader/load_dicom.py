@@ -11,6 +11,7 @@ Environment variables:
     TCIA_COLLECTION    — TCIA collection name (default: LIDC-IDRI)
     STUDY_COUNT        — Max studies to download (default: 100)
 """
+from __future__ import annotations
 
 import os
 import sys

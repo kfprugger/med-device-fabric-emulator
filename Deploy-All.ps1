@@ -146,10 +146,11 @@ function Invoke-Step {
 }
 
 function Write-Summary {
+    param([string]$Title = "DEPLOYMENT SUMMARY")
     $overallTimer.Stop()
     $totalMin = [math]::Round($overallTimer.Elapsed.TotalMinutes, 1)
 
-    Write-Banner -Text "DEPLOYMENT SUMMARY" -Color Magenta
+    Write-Banner -Text $Title -Color Magenta
     Write-Host ""
 
     foreach ($r in $script:stepResults) {
@@ -168,6 +169,22 @@ function Write-Summary {
     }
     Write-Host "  Total time: $totalMin min" -ForegroundColor Cyan
     Write-Host ""
+}
+
+function Assert-StorageAccountName {
+    param([string]$Name, [string]$Context = "Storage account")
+    if ($Name -cne $Name.ToLower()) {
+        throw "$Context name '$Name' must be lowercase. Got uppercase characters."
+    }
+    if ($Name -notmatch '^[a-z0-9]+$') {
+        throw "$Context name '$Name' must be alphanumeric only (a-z, 0-9). No hyphens, underscores, or special characters."
+    }
+    if ($Name.Length -gt 24) {
+        throw "$Context name '$Name' exceeds 24 characters (got $($Name.Length)). Azure storage accounts must be 3-24 characters."
+    }
+    if ($Name.Length -lt 3) {
+        throw "$Context name '$Name' is too short (got $($Name.Length)). Azure storage accounts must be 3-24 characters."
+    }
 }
 
 # ============================================================================
@@ -255,6 +272,13 @@ if ($Phase2Only) {
                 -ResourceGroupName $ResourceGroupName
         }
     }
+
+
+    Write-Summary -Title "PHASE 2 DEPLOYMENT SUMMARY"
+    Pop-Location
+
+    # If not Phase3Only, exit here
+    if (-not $Phase3Only) { exit 0 }
 }
 
 # ============================================================================
@@ -681,15 +705,34 @@ if ($Phase2Only -or $Phase3Only) {
 
             Write-Host ""
 
-            # Step 3c: Imaging Report guidance
-            Write-Host "  --- Step 3c: Power BI Imaging Report ---" -ForegroundColor Cyan
+            # Step 3c: Create Reporting Lakehouse + Materialize Notebook
+            Write-Host "  --- Step 3c: Reporting Tables ---" -ForegroundColor Cyan
+            Write-Host "  Creating reporting lakehouse and running materialization notebook..." -ForegroundColor White
+
+            # Create reporting lakehouse if it doesn't exist
+            $p3Token2 = Get-FabricTokenLocal
+            $p3H2 = @{ Authorization = "Bearer $p3Token2"; "Content-Type" = "application/json" }
+            $existingLh = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/lakehouses" -Headers $p3H2).value |
+                Where-Object { $_.displayName -eq "healthcare1_reporting_gold" }
+            if (-not $existingLh) {
+                Write-Host "  Creating healthcare1_reporting_gold lakehouse..." -ForegroundColor White
+                $lhBody = '{"displayName":"healthcare1_reporting_gold","type":"Lakehouse"}'
+                Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/items" -Headers $p3H2 -Method Post -Body $lhBody | Out-Null
+                Write-Host "  ✓ Reporting lakehouse created" -ForegroundColor Green
+            } else {
+                Write-Host "  ✓ Reporting lakehouse already exists" -ForegroundColor Green
+            }
+
+            # Deploy + run notebook (auto-discovers OHIF URL from Azure)
+            & "$DicomToolkitPath\deploy-notebook.ps1" `
+                -FabricWorkspaceName $FabricWorkspaceName `
+                -DicomViewerResourceGroup $DicomViewerResourceGroup
             Write-Host ""
-            Write-Host "  The Power BI Imaging Report must be opened in Power BI Desktop:" -ForegroundColor White
-            Write-Host "    1. Open: $DicomToolkitPath\ImagingReport.pbip" -ForegroundColor DarkGray
-            Write-Host "    2. Authenticate to Fabric SQL endpoint (Microsoft Entra)" -ForegroundColor DarkGray
-            Write-Host "    3. Update OhifViewerBaseUrl parameter:" -ForegroundColor DarkGray
-            Write-Host "       Transform Data → Manage Parameters → set OHIF URL" -ForegroundColor DarkGray
-            Write-Host "    4. Publish to workspace '$FabricWorkspaceName'" -ForegroundColor DarkGray
+
+            # Step 3d: Deploy Power BI Direct Lake Report
+            Write-Host "  --- Step 3d: Power BI Imaging Report (Direct Lake) ---" -ForegroundColor Cyan
+            & "$DicomToolkitPath\Deploy-ImagingReport.ps1" `
+                -FabricWorkspaceName $FabricWorkspaceName
             Write-Host ""
         }
     }
@@ -699,6 +742,7 @@ if ($Phase2Only -or $Phase3Only) {
 # SUMMARY
 # ============================================================================
 
-Write-Summary
+$summaryTitle = if ($Phase3Only) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2Only) { "PHASE 2+3 DEPLOYMENT SUMMARY" } else { "PHASE 1 DEPLOYMENT SUMMARY" }
+Write-Summary -Title $summaryTitle
 Pop-Location
 

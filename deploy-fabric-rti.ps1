@@ -2048,7 +2048,14 @@ if (-not $kqlDbObj) {
             KustoHeaders = $kustoHeaders
         }
 
+        # --- 6c-pre. Create TelemetryRaw table FIRST (needed by update policy) ---
+        Write-Host ""
+        Write-Host "  Ensuring TelemetryRaw table exists..." -ForegroundColor White
+        $cmd = '.create-merge table TelemetryRaw (device_id:string, timestamp:string, telemetry:dynamic, source:string, metadata:dynamic) with (folder="Masimo")'
+        if (Invoke-KustoMgmt -Command $cmd -Label "TelemetryRaw table" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
+
         # --- 6c. AlertHistory Table & Policies ---
+        Write-Host ""
         Write-Host "  Creating AlertHistory table & policies..." -ForegroundColor White
 
         $cmd = '.create table AlertHistory (alert_id: string, alert_time: datetime, device_id: string, patient_id: string, patient_name: string, alert_tier: string, alert_type: string, metric_name: string, metric_value: real, threshold_value: real, qualifying_conditions: string, message: string, acknowledged: bool, acknowledged_by: string, acknowledged_at: datetime)'
@@ -2132,12 +2139,6 @@ if (-not $kqlDbObj) {
         $updatePolicyJson = '[{"IsEnabled":true,"Source":"TelemetryRaw","Query":"fn_AlertHistoryTransform()","IsTransactional":false,"PropagateIngestionProperties":false}]'
         $cmd = ".alter table AlertHistory policy update @'$updatePolicyJson'"
         if (Invoke-KustoMgmt -Command $cmd -Label "AlertHistory update policy (auto-populate from TelemetryRaw)" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
-
-        # --- 6d. Create TelemetryRaw table (in case Eventstream didn't auto-create it) ---
-        Write-Host ""
-        Write-Host "  Ensuring TelemetryRaw table exists..." -ForegroundColor White
-        $cmd = '.create-merge table TelemetryRaw (device_id:string, timestamp:string, telemetry:dynamic, source:string, metadata:dynamic) with (folder="Masimo")'
-        if (Invoke-KustoMgmt -Command $cmd -Label "TelemetryRaw table" @kqlParams) { $kqlSuccess++ } else { $kqlFail++ }
 
         # --- 6e. Telemetry Functions ---
         Write-Host ""

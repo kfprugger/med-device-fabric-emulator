@@ -1,4 +1,5 @@
 """DICOM re-tagging logic — overwrites patient demographics and UIDs on downloaded TCIA files."""
+from __future__ import annotations
 
 import os
 import logging

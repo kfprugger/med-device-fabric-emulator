@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — March 26, 2026
+
+### DICOM Loader Fixes
+- **Fixed** Python 3.9 compatibility: `str | None` → `Optional[str]`, `tuple[str, str]` → `Tuple[str, str]` in `dicom_retagger.py` and `tcia_client.py`
+- **Fixed** `from __future__ import annotations` position in `load_dicom.py` — must be first statement after docstring (was after imports, causing SyntaxError)
+- **Fixed** `az acr build` charmap Unicode crash for DICOM loader — added `--no-logs` flag in `deploy-fhir.ps1`
+
+### KQL Deployment
+- **Fixed** KQL execution order in `deploy-fabric-rti.ps1` — TelemetryRaw table is now created **before** `fn_AlertHistoryTransform` and the AlertHistory update policy (was created after, causing `General_BadRequest` on fresh deploys)
+
+### Phase 3: Cohorting Toolkit Integration
+- **Added** Phase 3 deployment documentation for FabricDicomCohortingToolkit (imaging report, DICOM viewer, cohorting agent)
+- **Added** DICOM viewer proxy RBAC requirement — Container App managed identity needs Contributor on Fabric workspace for OneLake file reads
+- **Added** OHIF Viewer and TCIA to acknowledgments
+
+### FabricDicomCohortingToolkit
+- **Changed** `materialize_reporting.py` — removed all hardcoded workspace/lakehouse GUIDs; now uses `notebookutils.fabric.resolve_workspace_id()` and Fabric REST API to resolve lakehouse IDs by display name
+- **Changed** `deploy-notebook.ps1` — auto-discovers OHIF Viewer URL from Azure Static Web App before uploading notebook; patches URL into notebook code at deploy time
+- **Changed** Deployment order: DICOM Viewer → Notebook → Report (viewer must deploy first so its URL flows into the reporting data)
+
 ## [Unreleased] — March 14-18, 2026
 
 ### Deployment Flow

@@ -4,6 +4,9 @@
 param location string = resourceGroup().location
 param workspaceName string = 'hdws${uniqueString(resourceGroup().id)}'
 param fhirServiceName string = 'fhir${uniqueString(resourceGroup().id)}'
+@minLength(3)
+@maxLength(24)
+@description('Storage account name. Must be 3-24 chars, lowercase alphanumeric only.')
 param storageAccountName string = 'stfhir${uniqueString(resourceGroup().id)}'
 param adminGroupObjectId string = ''
 param resourceTags object = {}
