@@ -35,7 +35,7 @@ flowchart TB
         end
 
         subgraph HDS["Healthcare Data Solutions"]
-            BZ["Bronze Lakehouse\n(AHDS shortcut)"]
+            BZ["Bronze Lakehouse\n(FHIR-HDS shortcut)"]
             SLV["Silver Lakehouse\n(Patient, Condition,\nDevice, Location,\nEncounter, Basic)"]
             PIPE_C["Clinical Pipeline"]
             PIPE_I["Imaging Pipeline"]
@@ -50,7 +50,7 @@ flowchart TB
     end
 
     FHIR -->|"$export"| ADLS
-    ADLS -->|"OneLake shortcut\n(Bronze AHDS)"| BZ
+    ADLS -->|"OneLake shortcut\n(Bronze FHIR-HDS)"| BZ
     BZ --> PIPE_C --> SLV
     ADLS -->|"DICOM shortcut"| BZ
     BZ --> PIPE_I --> SLV
@@ -85,7 +85,7 @@ flowchart TB
 
 ### 5a — Bronze Lakehouse Shortcut
 
-Creates a OneLake shortcut named `AHDS` in the Bronze Lakehouse pointing to the FHIR `$export` data in ADLS Gen2. The shortcut name **must** be `AHDS` to match the HDS namespace `["Fabric.HDS", "AHDS"]`.
+Creates a OneLake shortcut named `FHIR-HDS` in the Bronze Lakehouse pointing to the FHIR `$export` data in ADLS Gen2. The shortcut name **must** be `FHIR-HDS` to match the HDS namespace path at `Files/Ingest/Clinical/FHIR-NDJSON/FHIR-HDS`.
 
 ### 5b — KQL Shortcuts to Silver Lakehouse
 

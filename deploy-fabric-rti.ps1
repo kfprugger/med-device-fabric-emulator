@@ -613,7 +613,7 @@ if ($Phase2) {
                 }
 
                 $shortcutPath = "Files/Ingest/Clinical/FHIR-NDJSON"
-                $shortcutName = "AHDS"
+                $shortcutName = "FHIR-HDS"
                 Write-Host "  Creating shortcut: $shortcutPath/$shortcutName → $storageUrl/$exportContainerName" -ForegroundColor White
 
                 # Check if shortcut already exists (idempotent)
@@ -1160,7 +1160,7 @@ dependencies:
     Write-Host "║  Phase 2 Results: $p2Success / $p2Total succeeded                        ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║                                                              ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║  Created:                                                    ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
-    Write-Host "║    • Bronze LH → FHIR export (Ingest/.../AHDS)             ║" -ForegroundColor Gray
+    Write-Host "║    • Bronze LH → FHIR export (Ingest/.../FHIR-HDS)             ║" -ForegroundColor Gray
     Write-Host "║    • scipy==1.11.4 → HDS Spark environment                  ║" -ForegroundColor Gray
     Write-Host "║    • Clinical pipeline triggered (NDJSON → Silver)           ║" -ForegroundColor Gray
     Write-Host "║    • SilverPatient external table (OneLake shortcut)         ║" -ForegroundColor Gray
@@ -2429,7 +2429,7 @@ if (-not $SkipHdsGuidance) {
         Write-Host "      5. Select the fhir-export container" -ForegroundColor Gray
     }
     Write-Host "      6. Create the shortcut at:" -ForegroundColor Gray
-    Write-Host "         Files/Ingest/Clinical/FHIR-NDJSON/AHDS" -ForegroundColor Gray
+    Write-Host "         Files/Ingest/Clinical/FHIR-NDJSON/FHIR-HDS" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  7c. UPDATE HDS CONFIG:" -ForegroundColor Yellow
     Write-Host "      1. Open Admin Lakehouse → Files/system-configurations/" -ForegroundColor Gray

@@ -11,7 +11,7 @@
     4. Creates the /Files/Ingest/Imaging/DICOM folder path in the Bronze Lakehouse
     5. Creates a Fabric cloud connection to the ADLS Gen2 storage account
     6. Creates a shortcut named DICOM-HDS pointing to the dicom-output ADLS Gen2 container
-       (the shortcut itself IS the DICOM-HDS folder — matches the AHDS pattern for FHIR data)
+       (the shortcut itself IS the DICOM-HDS folder — matches the FHIR-HDS pattern for FHIR data)
 
 .PARAMETER FabricWorkspaceName
     The Fabric workspace name. Default: "med-device-rti-hds"
@@ -27,7 +27,7 @@
 
 .PARAMETER ShortcutName
     Name of the shortcut inside the lakehouse. Default: "DICOM-HDS"
-    The shortcut itself becomes the DICOM-HDS folder (like AHDS for FHIR data).
+    The shortcut itself becomes the DICOM-HDS folder (like FHIR-HDS for FHIR data).
 
 .PARAMETER ShortcutFolderPath
     The lakehouse folder path (under /Files/) where the shortcut is created.
