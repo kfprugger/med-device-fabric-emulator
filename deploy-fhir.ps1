@@ -156,7 +156,7 @@ if (-not $infraExists) {
         exit 1
     }
 
-    Write-Host "Deploying FHIR infrastructure..." -ForegroundColor Cyan
+    Write-Host "Deploying FHIR infrastructure. This is a long running operation. Be patient..." -ForegroundColor Cyan
 
     # Get admin group object ID if specified
     $adminGroupObjectId = ""

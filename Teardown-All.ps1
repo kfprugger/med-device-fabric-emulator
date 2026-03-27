@@ -40,8 +40,8 @@
 #>
 
 param(
-    [Parameter(Mandatory)][string]$FabricWorkspaceName,
-    [string]$ResourceGroupName = "rg-medtech-rti-fhir",
+    [string]$FabricWorkspaceName,
+    [string]$ResourceGroupName,
     [string]$DicomViewerResourceGroup = "rg-hds-dicom-viewer",
     [switch]$SkipAzure,
     [switch]$SkipFabric,
@@ -53,6 +53,26 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
+# Read deployment state for defaults if parameters not provided
+$stateFile = Join-Path $ScriptDir ".deployment-state.json"
+if (Test-Path $stateFile) {
+    $state = Get-Content $stateFile -Raw | ConvertFrom-Json
+    $lastPhase = $state.phases | Select-Object -Last 1
+    if ($lastPhase.resources) {
+        if (-not $FabricWorkspaceName -and $lastPhase.resources.FabricWorkspaceName) {
+            $FabricWorkspaceName = $lastPhase.resources.FabricWorkspaceName
+            Write-Host "  (Using workspace from .deployment-state.json: $FabricWorkspaceName)" -ForegroundColor DarkGray
+        }
+        if (-not $ResourceGroupName -and $lastPhase.resources.ResourceGroupName) {
+            $ResourceGroupName = $lastPhase.resources.ResourceGroupName
+            Write-Host "  (Using RG from .deployment-state.json: $ResourceGroupName)" -ForegroundColor DarkGray
+        }
+    }
+}
+
+if (-not $FabricWorkspaceName) { throw "Parameter '-FabricWorkspaceName' is required (no .deployment-state.json found)" }
+if (-not $ResourceGroupName) { $ResourceGroupName = "rg-medtech-rti-fhir" }
+
 Write-Host ""
 Write-Host "+============================================================+" -ForegroundColor Red
 Write-Host "|             COMPLETE TEARDOWN — ALL PHASES                 |" -ForegroundColor Red
@@ -62,6 +82,29 @@ Write-Host "  Phase 1 RG:        $ResourceGroupName" -ForegroundColor White
 Write-Host "  Viewer RG:         $DicomViewerResourceGroup $(if ($DicomViewerResourceGroup -eq $ResourceGroupName) { '(same as Phase 1)' })" -ForegroundColor White
 Write-Host "  Fabric Workspace:  $FabricWorkspaceName" -ForegroundColor White
 Write-Host ""
+
+# Validate resource group exists before attempting deletion
+if (-not $SkipAzure) {
+    $rgExists = az group exists --name $ResourceGroupName 2>$null
+    if ($rgExists -ne "true") {
+        Write-Host "  ⚠ Resource group '$ResourceGroupName' does not exist in Azure." -ForegroundColor Yellow
+        Write-Host "    Available RGs with similar names:" -ForegroundColor DarkGray
+        $similar = az group list --query "[?contains(name,'med') || contains(name,'rti') || contains(name,'fhir')].name" -o tsv 2>$null
+        if ($similar) {
+            $similar -split "`n" | ForEach-Object { if ($_) { Write-Host "      - $_" -ForegroundColor Cyan } }
+        } else {
+            Write-Host "      (none found)" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+        if (-not $Force) {
+            $confirm = Read-Host "  Continue with Fabric-only teardown? (yes/no)"
+            if ($confirm -ne "yes") { Write-Host "  Aborted."; exit 0 }
+        }
+        $SkipAzure = $true
+        Write-Host "  Skipping Azure RG deletion (does not exist)." -ForegroundColor Yellow
+        Write-Host ""
+    }
+}
 
 # ── Step 1: Teardown Phase 1 Azure + Fabric ──
 Write-Host "── Step 1: Phase 1 Azure + Fabric ──" -ForegroundColor Cyan
@@ -110,6 +153,12 @@ if (-not $SkipAzure -and $DicomViewerResourceGroup -ne $ResourceGroupName) {
 $timer.Stop()
 $totalMin = [math]::Round($timer.Elapsed.TotalMinutes, 1)
 
+# Clean up state file
+if (Test-Path $stateFile) {
+    Remove-Item $stateFile -Force
+    Write-Host "  Deployment state file removed." -ForegroundColor DarkGray
+}
+
 Write-Host ""
 Write-Host "+============================================================+" -ForegroundColor Red
 Write-Host "|             TEARDOWN COMPLETE                              |" -ForegroundColor Red
@@ -120,5 +169,5 @@ Write-Host "  Phase 3 RG '$DicomViewerResourceGroup': $(if ($SkipAzure) { 'SKIPP
 Write-Host "  Workspace '$FabricWorkspaceName': $(if ($SkipFabric) { 'SKIPPED' } else { 'DELETED' })" -ForegroundColor Green
 Write-Host ""
 Write-Host "  To redeploy:" -ForegroundColor White
-Write-Host "    .\Deploy-All.ps1 -FabricWorkspaceName '$FabricWorkspaceName' -Location eastus -AdminSecurityGroup sg-azure-admins -Tags @{SecurityControl='Ignore'}" -ForegroundColor DarkGray
+Write-Host "    .\Deploy-All.ps1 -FabricWorkspaceName '$FabricWorkspaceName' -ResourceGroupName '$ResourceGroupName' -Location eastus -AdminSecurityGroup sg-azure-admins -Tags @{SecurityControl='Ignore'}" -ForegroundColor DarkGray
 Write-Host ""

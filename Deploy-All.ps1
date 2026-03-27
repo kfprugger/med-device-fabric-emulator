@@ -22,7 +22,7 @@
 #   .\Deploy-All.ps1 -ResourceGroupName "my-rg" -PatientCount 100     # Custom RG and patient count
 #   .\Deploy-All.ps1 -SkipBaseInfra                                   # Skip emulator infra (already deployed)
 #   .\Deploy-All.ps1 -SkipFhir                                        # Skip FHIR + Synthea (already loaded)
-#   .\Deploy-All.ps1 -Phase2Only -SilverLakehouseId "<id>"             # Run only Fabric Phase 2
+#   .\Deploy-All.ps1 -Phase2 -SilverLakehouseId "<id>"             # Run only Fabric Phase 2
 #   .\Deploy-All.ps1 -RebuildContainers                                # Force ACR image rebuilds
 
 param (
@@ -46,8 +46,8 @@ param (
     [switch]$SkipFhir,               # Skip deploy-fhir.ps1 (FHIR data already loaded)
     [switch]$SkipDicom,              # Skip DICOM infra + loader
     [switch]$SkipFabric,             # Skip deploy-fabric-rti.ps1 entirely
-    [switch]$Phase2Only,             # Run only Fabric Phase 2
-    [switch]$Phase3Only,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
+    [switch]$Phase2,             # Run only Fabric Phase 2
+    [switch]$Phase3,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$RebuildContainers,      # Force container image rebuilds
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
@@ -63,12 +63,61 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Validate conditionally-required parameters
-if (-not $Teardown -and -not $Phase2Only -and -not $Phase3Only -and -not $AdminSecurityGroup) {
-    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2Only, and -Phase3Only can omit it."
+if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $AdminSecurityGroup) {
+    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, and -Phase3 can omit it."
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
+
+# ============================================================================
+# DEPLOYMENT STATE FILE — shared context across phases
+# ============================================================================
+
+$stateFile = Join-Path $ScriptDir ".deployment-state.json"
+
+function Read-DeploymentState {
+    if (Test-Path $stateFile) {
+        return Get-Content $stateFile -Raw | ConvertFrom-Json
+    }
+    return @{ phases = @() }
+}
+
+function Write-DeploymentState {
+    param([object]$State)
+    $State | ConvertTo-Json -Depth 10 | Set-Content $stateFile -Encoding UTF8
+}
+
+function Save-PhaseResult {
+    param(
+        [string]$PhaseName,
+        [hashtable]$Resources = @{},
+        [array]$Steps = @()
+    )
+    $state = Read-DeploymentState
+    # Convert to hashtable if it's a PSCustomObject (from JSON)
+    if ($state -is [PSCustomObject]) {
+        $phases = @($state.phases)
+    } else {
+        $phases = @($state.phases)
+    }
+    $phaseEntry = @{
+        phase     = $PhaseName
+        timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+        resources = $Resources
+        steps     = $Steps
+    }
+    $phases += $phaseEntry
+    Write-DeploymentState @{ phases = $phases }
+}
+
+function Get-PhaseResources {
+    param([string]$PhaseName)
+    $state = Read-DeploymentState
+    $phase = $state.phases | Where-Object { $_.phase -eq $PhaseName } | Select-Object -Last 1
+    if ($phase) { return $phase.resources }
+    return @{}
+}
 
 # ============================================================================
 # HELPERS
@@ -139,16 +188,28 @@ function Invoke-Step {
             -Duration "$([math]::Round($timer.Elapsed.TotalMinutes, 1)) min" `
             -Detail $_.Exception.Message
         Write-Host "ERROR: Step failed. Stopping pipeline." -ForegroundColor Red
-        Write-Summary
+        Write-Summary -PhaseName "Failed"
         Pop-Location
         exit 1
     }
 }
 
 function Write-Summary {
-    param([string]$Title = "DEPLOYMENT SUMMARY")
+    param(
+        [string]$Title = "DEPLOYMENT SUMMARY",
+        [string]$PhaseName = "",
+        [hashtable]$PhaseResources = @{}
+    )
     $overallTimer.Stop()
     $totalMin = [math]::Round($overallTimer.Elapsed.TotalMinutes, 1)
+
+    # Save phase results to state file
+    if ($PhaseName) {
+        $stepData = $script:stepResults | ForEach-Object {
+            @{ name = $_.Name; success = $_.Success; duration = $_.Duration; detail = $_.Detail }
+        }
+        Save-PhaseResult -PhaseName $PhaseName -Resources $PhaseResources -Steps $stepData
+    }
 
     Write-Banner -Text $Title -Color Magenta
     Write-Host ""
@@ -169,22 +230,53 @@ function Write-Summary {
     }
     Write-Host "  Total time: $totalMin min" -ForegroundColor Cyan
     Write-Host ""
+
+    # Show cross-phase history if multiple phases have run
+    $state = Read-DeploymentState
+    if ($state.phases -and @($state.phases).Count -gt 1) {
+        Write-Host "  ┌─────────────────────────────────────────────────────────────┐" -ForegroundColor DarkCyan
+        Write-Host "  │  ALL PHASES                                                │" -ForegroundColor DarkCyan
+        Write-Host "  ├─────────────────────────────────────────────────────────────┤" -ForegroundColor DarkCyan
+        foreach ($p in $state.phases) {
+            $pSteps = @($p.steps)
+            $pPassed = ($pSteps | Where-Object { $_.success }).Count
+            $pTotal = $pSteps.Count
+            $pIcon = if ($pPassed -eq $pTotal) { "✓" } else { "⚠" }
+            $pColor = if ($pPassed -eq $pTotal) { "Green" } else { "Yellow" }
+            Write-Host "  │  $pIcon $($p.phase.PadRight(20)) $pPassed/$pTotal steps   $($p.timestamp)  │" -ForegroundColor $pColor
+        }
+        Write-Host "  └─────────────────────────────────────────────────────────────┘" -ForegroundColor DarkCyan
+        Write-Host ""
+    }
+
+    # Show key resources from state
+    if ($state.phases) {
+        $allResources = @{}
+        foreach ($p in $state.phases) {
+            if ($p.resources) {
+                $p.resources.PSObject.Properties | ForEach-Object { $allResources[$_.Name] = $_.Value }
+            }
+        }
+        if ($allResources.Count -gt 0) {
+            Write-Host "  Resources (from .deployment-state.json):" -ForegroundColor DarkGray
+            foreach ($k in $allResources.Keys | Sort-Object) {
+                Write-Host "    $($k): $($allResources[$k])" -ForegroundColor DarkGray
+            }
+            Write-Host ""
+        }
+    }
 }
 
-function Assert-StorageAccountName {
+function Resolve-StorageAccountName {
     param([string]$Name, [string]$Context = "Storage account")
-    if ($Name -cne $Name.ToLower()) {
-        throw "$Context name '$Name' must be lowercase. Got uppercase characters."
+    # Sanitize: lowercase, alphanumeric only, 3-24 chars
+    $sanitized = ($Name.ToLower() -replace '[^a-z0-9]', '')
+    if ($sanitized.Length -gt 24) { $sanitized = $sanitized.Substring(0, 24) }
+    if ($sanitized.Length -lt 3)  { throw "$Context name '$Name' is too short after sanitization (got '$sanitized')." }
+    if ($sanitized -ne $Name) {
+        Write-Host "  ⚠ $Context name sanitized: '$Name' → '$sanitized'" -ForegroundColor Yellow
     }
-    if ($Name -notmatch '^[a-z0-9]+$') {
-        throw "$Context name '$Name' must be alphanumeric only (a-z, 0-9). No hyphens, underscores, or special characters."
-    }
-    if ($Name.Length -gt 24) {
-        throw "$Context name '$Name' exceeds 24 characters (got $($Name.Length)). Azure storage accounts must be 3-24 characters."
-    }
-    if ($Name.Length -lt 3) {
-        throw "$Context name '$Name' is too short (got $($Name.Length)). Azure storage accounts must be 3-24 characters."
-    }
+    return $sanitized
 }
 
 # ============================================================================
@@ -202,9 +294,9 @@ Write-Host ""
 
 if ($Teardown) {
     Write-Host "  MODE: TEARDOWN (destroying all resources)" -ForegroundColor Red
-} elseif ($Phase2Only) {
+} elseif ($Phase2) {
     Write-Host "  MODE: Fabric Phase 2 only" -ForegroundColor Yellow
-} elseif ($Phase3Only) {
+} elseif ($Phase3) {
     Write-Host "  MODE: Phase 3 only (Cohorting Agent + DICOM Viewer)" -ForegroundColor Magenta
 } else {
     $skips = @()
@@ -238,7 +330,7 @@ if ($Teardown) {
             -ResourceGroupName $ResourceGroupName -Force -Wait
     }
 
-    Write-Summary
+    Write-Summary -PhaseName "Teardown"
     Pop-Location
     exit 0
 }
@@ -247,7 +339,7 @@ if ($Teardown) {
 # PHASE 2 ONLY MODE
 # ============================================================================
 
-if ($Phase2Only) {
+if ($Phase2) {
     Invoke-Step -StepName "Fabric RTI Phase 2" `
         -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
         $phase2Args = @{
@@ -274,18 +366,21 @@ if ($Phase2Only) {
     }
 
 
-    Write-Summary -Title "PHASE 2 DEPLOYMENT SUMMARY"
+    Write-Summary -Title "PHASE 2 DEPLOYMENT SUMMARY" -PhaseName "Phase2" -PhaseResources @{
+        FabricWorkspaceName = $FabricWorkspaceName
+        ResourceGroupName   = $ResourceGroupName
+    }
     Pop-Location
 
-    # If not Phase3Only, exit here
-    if (-not $Phase3Only) { exit 0 }
+    # If not Phase3, exit here
+    if (-not $Phase3) { exit 0 }
 }
 
 # ============================================================================
 # STEP 1 — BASE AZURE INFRASTRUCTURE
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipBaseInfra) {
+if (-not $Phase3 -and -not $SkipBaseInfra) {
     Write-Host "  Checking for existing base infrastructure..." -ForegroundColor DarkGray
     $baseInfraExists = $false
     $baseDeployment = az deployment group show `
@@ -385,7 +480,7 @@ if (-not $Phase3Only -and -not $SkipBaseInfra) {
 # STEP 1b — FABRIC WORKSPACE (created early so HDS can be deployed during FHIR/DICOM steps)
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $SkipFabric) {
     Invoke-Step -StepName "Fabric Workspace" `
         -Description "Create workspace '$FabricWorkspaceName' + assign capacity + provision identity" -Action {
 
@@ -468,7 +563,7 @@ if (-not $Phase3Only -and -not $SkipFabric) {
 # STEP 2 — FHIR SERVICE + SYNTHEA + LOADER
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipFhir) {
+if (-not $Phase3 -and -not $SkipFhir) {
     Invoke-Step -StepName "FHIR Service + Synthea + Loader" `
         -Description "$PatientCount patients -> FHIR (deploy-fhir.ps1)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -502,7 +597,7 @@ if (-not $Phase3Only -and -not $SkipFhir) {
 # STEP 2b — DICOM SERVICE + TCIA LOADER
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipDicom -and -not $SkipFhir) {
+if (-not $Phase3 -and -not $SkipDicom -and -not $SkipFhir) {
     Invoke-Step -StepName "DICOM Service + Loader" `
         -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -532,7 +627,7 @@ if (-not $Phase3Only -and -not $SkipDicom -and -not $SkipFhir) {
 # STEP 3 — FABRIC RTI PHASE 1
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $SkipFabric) {
     Invoke-Step -StepName "Fabric RTI Phase 1" `
         -Description "Workspace, Eventhouse, KQL DB, Eventstream, FHIR export" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -566,7 +661,7 @@ if (-not $Phase3Only -and -not $SkipFabric) {
 # STEP 4 — HDS GUIDANCE (informational only)
 # ============================================================================
 
-if (-not $Phase3Only -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $SkipFabric) {
     $script:stepNumber++
     Write-Banner -Text "STEP $($script:stepNumber): HEALTHCARE DATA SOLUTIONS (MANUAL)" -Color Yellow
     Write-Host ""
@@ -584,7 +679,8 @@ if (-not $Phase3Only -and -not $SkipFabric) {
     Write-Host ""
 
     # Build the Phase 2 example command with pre-populated values from Phase 1
-    $phase2Cmd = "    .\Deploy-All.ps1 -Phase2Only ``"
+    $phase2Cmd = "    .\Deploy-All.ps1 -Phase2 ``"
+    $phase2Cmd += "`n        -ResourceGroupName `"$ResourceGroupName`" ``"
     $phase2Cmd += "`n        -Location `"$Location`" ``"
     $phase2Cmd += "`n        -FabricWorkspaceName `"$FabricWorkspaceName`""
     if ($Tags.Count -gt 0) {
@@ -603,6 +699,64 @@ if (-not $Phase3Only -and -not $SkipFabric) {
         Duration = "—"
         Detail   = "Manual step: deploy HDS, then run Phase 2"
     }
+
+    # ── Auto-detect if HDS is already deployed ──
+    # If Bronze and Silver lakehouses exist, the user already deployed HDS.
+    # Automatically proceed to Phase 2 + 3 without requiring a separate run.
+    try {
+        $autoToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        if ($autoToken -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($autoToken)
+            try { $autoToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        }
+        $autoHeaders = @{ Authorization = "Bearer $autoToken"; "Content-Type" = "application/json" }
+        $autoWs = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $autoHeaders).value |
+            Where-Object { $_.displayName -eq $FabricWorkspaceName }
+        if ($autoWs) {
+            $autoItems = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$($autoWs.id)/items" -Headers $autoHeaders).value
+            $hasBronze = $autoItems | Where-Object { $_.displayName -match 'bronze' -and $_.type -eq 'Lakehouse' }
+            $hasSilver = $autoItems | Where-Object { $_.displayName -match 'silver' -and $_.type -eq 'Lakehouse' }
+
+            if ($hasBronze -and $hasSilver) {
+                Write-Host ""
+                Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+                Write-Host "  ║  HDS DETECTED — Bronze and Silver lakehouses already exist  ║" -ForegroundColor Green
+                Write-Host "  ║  The user has already performed the manual steps of          ║" -ForegroundColor Green
+                Write-Host "  ║  deploying HDS to the Fabric workspace.                     ║" -ForegroundColor Green
+                Write-Host "  ║  Proceeding on to Phases 2 and 3.                           ║" -ForegroundColor Green
+                Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+                Write-Host ""
+
+                # Run Phase 2 inline
+                $Phase2 = $true
+
+                Invoke-Step -StepName "Fabric RTI Phase 2 (auto)" `
+                    -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
+                    $phase2Args = @{
+                        Phase2              = $true
+                        FabricWorkspaceName = $FabricWorkspaceName
+                        ResourceGroupName   = $ResourceGroupName
+                        Location            = $Location
+                    }
+                    if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
+                    & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
+                }
+
+                if (-not $SkipDicom) {
+                    Invoke-Step -StepName "DICOM Shortcut + HDS Pipelines (auto)" `
+                        -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
+                        & "$ScriptDir\storage-access-trusted-workspace.ps1" `
+                            -FabricWorkspaceName $FabricWorkspaceName `
+                            -ResourceGroupName $ResourceGroupName
+                    }
+                }
+            }
+        }
+    } catch {
+        # Non-fatal — if detection fails, just show the manual guidance as before
+        Write-Host "  (Could not auto-detect HDS status: $($_.Exception.Message))" -ForegroundColor DarkGray
+    }
 }
 
 # ============================================================================
@@ -610,7 +764,7 @@ if (-not $Phase3Only -and -not $SkipFabric) {
 # ============================================================================
 
 # Deploy Data Agents if running Phase 2 or if the Silver Lakehouse is available
-if ($Phase2Only) {
+if ($Phase2) {
     Invoke-Step -StepName "Data Agents" `
         -Description "Deploy Patient 360 + Clinical Triage agents" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -629,11 +783,11 @@ if ($Phase2Only) {
 # Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
 # ============================================================================
 
-if ($Phase2Only -or $Phase3Only) {
+if ($Phase2 -or $Phase3) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
     $runPhase3 = $true
 
-    if ($Phase3Only -or $Phase2Only) {
+    if ($Phase3 -or $Phase2) {
         Invoke-Step -StepName "Phase 3: Imaging Toolkit" `
             -Description "Cohorting Agent + DICOM Viewer (FabricDicomCohortingToolkit)" -Action {
 
@@ -744,7 +898,12 @@ if ($Phase2Only -or $Phase3Only) {
 # SUMMARY
 # ============================================================================
 
-$summaryTitle = if ($Phase3Only) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2Only) { "PHASE 2+3 DEPLOYMENT SUMMARY" } else { "PHASE 1 DEPLOYMENT SUMMARY" }
-Write-Summary -Title $summaryTitle
+$summaryTitle = if ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2+3 DEPLOYMENT SUMMARY" } else { "PHASE 1 DEPLOYMENT SUMMARY" }
+$summaryPhase = if ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2+3" } else { "Phase1" }
+Write-Summary -Title $summaryTitle -PhaseName $summaryPhase -PhaseResources @{
+    FabricWorkspaceName = $FabricWorkspaceName
+    ResourceGroupName   = $ResourceGroupName
+    Location            = $Location
+}
 Pop-Location
 

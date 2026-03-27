@@ -8,9 +8,10 @@
     1. Resolves the Fabric workspace identity (service principal) from the workspace name
     2. Ensures the workspace identity has Storage Blob Data Contributor on the storage account
     3. Applies ADLS Gen2 ACLs (access + default) on the dicom-output container recursively
-    4. Creates the /Files/Ingest/Imaging/DICOM/DICOM-HDS folder path in the Bronze Lakehouse
+    4. Creates the /Files/Ingest/Imaging/DICOM folder path in the Bronze Lakehouse
     5. Creates a Fabric cloud connection to the ADLS Gen2 storage account
-    6. Creates a shortcut pointing the dicom-output container into the lakehouse folder
+    6. Creates a shortcut named DICOM-HDS pointing to the dicom-output ADLS Gen2 container
+       (the shortcut itself IS the DICOM-HDS folder — matches the AHDS pattern for FHIR data)
 
 .PARAMETER FabricWorkspaceName
     The Fabric workspace name. Default: "med-device-rti-hds"
@@ -25,11 +26,12 @@
     Name of the blob container with DICOM files. Default: "dicom-output"
 
 .PARAMETER ShortcutName
-    Name of the shortcut inside the lakehouse. Default: "dicom-output"
+    Name of the shortcut inside the lakehouse. Default: "DICOM-HDS"
+    The shortcut itself becomes the DICOM-HDS folder (like AHDS for FHIR data).
 
 .PARAMETER ShortcutFolderPath
     The lakehouse folder path (under /Files/) where the shortcut is created.
-    Default: "Files/Ingest/Imaging/DICOM/DICOM-HDS"
+    Default: "Files/Ingest/Imaging/DICOM"
 
 .EXAMPLE
     .\storage-access-trusted-workspace.ps1 -FabricWorkspaceName "med-device-rti-hds"
@@ -42,8 +44,8 @@ param(
     [Parameter(Mandatory)][string]$ResourceGroupName,
     [string]$BronzeLakehouseName = "healthcare1_msft_bronze",
     [string]$DicomContainerName = "dicom-output",
-    [string]$ShortcutName = "dicom-output",
-    [string]$ShortcutFolderPath = "Files/Ingest/Imaging/DICOM/DICOM-HDS",
+    [string]$ShortcutName = "DICOM-HDS",
+    [string]$ShortcutFolderPath = "Files/Ingest/Imaging/DICOM",
 
     [string]$ImagingPipelineName = "healthcare1_msft_imaging_with_clinical_foundation_ingestion",
     [string]$OmopPipelineName = "healthcare1_msft_omop_analytics"
@@ -507,9 +509,14 @@ if ($LASTEXITCODE -eq 0 -and $fhirOutputs) {
 # Fallback: if deployment failed (e.g. RoleAssignmentExists) but resources exist, find storage account directly
 if (-not $storageAccountName) {
     Write-Log "  Deployment outputs not available — searching for storage account in resource group..." 'WARN'
-    $storageAccountName = az storage account list -g $ResourceGroupName `
-        --query "[?starts_with(name,'stfhir')].name" -o tsv 2>$null
-    if (-not $storageAccountName) {
+    $storageAccountName = (az storage account list -g $ResourceGroupName `
+        --query "[?starts_with(name,'stfhir')].name" -o tsv 2>$null) | Select-Object -Last 1
+    if ($storageAccountName) {
+        # Sanitize: lowercase, alphanumeric only, max 24 chars
+        $storageAccountName = ($storageAccountName.Trim().ToLower() -replace '[^a-z0-9]', '')
+        if ($storageAccountName.Length -gt 24) { $storageAccountName = $storageAccountName.Substring(0, 24) }
+    }
+    if (-not $storageAccountName -or $storageAccountName.Length -lt 3) {
         throw "Cannot find FHIR storage account in resource group '$ResourceGroupName'. Ensure deploy-fhir.ps1 has been run."
     }
 }
@@ -734,6 +741,9 @@ Record-Step -Name 'Create ADLS Connection' -Status 'OK' -Seconds $step7Timer.Ela
 $step8Timer = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Log '─── Step 8: Creating Fabric lakehouse shortcut ───' 'INFO'
 
+# Refresh OneLake token (may have expired during RBAC/ACL steps)
+$oneLakeToken = Get-OneLakeAccessToken
+
 $existingShortcut = Get-FabricShortcutByName -AccessToken $fabricToken `
     -WorkspaceId $workspaceId -LakehouseId $lakehouseId `
     -ShortcutName $ShortcutName -ShortcutPath $ShortcutFolderPath
@@ -741,6 +751,19 @@ $existingShortcut = Get-FabricShortcutByName -AccessToken $fabricToken `
 if ($existingShortcut) {
     Write-Log "  Shortcut '$ShortcutName' already exists at '$ShortcutFolderPath'. Skipping creation." 'INFO'
 } else {
+    # Remove any existing directory at the shortcut path (a folder blocks shortcut creation)
+    try {
+        $olPath = "$workspaceId/$lakehouseId/$ShortcutFolderPath/$ShortcutName"
+        $olHeaders = @{ Authorization = "Bearer $oneLakeToken" }
+        $null = Invoke-WebRequest -Method HEAD -Uri "$OneLakeEndpoint/$olPath`?action=getStatus" -Headers $olHeaders -ErrorAction Stop
+        # Directory exists — delete it so the shortcut can be created
+        Write-Log "  Removing existing directory '$ShortcutName' at '$ShortcutFolderPath' to create shortcut..." 'WARN'
+        $null = Invoke-RestMethod -Method DELETE -Uri "$OneLakeEndpoint/$olPath`?recursive=true" -Headers $olHeaders
+        Write-Log "  Removed conflicting directory." 'INFO'
+    } catch {
+        # No directory to remove — expected
+    }
+
     $dfsUrl = "https://$storageAccountName.dfs.core.windows.net"
     $shortcutBody = @{
         path   = $ShortcutFolderPath
@@ -911,6 +934,7 @@ Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' 
 # ── Step 10: Run OMOP Analytics pipeline (MUST run AFTER imaging pipeline completes) ──
 # IMPORTANT: OMOP cannot run in parallel with any other HDS pipeline.
 $step10Timer = [System.Diagnostics.Stopwatch]::StartNew()
+$omopPipeline = $null  # Initialize to avoid unset variable errors in summary
 
 if (-not $imgCompleted) {
     Write-Log '─── Step 10: SKIPPING OMOP pipeline (imaging pipeline did not complete) ───' 'WARN'
