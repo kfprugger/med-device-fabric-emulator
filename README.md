@@ -4,6 +4,8 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 
 ![Architecture Diagram](docs/images/architecture-diagram.drawio.png)
 
+> **Video overview:** The [intro video](video/out/readme-overview.mp4) was generated programmatically using [Remotion](https://remotion.dev/) and an AI coding agent — see [video/README.md](video/README.md) for details.
+
 **What this solution demonstrates:**
 - **Real-Time Intelligence** — Masimo pulse oximeter telemetry streams through Eventstream into Eventhouse with KQL-based clinical alert detection (SpO2 drops, abnormal pulse rates) in seconds
 - **Healthcare Data Solutions** — 10K synthetic FHIR R4 patients (5M+ clinical resources) flow into a Silver Lakehouse via Fabric's native HDS connector with zero custom ETL

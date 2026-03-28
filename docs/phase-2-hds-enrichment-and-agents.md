@@ -174,6 +174,18 @@ flowchart LR
     style LH fill:#e6ffe6,stroke:#00a000
 ```
 
+### Agent Comparison Matrix
+
+| | **Patient 360** | **Clinical Triage** | **Cohorting Agent** (Phase 3) |
+|---|---|---|---|
+| **Purpose** | Unified single-patient view — demographics + conditions + live vitals | Alert-first triage — prioritize critical situations across ALL devices | Clinical cohort builder — find patient populations matching criteria |
+| **Primary question** | "Tell me about patient X" | "What needs attention right now?" | "Find all COPD patients with chest CTs" |
+| **Data sources** | KQL (telemetry) + Silver Lakehouse (FHIR) | KQL (telemetry) + Silver Lakehouse (FHIR) | Silver Lakehouse (FHIR) + Gold OMOP Lakehouse |
+| **KQL access** | Yes | Yes | No |
+| **Gold OMOP access** | No | No | Yes |
+| **Focus** | Single-patient deep dive | Multi-device alert scanning | Population-level cohort queries |
+| **Workflow** | Patient → device → vitals | Alerts → devices → patients | Criteria → matching population |
+
 ### Patient 360 Agent
 
 Unified patient view across FHIR clinical data and real-time telemetry:
@@ -201,6 +213,39 @@ Rapid triage decisions with alert prioritization:
 | `dbo.Patient` | SQL | Demographics via `name_string`, `idOrig` |
 
 > **Critical:** Device associations in `dbo.Basic` use code `'device-assoc'` (not `'ASSIGNED'`). The `code_string` column is a JSON **object** (not array) — use `JSON_VALUE(code_string, '$.coding[0].code')`.
+
+### Sample Queries for End Users
+
+**Patient 360 Agent:**
+
+| Query | What It Tests |
+|-------|---------------|
+| "Show me all patient names" | Patient name extraction from `name_string` JSON |
+| "Show latest readings for all devices" | KQL telemetry query |
+| "Which devices are currently online?" | Device status classification |
+| "Show patient info for device MASIMO-RADIUS7-0001" | Cross-datasource: KQL vitals + Lakehouse patient lookup |
+| "Which patients have COPD?" | SQL condition search |
+| "Full Patient 360 for a respiratory patient with active telemetry" | Full cross-datasource deep dive |
+| "What conditions does the patient on device MASIMO-RADIUS7-0033 have?" | Device → patient → conditions chain |
+
+**Clinical Triage Agent:**
+
+| Query | What It Tests |
+|-------|---------------|
+| "Run a clinical triage" | Multi-metric alert scan with severity tiers |
+| "Which devices have low SpO2?" | SpO2 alert detection from KQL |
+| "Check SpO2 alerts and look up the patient info" | Cross-datasource: KQL alerts + Lakehouse patient mapping |
+| "Show device status" | ONLINE/STALE/OFFLINE classification |
+| "Are there any critical alerts right now?" | CRITICAL tier filtering |
+
+**Cohorting Agent** (Phase 3):
+
+| Query | What It Tests |
+|-------|---------------|
+| "List all patients with their names" | Silver Lakehouse name extraction |
+| "Find patients with diabetes" | Condition-based cohort from Silver |
+| "How many patients have imaging studies?" | ImagingStudy count |
+| "Find COPD patients with chest CTs in the last 6 months" | Multi-table cohort join |
 
 ```powershell
 # Deploy both agents

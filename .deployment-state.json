@@ -1,0 +1,75 @@
+{
+  "phases": [
+    {
+      "timestamp": "2026-03-27T17:15:50Z",
+      "resources": {
+        "Location": "eastus",
+        "ResourceGroupName": "rg-med-device-rti-0327",
+        "FabricWorkspaceName": "med-device-rti-hds-0327"
+      },
+      "phase": "Phase2+3",
+      "steps": [
+        {
+          "detail": "",
+          "success": true,
+          "duration": "6.9 min",
+          "name": "Base Azure Infrastructure"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "0.2 min",
+          "name": "Fabric Workspace"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "20.7 min",
+          "name": "FHIR Service + Synthea + Loader"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "13.4 min",
+          "name": "DICOM Service + Loader"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "2 min",
+          "name": "Fabric RTI Phase 1"
+        },
+        {
+          "detail": "Manual step: deploy HDS, then run Phase 2",
+          "success": true,
+          "duration": "—",
+          "name": "HDS Guidance"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "15.2 min",
+          "name": "Fabric RTI Phase 2 (auto)"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "37.5 min",
+          "name": "DICOM Shortcut + HDS Pipelines (auto)"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "0.2 min",
+          "name": "Data Agents"
+        },
+        {
+          "detail": "",
+          "success": true,
+          "duration": "5.8 min",
+          "name": "Phase 3: Imaging Toolkit"
+        }
+      ]
+    }
+  ]
+}

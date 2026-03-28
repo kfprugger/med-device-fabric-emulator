@@ -890,6 +890,64 @@ if ($Phase2 -or $Phase3) {
             & "$DicomToolkitPath\Deploy-ImagingReport.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName
             Write-Host ""
+
+            # Step 3e: Add proxy MI to Fabric workspace + verify DICOM index
+            Write-Host "  --- Step 3e: DICOM Viewer Permissions + Index ---" -ForegroundColor Cyan
+            try {
+                # Get proxy MI principal ID
+                $proxyPrincipalId = az containerapp show -g $viewerRg -n "hds-dicom-proxy" `
+                    --query "identity.principalId" -o tsv 2>$null
+                if ($proxyPrincipalId) {
+                    Write-Host "  Proxy MI: $proxyPrincipalId" -ForegroundColor DarkGray
+
+                    # Add proxy MI as Contributor on Fabric workspace (for OneLake DFS reads)
+                    $p3Token3 = Get-FabricTokenLocal
+                    $p3H3 = @{ Authorization = "Bearer $p3Token3"; "Content-Type" = "application/json" }
+
+                    # Check if already assigned
+                    $existingRoles = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" -Headers $p3H3).value
+                    $alreadyAssigned = $existingRoles | Where-Object { $_.principal.id -eq $proxyPrincipalId }
+
+                    if ($alreadyAssigned) {
+                        Write-Host "  ✓ Proxy MI already has workspace access ($($alreadyAssigned.role))" -ForegroundColor Green
+                    } else {
+                        $roleBody = @{
+                            principal = @{ id = $proxyPrincipalId; type = "ServicePrincipal" }
+                            role = "Contributor"
+                        } | ConvertTo-Json -Depth 3
+
+                        Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" `
+                            -Headers $p3H3 -Method POST -Body $roleBody | Out-Null
+                        Write-Host "  ✓ Added proxy MI as Contributor on workspace (required for OneLake DFS reads)" -ForegroundColor Green
+                    }
+                } else {
+                    Write-Host "  ⚠ Could not find proxy MI — viewer may not have OneLake access" -ForegroundColor Yellow
+                }
+
+                # Check if DICOM index has studies
+                $proxyFqdn = az containerapp show -g $viewerRg -n "hds-dicom-proxy" `
+                    --query "properties.configuration.ingress.fqdn" -o tsv 2>$null
+                if ($proxyFqdn) {
+                    try {
+                        $healthResp = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 10
+                        $studyCount = $healthResp.studies
+                        Write-Host "  DICOM index: $studyCount studies" -ForegroundColor $(if ($studyCount -gt 0) { 'Green' } else { 'Yellow' })
+
+                        if ($studyCount -eq 0) {
+                            Write-Host "  ⚠ DICOM index is empty. To rebuild, re-run:" -ForegroundColor Yellow
+                            Write-Host "    & `"$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1`" ``" -ForegroundColor Cyan
+                            Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
+                            Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
+                            Write-Host "        -Location `"$Location`" -SkipOhifBuild" -ForegroundColor Cyan
+                        }
+                    } catch {
+                        Write-Host "  ⚠ Could not reach proxy health endpoint" -ForegroundColor Yellow
+                    }
+                }
+            } catch {
+                Write-Host "  ⚠ Post-deploy check failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+            Write-Host ""
         }
     }
 }

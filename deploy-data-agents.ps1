@@ -223,10 +223,18 @@ Other relationships:
     ON JSON_VALUE(b.subject_string, '`$.idOrig') = JSON_VALUE(c.subject_string, '`$.msftSourceReference')
     Both values are bare UUIDs — this join works directly.
 - dbo.Patient has patient demographics.
-- dbo.Observation (~2.8M rows): Vital signs, lab results. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime.
-- dbo.MedicationRequest (~250K rows): Medication orders. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: medicationCodeableConcept_string, status, authoredOn.
-- dbo.Procedure (~1M rows): Surgical/clinical procedures. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: code_string (SNOMED), performedDateTime, status.
-- dbo.Immunization (~116K rows): Vaccination records. Links to Patient via JSON_VALUE(patient_string, '`$.msftSourceReference'). NOTE: uses patient_string not subject_string. Key: vaccineCode_string, occurrenceDateTime, status.
+  IMPORTANT — Patient name extraction from dbo.Patient:
+    name_string is a dynamic column. The FHIR HumanName type does NOT have a 'display' field.
+    It has 'family' and 'given' (array). To extract patient full name:
+      CAST(name_string AS VARCHAR(MAX)) to convert dynamic to string first, then:
+      JSON_VALUE(CAST(name_string AS VARCHAR(MAX)), '$[0].given[0]') AS first_name
+      JSON_VALUE(CAST(name_string AS VARCHAR(MAX)), '$[0].family') AS last_name
+    Or combine: CONCAT(JSON_VALUE(CAST(name_string AS VARCHAR(MAX)), '$[0].given[0]'), ' ', JSON_VALUE(CAST(name_string AS VARCHAR(MAX)), '$[0].family')) AS full_name
+    SHORTCUT: For device-associated patients, use dbo.Basic subject_string.display instead — it already has the full name!
+- dbo.Observation (approx. 2.8M rows): Vital signs, lab results. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime.
+- dbo.MedicationRequest (approx. 250K rows): Medication orders. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: medicationCodeableConcept_string, status, authoredOn.
+- dbo.Procedure (approx. 1M rows): Surgical/clinical procedures. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: code_string (SNOMED), performedDateTime, status.
+- dbo.Immunization (approx. 116K rows): Vaccination records. Links to Patient via JSON_VALUE(patient_string, '`$.msftSourceReference'). NOTE: uses patient_string not subject_string. Key: vaccineCode_string, occurrenceDateTime, status.
 - dbo.ImagingStudy: DICOM imaging studies. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference'). Key: modality, description, started.
 - For unfamiliar tables, run SELECT TOP 5 * FROM dbo.<TableName> first to discover exact column names.
 
@@ -509,16 +517,16 @@ DATASOURCE 2: Silver Lakehouse ($silverLhName)
 Contains FHIR R4 clinical data. Query with SQL.
 
 TABLES AND RELATIONSHIPS:
-  dbo.Patient — Patient demographics (~7,800). Key columns: id, idOrig, name (Object), name_string (String/JSON), gender, birthDate
-  dbo.Condition — Diagnoses/conditions (~244K). Key columns: code (Object), code_string (String/JSON), subject (Object), subject_string (String/JSON)
-  dbo.Device — Device records (~100): identifier, type_coding, serialNumber, status
-  dbo.Basic — DeviceAssociation records linking devices to patients (~100). This is THE key table for device-patient mapping.
+  dbo.Patient — Patient demographics (approx. 7,800). Key columns: id, idOrig, name (Object), name_string (String/JSON), gender, birthDate
+  dbo.Condition — Diagnoses/conditions (approx. 244K). Key columns: code (Object), code_string (String/JSON), subject (Object), subject_string (String/JSON)
+  dbo.Device — Device records (approx. 100): identifier, type_coding, serialNumber, status
+  dbo.Basic — DeviceAssociation records linking devices to patients (approx. 100). This is THE key table for device-patient mapping.
   dbo.Location — Facility/location info
-  dbo.Encounter — Patient visits/admissions (~363K). Key columns: class, type_string, period_start, period_end, subject_string
-  dbo.Observation — Vital signs, lab results (~2.8M). Key cols: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
-  dbo.MedicationRequest — Medication orders (~250K). Key cols: medicationCodeableConcept_string, status, authoredOn, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
-  dbo.Procedure — Surgical/clinical procedures (~1M). Key cols: code_string (SNOMED), performedDateTime, status, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
-  dbo.Immunization — Vaccination records (~116K). Key cols: vaccineCode_string, occurrenceDateTime, status, patient_string. Links to Patient via JSON_VALUE(patient_string, '`$.msftSourceReference'). NOTE: uses patient_string not subject_string.
+  dbo.Encounter — Patient visits/admissions (approx. 363K). Key columns: class, type_string, period_start, period_end, subject_string
+  dbo.Observation — Vital signs, lab results (approx. 2.8M). Key cols: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
+  dbo.MedicationRequest — Medication orders (approx. 250K). Key cols: medicationCodeableConcept_string, status, authoredOn, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
+  dbo.Procedure — Surgical/clinical procedures (approx. 1M). Key cols: code_string (SNOMED), performedDateTime, status, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
+  dbo.Immunization — Vaccination records (approx. 116K). Key cols: vaccineCode_string, occurrenceDateTime, status, patient_string. Links to Patient via JSON_VALUE(patient_string, '`$.msftSourceReference'). NOTE: uses patient_string not subject_string.
   dbo.ImagingStudy — DICOM imaging studies. Key cols: modality, description, started, numberOfSeries, numberOfInstances, subject_string. Links to Patient via JSON_VALUE(subject_string, '`$.msftSourceReference').
 
   JOINING NEW TABLES TO DEVICE-ASSOCIATED PATIENTS:
