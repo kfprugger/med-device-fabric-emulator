@@ -7,8 +7,6 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 <details>
 <summary><strong>▶ Watch the 3-minute animated overview</strong></summary>
 
-https://github.com/user-attachments/assets/readme-overview.mp4
-
 <video src="video/out/readme-overview.mp4" width="100%" controls>
   Your browser does not support the video tag. <a href="video/out/readme-overview.mp4">Download the video</a>.
 </video>
