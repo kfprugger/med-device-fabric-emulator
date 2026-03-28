@@ -1,0 +1,20 @@
+# Deployment state (user-specific)
+.deployment-state.json
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Node / Remotion
+video/node_modules/
+video/out/
+video/.remotion/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
