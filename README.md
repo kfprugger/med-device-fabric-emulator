@@ -4,6 +4,18 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 
 ![Architecture Diagram](docs/images/architecture-diagram.drawio.png)
 
+<details>
+<summary><strong>▶ Watch the 3-minute animated overview</strong></summary>
+
+https://github.com/user-attachments/assets/readme-overview.mp4
+
+<video src="video/out/readme-overview.mp4" width="100%" controls>
+  Your browser does not support the video tag. <a href="video/out/readme-overview.mp4">Download the video</a>.
+</video>
+
+*Generated programmatically with [Remotion](https://remotion.dev/) and an AI coding agent — see [video/README.md](video/README.md) for details.*
+</details>
+
 > **Video overview:** The [intro video](video/out/readme-overview.mp4) was generated programmatically using [Remotion](https://remotion.dev/) and an AI coding agent — see [video/README.md](video/README.md) for details.
 
 **What this solution demonstrates:**
@@ -298,9 +310,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - [Synthea](https://synthetichealth.github.io/synthea/) - Synthetic patient generator
-- [Azure Health Data Services](https://azure.microsoft.com/en-us/products/health-data-services/) - FHIR platform
+- [Azure Health Data Services](https://azure.microsoft.com/en-us/products/health-data-services/) - FHIR platform emulating an EHR integration
 - [Masimo](https://www.masimo.com/) - Medical device specifications reference
-- [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) - Real-Time Intelligence platform
+- [Microsoft Fabric](https://www.microsoft.com/en-us/microsoft-fabric) - Real-Time Intelligence, Analytics and Full Data Estate Managmement platform
 - [Healthcare Data Solutions](https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview) - FHIR data foundations on Fabric
 - [Fabric IQ](https://learn.microsoft.com/fabric/iq/overview) - Unified semantic layer and ontology workload
 - [Ontology (preview)](https://learn.microsoft.com/fabric/iq/ontology/overview) - Enterprise vocabulary and data binding
