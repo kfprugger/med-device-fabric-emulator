@@ -36,34 +36,24 @@ $kqlElements = @(
     @{ id = [guid]::NewGuid().ToString(); display_name = "AlertHistory";  type = "kusto.table"; is_selected = $true }
 )
 
-# --- Silver Lakehouse elements: Patient, Condition, Device, Location, Encounter, Basic, Observation, MedicationRequest, Procedure, Immunization, ImagingStudy ---
+# --- Silver Lakehouse elements: flat schema → table structure (matches Cohorting Agent pattern) ---
+$silverTables = @(
+    'Patient', 'Condition', 'Device', 'Location', 'Encounter',
+    'Basic', 'Observation', 'MedicationRequest', 'Procedure',
+    'Immunization', 'ImagingStudy'
+)
 $lakehouseElements = @(
     @{
-        id           = [guid]::NewGuid().ToString()
-        display_name = "Tables"
-        type         = "lakehouse_tables"
+        display_name = 'dbo'
+        type         = 'lakehouse_tables.schema'
         is_selected  = $true
-        children     = @(
+        children     = @($silverTables | ForEach-Object {
             @{
-                id           = [guid]::NewGuid().ToString()
-                display_name = "dbo"
-                type         = "lakehouse_tables.schema"
+                display_name = $_
+                type         = 'lakehouse_tables.table'
                 is_selected  = $true
-                children     = @(
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Patient";   type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Condition"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Device";    type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Location";  type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Encounter"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Basic";     type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Observation"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "MedicationRequest"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Procedure"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Immunization"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "ImagingStudy"; type = "lakehouse_tables.table"; is_selected = $true }
-                )
             }
-        )
+        })
     }
 )
 
@@ -830,7 +820,7 @@ $lhDatasourceJson = (@{
     artifactId             = $silverLhId
     workspaceId            = $wsId
     displayName            = $silverLhName
-    type                   = "lakehouse"
+    type                   = "lakehouse_tables"
     userDescription        = "FHIR R4 Silver Lakehouse with Patient, Condition, Device, Location, Encounter, Basic, Observation, MedicationRequest, Procedure, Immunization, ImagingStudy tables"
     dataSourceInstructions = $lhDsInstructions
     elements               = $lakehouseElements
@@ -838,8 +828,8 @@ $lhDatasourceJson = (@{
 $lhFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = $lhFewShots } | ConvertTo-Json -Depth 10)
 
 $p360DataSources = @(
-    @{ FolderName = "kusto-$kqlDbName";       DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
-    @{ FolderName = "lakehouse-$silverLhName"; DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
+    @{ FolderName = "kusto-$kqlDbName";                DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
+    @{ FolderName = "lakehouse_tables-$silverLhName";   DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
 )
 
 # Clinical Triage: same KQL datasource, different instructions + few-shots, plus lakehouse
@@ -856,8 +846,8 @@ $ctKqlDatasourceJson = (@{
 $ctKqlFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = $triageFewShots } | ConvertTo-Json -Depth 10)
 
 $ctDataSources = @(
-    @{ FolderName = "kusto-$kqlDbName";       DatasourceJson = $ctKqlDatasourceJson; FewShotsJson = $ctKqlFewShotsJson },
-    @{ FolderName = "lakehouse-$silverLhName"; DatasourceJson = $lhDatasourceJson;    FewShotsJson = $lhFewShotsJson }
+    @{ FolderName = "kusto-$kqlDbName";                DatasourceJson = $ctKqlDatasourceJson; FewShotsJson = $ctKqlFewShotsJson },
+    @{ FolderName = "lakehouse_tables-$silverLhName";   DatasourceJson = $lhDatasourceJson;    FewShotsJson = $lhFewShotsJson }
 )
 
 Push-AgentDefinition -AgentName "Patient 360"    -AgentId $p360.id -AiInstructions $p360Instructions   -DataSources $p360DataSources

@@ -168,35 +168,27 @@ $kqlElements = @(
 
 # ============================================================================
 # LAKEHOUSE ELEMENTS: Silver tables under dbo schema
+# Matches the working Cohorting Agent pattern: flat schema → table structure,
+# no random GUIDs, type = lakehouse_tables (not "lakehouse")
 # ============================================================================
 
+$silverTables = @(
+    'Patient', 'Condition', 'Device', 'Location', 'Encounter',
+    'Basic', 'Observation', 'MedicationRequest', 'Procedure',
+    'Immunization', 'ImagingStudy'
+)
 $lakehouseElements = @(
     @{
-        id           = [guid]::NewGuid().ToString()
-        display_name = "Tables"
-        type         = "lakehouse_tables"
+        display_name = 'dbo'
+        type         = 'lakehouse_tables.schema'
         is_selected  = $true
-        children     = @(
+        children     = @($silverTables | ForEach-Object {
             @{
-                id           = [guid]::NewGuid().ToString()
-                display_name = "dbo"
-                type         = "lakehouse_tables.schema"
+                display_name = $_
+                type         = 'lakehouse_tables.table'
                 is_selected  = $true
-                children     = @(
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Patient";   type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Condition"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Device";    type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Location";  type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Encounter"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Basic";     type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Observation"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "MedicationRequest"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Procedure"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "Immunization"; type = "lakehouse_tables.table"; is_selected = $true },
-                    @{ id = [guid]::NewGuid().ToString(); display_name = "ImagingStudy"; type = "lakehouse_tables.table"; is_selected = $true }
-                )
             }
-        )
+        })
     }
 )
 
@@ -753,7 +745,7 @@ TelemetryRaw
         artifactId             = $silverLhId
         workspaceId            = $workspaceId
         displayName            = $silverLhName
-        type                   = "lakehouse"
+        type                   = "lakehouse_tables"
         userDescription        = "FHIR R4 Silver Lakehouse with Patient, Condition, Device, Location, Encounter, Basic, Observation, MedicationRequest, Procedure, Immunization, ImagingStudy tables"
         dataSourceInstructions = $lhDsInstructions
         elements               = $lakehouseElements
@@ -762,8 +754,8 @@ TelemetryRaw
     $lhFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = $lhFewShots } | ConvertTo-Json -Depth 10)
 
     $p360DataSources = @(
-        @{ FolderName = "kusto-$kqlDbDisplayName";    DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
-        @{ FolderName = "lakehouse-$silverLhName";     DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
+        @{ FolderName = "kusto-$kqlDbDisplayName";          DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
+        @{ FolderName = "lakehouse_tables-$silverLhName";   DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
     )
 
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
@@ -1072,7 +1064,7 @@ TelemetryRaw
         artifactId             = $silverLhId
         workspaceId            = $workspaceId
         displayName            = $silverLhName
-        type                   = "lakehouse"
+        type                   = "lakehouse_tables"
         userDescription        = "FHIR R4 Silver Lakehouse with Patient, Condition, Device, Location, Encounter, Basic, Observation, MedicationRequest, Procedure, Immunization, ImagingStudy tables"
         dataSourceInstructions = $lhDsInstructions
         elements               = $lakehouseElements
@@ -1081,8 +1073,8 @@ TelemetryRaw
     $lhFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = $lhFewShots } | ConvertTo-Json -Depth 10)
 
     $triageDataSources = @(
-        @{ FolderName = "kusto-$kqlDbDisplayName";    DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
-        @{ FolderName = "lakehouse-$silverLhName";     DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
+        @{ FolderName = "kusto-$kqlDbDisplayName";          DatasourceJson = $kqlDatasourceJson; FewShotsJson = $kqlFewShotsJson },
+        @{ FolderName = "lakehouse_tables-$silverLhName";   DatasourceJson = $lhDatasourceJson;  FewShotsJson = $lhFewShotsJson }
     )
 
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta

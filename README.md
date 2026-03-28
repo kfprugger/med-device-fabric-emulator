@@ -237,14 +237,9 @@ graph LR
 ### Teardown
 
 ```powershell
-# Full teardown: Azure RG + Fabric workspace
-.\Deploy-All.ps1 -Teardown `
-    -FabricWorkspaceName "med-device-rti-hds" `
-    -Location "eastus"
-
-# Or granular cleanup
-.\cleanup\Remove-AllResources.ps1 -Force -Wait -DeleteWorkspace `
-    -FabricWorkspaceName "med-device-rti-hds"
+# Full teardown: Azure RGs + Fabric workspace + DICOM viewer
+.\Teardown-All.ps1 -FabricWorkspaceName "med-device-rti-hds" `
+    -ResourceGroupName "rg-med-device-rti" -Force -Wait
 ```
 
 ---
@@ -277,6 +272,7 @@ med-device-fabric-emulator/
 │   └── images/
 ├── fabric-rti/                 # KQL scripts, dashboards, HDS guide
 ├── fhir-loader/                # FHIR bundle loader
+├── video/                      # Remotion video generation (intro overview)
 └── synthea/                    # Patient generator config
 ```
 

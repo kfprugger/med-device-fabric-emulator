@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] — March 28, 2026
+
+### Data Agent Lakehouse Datasource Fix
+- **Fixed** `PowerBIEntityNotFound` error in Data Agent UI — lakehouse datasource `type` must be `"lakehouse_tables"` (not `"lakehouse"`), folder prefix must be `lakehouse_tables-` (not `lakehouse-`), and elements must use flat `dbo` schema → table structure without random GUIDs or wrapper grouping. Pattern now matches the working Cohorting Agent (FabricDicomCohortingToolkit).
+- **Fixed** `update-agents-inline.ps1` with the same lakehouse datasource corrections
+
 ## [Unreleased] — March 26, 2026
 
 ### DICOM Loader Fixes

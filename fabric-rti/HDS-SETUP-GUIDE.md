@@ -158,7 +158,7 @@ account (Step 6.5). Now link that storage to the Bronze Lakehouse so HDS can ing
 5. Select the **`fhir-export`** container
 6. Create the shortcut at this path:
    ```
-   Files/Ingest/Clinical/FHIR-NDJSON/AHDS-FHIR
+   Files/Ingest/Clinical/FHIR-NDJSON/FHIR-HDS
    ```
 
 ## Step 4: Update Configuration
@@ -167,7 +167,7 @@ account (Step 6.5). Now link that storage to the Bronze Lakehouse so HDS can ing
 2. Find the `source_path_pattern` under `healthcare#_msft_fhir_ndjson_bronze_ingestion`
 3. Update it to use the shortcut path:
    ```
-   abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<bronze_lakehouse_id>/Files/Ingest/Clinical/FHIR-NDJSON/AHDS-FHIR
+   abfss://<workspace_id>@onelake.dfs.fabric.microsoft.com/<bronze_lakehouse_id>/Files/Ingest/Clinical/FHIR-NDJSON/FHIR-HDS
    ```
 
 ## Step 5: Run the Clinical Data Foundation Pipeline

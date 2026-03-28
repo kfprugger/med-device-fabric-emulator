@@ -35,7 +35,6 @@ flowchart TB
     subgraph AZ["Azure Resources"]
         SWA["Static Web App\n(OHIF Viewer)"]
         PROXY["Container App\n(DICOMweb Proxy)"]
-        DICOM_SVC["DICOM Service\n(HDS Workspace)"]
     end
 
     GOLD --> COHORT
@@ -44,7 +43,7 @@ flowchart TB
     NB -->|"Materializes\ntables"| RPT_LH
     RPT_LH --> SM --> PBI
 
-    SWA -->|"DICOMweb"| PROXY -->|"Auth + Forward"| DICOM_SVC
+    SWA -->|"DICOMweb"| PROXY -->|"OneLake DFS\n(Contributor MI)"| RPT_LH
 
     NB -.->|"Embeds OHIF URL\nin viewer_url column"| SWA
 
@@ -79,20 +78,22 @@ Deploys the OHIF medical image viewer as an Azure Static Web App with a DICOMweb
 ```mermaid
 flowchart LR
     USER["Clinician\n(Browser)"] --> SWA["Azure Static Web App\n(OHIF v3 Viewer)"]
-    SWA -->|"DICOMweb\nWADO-RS / STOW-RS"| PROXY["Container App\n(DICOMweb Proxy)"]
-    PROXY -->|"Managed Identity\nAuth"| DICOM["DICOM Service\n(HDS Workspace)"]
+    SWA -->|"DICOMweb\nWADO-RS"|  PROXY["Container App\n(DICOMweb Proxy)"]
+    PROXY -->|"Managed Identity\n(Contributor on Workspace)"|  OL["OneLake\n(Bronze Lakehouse\nDICOM-HDS shortcut)"]
 
     style USER fill:#f5f5f5,stroke:#999
     style SWA fill:#e6f3ff,stroke:#0078d4
     style PROXY fill:#fff3e6,stroke:#ff8c00
-    style DICOM fill:#ffe6e6,stroke:#d40000
+    style OL fill:#f0e6ff,stroke:#8000d4
 ```
 
 | Component | Azure Resource | Purpose |
-|-----------|---------------|---------|
+|-----------|---------------|--------|
 | OHIF Viewer | Static Web App | Open-source DICOM viewer UI (OHIF v3) |
-| DICOMweb Proxy | Container App | Authenticates requests and forwards to DICOM service |
-| DICOM Service | HDS Workspace | Stores re-tagged TCIA DICOM studies |
+| DICOMweb Proxy | Container App | Reads .dcm files from OneLake just-in-time, serves DICOMweb responses |
+| OneLake | Bronze Lakehouse (DICOM-HDS shortcut) | Stores re-tagged TCIA DICOM files via ADLS Gen2 shortcut |
+
+> **Permissions:** The DICOMweb Proxy Container App managed identity must have **`Contributor` role** on the Fabric workspace for OneLake DFS file reads. `Deploy-All.ps1` Step 3e handles this automatically.
 
 The viewer must be deployed **before** the materialization notebook (Step 7c) so the OHIF URL can be embedded in the reporting data.
 
@@ -123,6 +124,30 @@ The report provides:
 - Patient demographics linked to imaging studies
 - Clickable links to the OHIF DICOM Viewer for each study
 - OMOP CDM cross-references
+
+---
+
+## Step 7e — Verify Proxy Permissions & DICOM Index
+
+**Script:** Inline in `Deploy-All.ps1` (Step 3e)
+
+After all Phase 3 components are deployed, the orchestrator automatically:
+
+1. **Assigns proxy MI as Contributor** on the Fabric workspace (required for OneLake DFS file reads)
+2. **Checks the DICOM index** via the proxy health endpoint (`/health` → `studies` count)
+3. If the index is empty (0 studies), prints the rebuild command
+
+> **Why Contributor?** Fabric's `Viewer` role only allows portal access — it does **not** grant OneLake DFS API read permissions. The proxy needs `Contributor` (or `Member`) to fetch `.dcm` files from the Bronze Lakehouse DICOM-HDS shortcut.
+
+If the proxy shows 0 studies after deployment, rebuild the index:
+
+```powershell
+cd ..\FabricDicomCohortingToolkit\dicom-viewer
+.\Deploy-DicomViewer.ps1 `
+    -ResourceGroup "rg-medtech-rti-fhir" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -Location "eastus" -SkipOhifBuild
+```
 
 ---
 
