@@ -1,75 +1,75 @@
 {
   "phases": [
     {
-      "timestamp": "2026-03-27T17:15:50Z",
+      "timestamp": "2026-03-28T21:39:59Z",
       "resources": {
+        "ResourceGroupName": "rg-medtech-rti-fhir-0328",
         "Location": "eastus",
-        "ResourceGroupName": "rg-med-device-rti-0327",
-        "FabricWorkspaceName": "med-device-rti-hds-0327"
+        "FabricWorkspaceName": "med-device-rti-hds-0328"
       },
-      "phase": "Phase2+3",
       "steps": [
         {
-          "detail": "",
+          "duration": "3.4 min",
+          "name": "Base Azure Infrastructure",
           "success": true,
-          "duration": "6.9 min",
-          "name": "Base Azure Infrastructure"
+          "detail": ""
         },
         {
-          "detail": "",
-          "success": true,
           "duration": "0.2 min",
-          "name": "Fabric Workspace"
+          "name": "Fabric Workspace",
+          "success": true,
+          "detail": ""
         },
         {
-          "detail": "",
+          "duration": "21 min",
+          "name": "FHIR Service + Synthea + Loader",
           "success": true,
-          "duration": "20.7 min",
-          "name": "FHIR Service + Synthea + Loader"
+          "detail": ""
         },
         {
-          "detail": "",
+          "duration": "11.8 min",
+          "name": "DICOM Service + Loader",
           "success": true,
-          "duration": "13.4 min",
-          "name": "DICOM Service + Loader"
+          "detail": ""
         },
         {
-          "detail": "",
+          "duration": "1.7 min",
+          "name": "Fabric RTI Phase 1",
           "success": true,
-          "duration": "2 min",
-          "name": "Fabric RTI Phase 1"
+          "detail": ""
         },
         {
-          "detail": "Manual step: deploy HDS, then run Phase 2",
-          "success": true,
           "duration": "—",
-          "name": "HDS Guidance"
+          "name": "HDS Guidance",
+          "success": true,
+          "detail": "Manual step: deploy HDS, then run Phase 2"
         },
         {
-          "detail": "",
+          "duration": "13.4 min",
+          "name": "Fabric RTI Phase 2 (auto)",
           "success": true,
-          "duration": "15.2 min",
-          "name": "Fabric RTI Phase 2 (auto)"
+          "detail": ""
         },
         {
-          "detail": "",
+          "duration": "37.3 min",
+          "name": "DICOM Shortcut + HDS Pipelines (auto)",
           "success": true,
-          "duration": "37.5 min",
-          "name": "DICOM Shortcut + HDS Pipelines (auto)"
+          "detail": ""
         },
         {
-          "detail": "",
-          "success": true,
           "duration": "0.2 min",
-          "name": "Data Agents"
+          "name": "Data Agents",
+          "success": true,
+          "detail": ""
         },
         {
-          "detail": "",
+          "duration": "5.3 min",
+          "name": "Phase 3: Imaging Toolkit",
           "success": true,
-          "duration": "5.8 min",
-          "name": "Phase 3: Imaging Toolkit"
+          "detail": ""
         }
-      ]
+      ],
+      "phase": "Phase2+3"
     }
   ]
 }
