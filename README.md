@@ -2,7 +2,14 @@
 
 A complete, deployable reference architecture that unifies healthcare EHR data and real-time medical device telemetry on Microsoft Fabric — from ingestion to AI-powered clinical queries in a single workspace.
 
-![Architecture Diagram](docs/images/architecture-diagram.drawio.png)
+![30,000 ft Data Journey — From Source Data to Business Intelligence: Real-Time vs. Batch](docs/images/Simple%20Diagram.png)
+
+<details>
+<summary><strong>🔍 View detailed end-to-end architecture diagram</strong></summary>
+
+![Detailed Architecture Diagram](docs/images/architecture-diagram.drawio.png)
+
+</details>
 
 <details>
 <summary><strong>▶ Watch the 3-minute animated overview</strong></summary>
@@ -45,6 +52,10 @@ The entire solution deploys in under 2 hours with a single command (`Deploy-All.
 ---
 
 ## 🏗️ Architecture
+
+### Platform Architecture Overview
+
+![Platform Architecture Overview](docs/images/architecture-diagram.drawio.png)
 
 ### End-to-End Data Flow
 
