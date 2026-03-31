@@ -73,6 +73,155 @@ if (Test-Path $stateFile) {
 if (-not $FabricWorkspaceName) { throw "Parameter '-FabricWorkspaceName' is required (no .deployment-state.json found)" }
 if (-not $ResourceGroupName) { $ResourceGroupName = "rg-medtech-rti-fhir" }
 
+# ============================================================================
+# HELPER: Fuzzy "Did you mean?" suggestion
+# ============================================================================
+
+function Get-FuzzySuggestion {
+    param(
+        [string]$SearchTerm,
+        [string[]]$Candidates,
+        [int]$MaxResults = 5
+    )
+    # Score each candidate: shared words, prefix overlap, partial word matches
+    $scored = foreach ($c in $Candidates) {
+        $score = 0
+        # Exact substring match in either direction
+        if ($c -like "*$SearchTerm*" -or $SearchTerm -like "*$c*") { $score += 100 }
+        # Shared word overlap (split on - and _)
+        $searchWords = $SearchTerm -split '[-_\s]' | Where-Object { $_.Length -gt 1 }
+        $candWords = $c -split '[-_\s]' | Where-Object { $_.Length -gt 1 }
+        foreach ($w in $searchWords) {
+            if ($candWords -contains $w) { $score += 20 }
+            elseif ($candWords | Where-Object { $_ -like "*$w*" }) { $score += 10 }
+        }
+        # Reverse: candidate words found in search term (catches partial mismatches)
+        foreach ($w in $candWords) {
+            if ($searchWords -contains $w) { } # already counted above
+            elseif ($searchWords | Where-Object { $_ -like "*$w*" }) { $score += 5 }
+        }
+        # Prefix overlap (strong signal — "rg-med-device-" matches 14 chars)
+        $prefixLen = 0
+        for ($i = 0; $i -lt [math]::Min($SearchTerm.Length, $c.Length); $i++) {
+            if ($SearchTerm[$i] -eq $c[$i]) { $prefixLen++ } else { break }
+        }
+        $score += $prefixLen * 2
+        # Suffix overlap (catches matching date suffixes like "0331")
+        $suffixLen = 0
+        for ($i = 1; $i -le [math]::Min($SearchTerm.Length, $c.Length); $i++) {
+            if ($SearchTerm[$SearchTerm.Length - $i] -eq $c[$c.Length - $i]) { $suffixLen++ } else { break }
+        }
+        if ($suffixLen -ge 3) { $score += $suffixLen * 3 }
+        [PSCustomObject]@{ Name = $c; Score = $score }
+    }
+    return ($scored | Where-Object { $_.Score -gt 0 } | Sort-Object Score -Descending | Select-Object -First $MaxResults).Name
+}
+
+# ============================================================================
+# VALIDATE: Fabric Workspace + Azure Resource Group exist before teardown
+# ============================================================================
+
+$wsFound = $false
+$rgFound = $false
+$wsNotFound = $false
+$rgNotFound = $false
+
+# --- Validate Fabric workspace ---
+if (-not $SkipFabric) {
+    try {
+        $fabricToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        if ($fabricToken -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabricToken)
+            $fabricToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        }
+        $fabricHeaders = @{ Authorization = "Bearer $fabricToken" }
+        $allWorkspaces = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $fabricHeaders).value
+        $matchedWs = $allWorkspaces | Where-Object { $_.displayName -eq $FabricWorkspaceName }
+
+        if ($matchedWs) {
+            $wsFound = $true
+        } else {
+            Write-Host ""
+            Write-Host "  ✗ Fabric workspace '$FabricWorkspaceName' not found." -ForegroundColor Red
+            $wsNames = $allWorkspaces | ForEach-Object { $_.displayName }
+            $suggestions = Get-FuzzySuggestion -SearchTerm $FabricWorkspaceName -Candidates $wsNames
+            if ($suggestions) {
+                Write-Host "    Did you mean:" -ForegroundColor Yellow
+                foreach ($s in $suggestions) {
+                    Write-Host "      → $s" -ForegroundColor Cyan
+                }
+            } else {
+                Write-Host "    No similar workspaces found in your tenant." -ForegroundColor DarkGray
+            }
+            Write-Host ""
+            $wsNotFound = $true
+            $SkipFabric = $true
+        }
+    } catch {
+        Write-Host "  ⚠ Could not validate Fabric workspace: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    $wsFound = $true  # User chose to skip — treat as resolved
+}
+
+# --- Validate Azure resource group ---
+if (-not $SkipAzure) {
+    $rgExists = az group exists --name $ResourceGroupName 2>$null
+    if ($rgExists -eq "true") {
+        $rgFound = $true
+    } else {
+        Write-Host "  ✗ Resource group '$ResourceGroupName' not found in Azure." -ForegroundColor Red
+        $allRgs = az group list --query "[].name" -o tsv 2>$null
+        if ($allRgs) {
+            $rgList = $allRgs -split "`n" | Where-Object { $_ }
+            $suggestions = Get-FuzzySuggestion -SearchTerm $ResourceGroupName -Candidates $rgList
+            if ($suggestions) {
+                Write-Host "    Did you mean:" -ForegroundColor Yellow
+                foreach ($s in $suggestions) {
+                    Write-Host "      → $s" -ForegroundColor Cyan
+                }
+            } else {
+                Write-Host "    No similar resource groups found." -ForegroundColor DarkGray
+            }
+        }
+        Write-Host ""
+        $rgNotFound = $true
+        $SkipAzure = $true
+    }
+} else {
+    $rgFound = $true  # User chose to skip — treat as resolved
+}
+
+# --- Handle partial matches ---
+if ($wsNotFound -and $rgNotFound) {
+    Write-Host "  Teardown aborted — neither workspace nor resource group found. Fix the names above and retry." -ForegroundColor Red
+    Write-Host ""
+    exit 1
+}
+
+if ($wsNotFound -or $rgNotFound) {
+    # One was found, the other wasn't — confirm partial teardown
+    $foundItems = @()
+    $missingItems = @()
+    if ($wsFound)    { $foundItems += "Fabric workspace '$FabricWorkspaceName'" }
+    if ($rgFound)    { $foundItems += "Resource group '$ResourceGroupName'" }
+    if ($wsNotFound) { $missingItems += "Fabric workspace '$FabricWorkspaceName'" }
+    if ($rgNotFound) { $missingItems += "Resource group '$ResourceGroupName'" }
+
+    Write-Host "  Found:   $($foundItems -join ', ')" -ForegroundColor Green
+    Write-Host "  Missing: $($missingItems -join ', ') (will be skipped)" -ForegroundColor Yellow
+    Write-Host ""
+
+    if (-not $Force) {
+        $confirm = Read-Host "  Proceed with partial teardown of found resources? (yes/no)"
+        if ($confirm -ne "yes") {
+            Write-Host "  Aborted." -ForegroundColor Red
+            exit 0
+        }
+        Write-Host ""
+    }
+}
+
 Write-Host ""
 Write-Host "+============================================================+" -ForegroundColor Red
 Write-Host "|             COMPLETE TEARDOWN — ALL PHASES                 |" -ForegroundColor Red
@@ -82,29 +231,6 @@ Write-Host "  Phase 1 RG:        $ResourceGroupName" -ForegroundColor White
 Write-Host "  Viewer RG:         $DicomViewerResourceGroup $(if ($DicomViewerResourceGroup -eq $ResourceGroupName) { '(same as Phase 1)' })" -ForegroundColor White
 Write-Host "  Fabric Workspace:  $FabricWorkspaceName" -ForegroundColor White
 Write-Host ""
-
-# Validate resource group exists before attempting deletion
-if (-not $SkipAzure) {
-    $rgExists = az group exists --name $ResourceGroupName 2>$null
-    if ($rgExists -ne "true") {
-        Write-Host "  ⚠ Resource group '$ResourceGroupName' does not exist in Azure." -ForegroundColor Yellow
-        Write-Host "    Available RGs with similar names:" -ForegroundColor DarkGray
-        $similar = az group list --query "[?contains(name,'med') || contains(name,'rti') || contains(name,'fhir')].name" -o tsv 2>$null
-        if ($similar) {
-            $similar -split "`n" | ForEach-Object { if ($_) { Write-Host "      - $_" -ForegroundColor Cyan } }
-        } else {
-            Write-Host "      (none found)" -ForegroundColor DarkGray
-        }
-        Write-Host ""
-        if (-not $Force) {
-            $confirm = Read-Host "  Continue with Fabric-only teardown? (yes/no)"
-            if ($confirm -ne "yes") { Write-Host "  Aborted."; exit 0 }
-        }
-        $SkipAzure = $true
-        Write-Host "  Skipping Azure RG deletion (does not exist)." -ForegroundColor Yellow
-        Write-Host ""
-    }
-}
 
 # ── Step 1: Teardown Phase 1 Azure + Fabric ──
 Write-Host "── Step 1: Phase 1 Azure + Fabric ──" -ForegroundColor Cyan
