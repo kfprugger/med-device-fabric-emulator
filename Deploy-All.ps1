@@ -280,6 +280,137 @@ function Resolve-StorageAccountName {
 }
 
 # ============================================================================
+# PHASE 3 DIAGNOSTICS — Query lakehouse tables for row counts at checkpoints
+# ============================================================================
+
+function Write-Phase3Diagnostics {
+    param(
+        [string]$Checkpoint,             # e.g. "PRE-VIEWER", "POST-NOTEBOOK"
+        [string]$WorkspaceId,
+        [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1"
+    )
+
+    $diagTimestamp = Get-Date -Format "HH:mm:ss"
+    Write-Host ""
+    Write-Host "  ┌── DIAGNOSTICS [$Checkpoint] $diagTimestamp ──" -ForegroundColor DarkYellow
+    Write-Host "  │" -ForegroundColor DarkYellow
+
+    try {
+        # Get a fresh token for SQL access via Az PowerShell
+        $sqlTokenObj = Get-AzAccessToken -ResourceUrl "https://database.windows.net/.default"
+        $sqlToken = $sqlTokenObj.Token
+        if ($sqlToken -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sqlToken)
+            $sqlToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        }
+
+        # Discover Silver Lakehouse SQL endpoint
+        $fabToken = Get-FabricTokenLocal
+        $fabH = @{ Authorization = "Bearer $fabToken"; "Content-Type" = "application/json" }
+        $lakehouses = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses" -Headers $fabH).value
+
+        # Helper: run a diagnostic query via python using the PS-acquired token
+        function Invoke-DiagQuery {
+            param([string]$Server, [string]$Database, [string]$Token, [string]$Query)
+            # Pass the token via env var so Python doesn't need to re-authenticate
+            $env:_DIAG_SQL_TOKEN = $Token
+            $pyScript = @"
+import pyodbc, struct, os
+token = os.environ['_DIAG_SQL_TOKEN']
+tb = token.encode('UTF-16-LE')
+ts = struct.pack(f'<I{len(tb)}s', len(tb), tb)
+conn = pyodbc.connect(
+    'DRIVER={ODBC Driver 18 for SQL Server};SERVER=$Server;DATABASE=$Database;Encrypt=Yes;',
+    attrs_before={1256: ts})
+cur = conn.cursor()
+cur.execute('''$($Query -replace "'", "''")''')
+for row in cur.fetchall():
+    cols = '|'.join(str(c) if c is not None else '' for c in row)
+    print(cols)
+conn.close()
+"@
+            $result = $pyScript | python - 2>&1
+            Remove-Item Env:\_DIAG_SQL_TOKEN -ErrorAction SilentlyContinue
+            return $result
+        }
+
+        # --- Silver Lakehouse ---
+        $silverLh = $lakehouses | Where-Object { $_.displayName -match '[Ss]ilver' } | Select-Object -First 1
+        if ($silverLh) {
+            $silverDetail = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses/$($silverLh.id)" -Headers $fabH
+            $silverServer = $silverDetail.properties.sqlEndpointProperties.connectionString
+            $silverDb = $silverLh.displayName
+
+            if ($silverServer) {
+                $diagQuery = @"
+SELECT 'ImagingMetastore' AS tbl, COUNT(*) AS cnt, COUNT(filePath) AS fp FROM dbo.ImagingMetastore
+UNION ALL SELECT 'ImagingStudy', COUNT(*), 0 FROM dbo.ImagingStudy
+UNION ALL SELECT 'Patient', COUNT(*), 0 FROM dbo.Patient
+UNION ALL SELECT 'Condition', COUNT(*), 0 FROM dbo.Condition_
+"@
+                Write-Host "  │  Silver Lakehouse ($silverDb):" -ForegroundColor DarkYellow
+                $rows = Invoke-DiagQuery -Server $silverServer -Database $silverDb -Token $sqlToken -Query $diagQuery
+                foreach ($line in $rows) {
+                    if ($line -match '^(.+?)\|(\d+)\|(\d+)$') {
+                        $tbl = $Matches[1].Trim()
+                        $cnt = [int]$Matches[2]
+                        $fp = [int]$Matches[3]
+                        $icon = if ($cnt -gt 0) { "✓" } else { "○" }
+                        $extra = if ($tbl -eq 'ImagingMetastore') { " (filePath: $fp)" } else { "" }
+                        Write-Host "  │    $icon $($tbl.PadRight(25)) $($cnt.ToString().PadLeft(8)) rows$extra" -ForegroundColor $(if ($cnt -gt 0) { 'Green' } else { 'DarkGray' })
+                    } elseif ($line -and $line -notmatch '^\s*$') {
+                        Write-Host "  │    ! $line" -ForegroundColor DarkGray
+                    }
+                }
+            } else {
+                Write-Host "  │  ⚠ Silver SQL endpoint not available yet" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  │  ⚠ Silver Lakehouse not found" -ForegroundColor Yellow
+        }
+
+        # --- Reporting Gold Lakehouse ---
+        $reportingLh = $lakehouses | Where-Object { $_.displayName -eq 'healthcare1_reporting_gold' } | Select-Object -First 1
+        if ($reportingLh) {
+            $rptDetail = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses/$($reportingLh.id)" -Headers $fabH
+            $rptServer = $rptDetail.properties.sqlEndpointProperties.connectionString
+            $rptDb = $reportingLh.displayName
+
+            if ($rptServer) {
+                $rptQuery = @"
+SELECT 'DicomFileReporting' AS tbl, COUNT(*) AS cnt FROM dbo.DicomFileReporting
+UNION ALL SELECT 'ImagingStudyReporting', COUNT(*) FROM dbo.ImagingStudyReporting
+UNION ALL SELECT 'PatientReporting', COUNT(*) FROM dbo.PatientReporting
+"@
+                Write-Host "  │  Reporting Lakehouse ($rptDb):" -ForegroundColor DarkYellow
+                $rptRows = Invoke-DiagQuery -Server $rptServer -Database $rptDb -Token $sqlToken -Query $rptQuery
+                foreach ($line in $rptRows) {
+                    if ($line -match '^(.+?)\|(\d+)$') {
+                        $tbl = $Matches[1].Trim()
+                        $cnt = [int]$Matches[2]
+                        $icon = if ($cnt -gt 0) { "✓" } else { "○" }
+                        Write-Host "  │    $icon $($tbl.PadRight(25)) $($cnt.ToString().PadLeft(8)) rows" -ForegroundColor $(if ($cnt -gt 0) { 'Green' } else { 'DarkGray' })
+                    } elseif ($line -and $line -notmatch '^\s*$') {
+                        Write-Host "  │    ! $line" -ForegroundColor DarkGray
+                    }
+                }
+            } else {
+                Write-Host "  │  Reporting Lakehouse exists but SQL endpoint not ready" -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Host "  │  Reporting Lakehouse not yet created" -ForegroundColor DarkGray
+        }
+
+    } catch {
+        Write-Host "  │  ⚠ Diagnostics query failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    Write-Host "  │" -ForegroundColor DarkYellow
+    Write-Host "  └── END DIAGNOSTICS ──" -ForegroundColor DarkYellow
+    Write-Host ""
+}
+
+# ============================================================================
 # BANNER
 # ============================================================================
 
@@ -845,6 +976,9 @@ if ($Phase2 -or $Phase3) {
 
             Write-Host ""
 
+            # ── DIAGNOSTIC CHECKPOINT: Before DICOM Viewer ──
+            Write-Phase3Diagnostics -Checkpoint "PRE-VIEWER (3b)" -WorkspaceId $p3WsId
+
             # Step 3b: Deploy DICOM Viewer (Azure infra + OHIF)
             # Step 3b: Deploy DICOM Viewer FIRST (viewer URL needed by notebook)
             # Use the main Azure RG so all resources stay together
@@ -885,11 +1019,17 @@ if ($Phase2 -or $Phase3) {
                 -DicomViewerResourceGroup $viewerRg
             Write-Host ""
 
+            # ── DIAGNOSTIC CHECKPOINT: After notebook materialization ──
+            Write-Phase3Diagnostics -Checkpoint "POST-NOTEBOOK (3c)" -WorkspaceId $p3WsId
+
             # Step 3d: Deploy Power BI Direct Lake Report
             Write-Host "  --- Step 3d: Power BI Imaging Report (Direct Lake) ---" -ForegroundColor Cyan
             & "$DicomToolkitPath\Deploy-ImagingReport.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName
             Write-Host ""
+
+            # ── DIAGNOSTIC CHECKPOINT: After PBI report, before final checks ──
+            Write-Phase3Diagnostics -Checkpoint "POST-REPORT (3d)" -WorkspaceId $p3WsId
 
             # Step 3e: Add proxy MI to Fabric workspace + verify DICOM index
             Write-Host "  --- Step 3e: DICOM Viewer Permissions + Index ---" -ForegroundColor Cyan
@@ -934,11 +1074,36 @@ if ($Phase2 -or $Phase3) {
                         Write-Host "  DICOM index: $studyCount studies" -ForegroundColor $(if ($studyCount -gt 0) { 'Green' } else { 'Yellow' })
 
                         if ($studyCount -eq 0) {
-                            Write-Host "  ⚠ DICOM index is empty. To rebuild, re-run:" -ForegroundColor Yellow
-                            Write-Host "    & `"$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1`" ``" -ForegroundColor Cyan
-                            Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
-                            Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
-                            Write-Host "        -Location `"$Location`" -SkipOhifBuild" -ForegroundColor Cyan
+                            # Auto-rebuild: the index was built in 3b before data was fully available
+                            Write-Host "  ⚠ DICOM index is empty — auto-rebuilding from current Silver data..." -ForegroundColor Yellow
+
+                            try {
+                                & "$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" `
+                                    -ResourceGroup $viewerRg `
+                                    -FabricWorkspaceName $FabricWorkspaceName `
+                                    -Location $Location -SkipOhifBuild -Force
+
+                                # Re-check after rebuild
+                                Start-Sleep -Seconds 5
+                                $healthResp2 = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 10
+                                $studyCount2 = $healthResp2.studies
+                                if ($studyCount2 -gt 0) {
+                                    Write-Host "  ✓ DICOM index rebuilt: $studyCount2 studies" -ForegroundColor Green
+                                } else {
+                                    Write-Host "  ⚠ Index still empty after rebuild. Manual rebuild:" -ForegroundColor Yellow
+                                    Write-Host "    & `"$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1`" ``" -ForegroundColor Cyan
+                                    Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
+                                    Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
+                                    Write-Host "        -Location `"$Location`" -SkipOhifBuild -Force" -ForegroundColor Cyan
+                                }
+                            } catch {
+                                Write-Host "  ⚠ Auto-rebuild failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                                Write-Host "    Manual rebuild:" -ForegroundColor Yellow
+                                Write-Host "    & `"$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1`" ``" -ForegroundColor Cyan
+                                Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
+                                Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
+                                Write-Host "        -Location `"$Location`" -SkipOhifBuild -Force" -ForegroundColor Cyan
+                            }
                         }
                     } catch {
                         Write-Host "  ⚠ Could not reach proxy health endpoint" -ForegroundColor Yellow
@@ -947,6 +1112,9 @@ if ($Phase2 -or $Phase3) {
             } catch {
                 Write-Host "  ⚠ Post-deploy check failed: $($_.Exception.Message)" -ForegroundColor Yellow
             }
+
+            # ── DIAGNOSTIC CHECKPOINT: Final state after all Phase 3 steps ──
+            Write-Phase3Diagnostics -Checkpoint "FINAL (Phase 3 complete)" -WorkspaceId $p3WsId
             Write-Host ""
         }
     }
