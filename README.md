@@ -11,17 +11,7 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 
 </details>
 
-<details>
-<summary><strong>▶ Watch the 3-minute animated overview</strong></summary>
-
-<video src="video/out/readme-overview.mp4" width="100%" controls>
-  Your browser does not support the video tag. <a href="video/out/readme-overview.mp4">Download the video</a>.
-</video>
-
-*Generated programmatically with [Remotion](https://remotion.dev/) and an AI coding agent — see [video/README.md](video/README.md) for details.*
-</details>
-
-> **Video overview:** The [intro video](video/out/readme-overview.mp4) was generated programmatically using [Remotion](https://remotion.dev/) and an AI coding agent — see [video/README.md](video/README.md) for details.
+**▶ [Watch the video explainer](https://aka.ms/fabrichlsrti)**
 
 **What this solution demonstrates:**
 - **Real-Time Intelligence** — Masimo pulse oximeter telemetry streams through Eventstream into Eventhouse with KQL-based clinical alert detection (SpO2 drops, abnormal pulse rates) in seconds

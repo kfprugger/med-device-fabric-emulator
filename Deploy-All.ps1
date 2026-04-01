@@ -296,34 +296,55 @@ function Write-Phase3Diagnostics {
     Write-Host "  │" -ForegroundColor DarkYellow
 
     try {
-        # Get a fresh token for SQL access via Az PowerShell
-        $sqlTokenObj = Get-AzAccessToken -ResourceUrl "https://database.windows.net/.default"
-        $sqlToken = $sqlTokenObj.Token
-        if ($sqlToken -is [System.Security.SecureString]) {
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sqlToken)
-            $sqlToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        # Get a fresh Fabric token for API calls (self-contained, no dependency on Get-FabricTokenLocal)
+        $fabTokenObj = Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com"
+        $fabToken = $fabTokenObj.Token
+        if ($fabToken -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabToken)
+            try { $fabToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
         }
 
-        # Discover Silver Lakehouse SQL endpoint
-        $fabToken = Get-FabricTokenLocal
+        # Get a fresh token for SQL access — try multiple resource URL formats
+        $sqlToken = $null
+        foreach ($sqlResource in @("https://database.windows.net/", "https://database.windows.net/.default", "https://database.windows.net")) {
+            try {
+                $sqlTokenObj = Get-AzAccessToken -ResourceUrl $sqlResource -ErrorAction Stop
+                $sqlToken = $sqlTokenObj.Token
+                if ($sqlToken -is [System.Security.SecureString]) {
+                    $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sqlToken)
+                    try { $sqlToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr2) }
+                    finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2) }
+                }
+                break
+            } catch { continue }
+        }
+        if (-not $sqlToken) {
+            Write-Host "  │  ⚠ Could not acquire SQL token — skipping SQL diagnostics" -ForegroundColor Yellow
+        }
+
+        # Discover lakehouses via Fabric API
         $fabH = @{ Authorization = "Bearer $fabToken"; "Content-Type" = "application/json" }
         $lakehouses = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses" -Headers $fabH).value
 
         # Helper: run a diagnostic query via python using the PS-acquired token
         function Invoke-DiagQuery {
             param([string]$Server, [string]$Database, [string]$Token, [string]$Query)
-            # Pass the token via env var so Python doesn't need to re-authenticate
+            # Pass the token and query via env vars so Python doesn't need to re-authenticate
+            # and we avoid any string escaping issues between PS and Python
             $env:_DIAG_SQL_TOKEN = $Token
+            $env:_DIAG_SQL_QUERY = $Query
             $pyScript = @"
 import pyodbc, struct, os
 token = os.environ['_DIAG_SQL_TOKEN']
+query = os.environ['_DIAG_SQL_QUERY']
 tb = token.encode('UTF-16-LE')
 ts = struct.pack(f'<I{len(tb)}s', len(tb), tb)
 conn = pyodbc.connect(
     'DRIVER={ODBC Driver 18 for SQL Server};SERVER=$Server;DATABASE=$Database;Encrypt=Yes;',
     attrs_before={1256: ts})
 cur = conn.cursor()
-cur.execute('''$($Query -replace "'", "''")''')
+cur.execute(query)
 for row in cur.fetchall():
     cols = '|'.join(str(c) if c is not None else '' for c in row)
     print(cols)
@@ -331,6 +352,7 @@ conn.close()
 "@
             $result = $pyScript | python - 2>&1
             Remove-Item Env:\_DIAG_SQL_TOKEN -ErrorAction SilentlyContinue
+            Remove-Item Env:\_DIAG_SQL_QUERY -ErrorAction SilentlyContinue
             return $result
         }
 
@@ -340,15 +362,15 @@ conn.close()
             $silverDetail = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses/$($silverLh.id)" -Headers $fabH
             $silverServer = $silverDetail.properties.sqlEndpointProperties.connectionString
             $silverDb = $silverLh.displayName
+            Write-Host "  │  Silver Lakehouse ($silverDb):" -ForegroundColor DarkYellow
 
-            if ($silverServer) {
+            if ($silverServer -and $sqlToken) {
                 $diagQuery = @"
 SELECT 'ImagingMetastore' AS tbl, COUNT(*) AS cnt, COUNT(filePath) AS fp FROM dbo.ImagingMetastore
 UNION ALL SELECT 'ImagingStudy', COUNT(*), 0 FROM dbo.ImagingStudy
 UNION ALL SELECT 'Patient', COUNT(*), 0 FROM dbo.Patient
-UNION ALL SELECT 'Condition', COUNT(*), 0 FROM dbo.Condition_
+UNION ALL SELECT 'Condition', COUNT(*), 0 FROM dbo.Condition
 "@
-                Write-Host "  │  Silver Lakehouse ($silverDb):" -ForegroundColor DarkYellow
                 $rows = Invoke-DiagQuery -Server $silverServer -Database $silverDb -Token $sqlToken -Query $diagQuery
                 foreach ($line in $rows) {
                     if ($line -match '^(.+?)\|(\d+)\|(\d+)$') {
@@ -362,8 +384,10 @@ UNION ALL SELECT 'Condition', COUNT(*), 0 FROM dbo.Condition_
                         Write-Host "  │    ! $line" -ForegroundColor DarkGray
                     }
                 }
+            } elseif (-not $silverServer) {
+                Write-Host "  │    ⚠ SQL endpoint not available yet" -ForegroundColor Yellow
             } else {
-                Write-Host "  │  ⚠ Silver SQL endpoint not available yet" -ForegroundColor Yellow
+                Write-Host "  │    ⚠ No SQL token — skipping row counts" -ForegroundColor Yellow
             }
         } else {
             Write-Host "  │  ⚠ Silver Lakehouse not found" -ForegroundColor Yellow
@@ -375,14 +399,14 @@ UNION ALL SELECT 'Condition', COUNT(*), 0 FROM dbo.Condition_
             $rptDetail = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/lakehouses/$($reportingLh.id)" -Headers $fabH
             $rptServer = $rptDetail.properties.sqlEndpointProperties.connectionString
             $rptDb = $reportingLh.displayName
+            Write-Host "  │  Reporting Lakehouse ($rptDb):" -ForegroundColor DarkYellow
 
-            if ($rptServer) {
+            if ($rptServer -and $sqlToken) {
                 $rptQuery = @"
 SELECT 'DicomFileReporting' AS tbl, COUNT(*) AS cnt FROM dbo.DicomFileReporting
 UNION ALL SELECT 'ImagingStudyReporting', COUNT(*) FROM dbo.ImagingStudyReporting
 UNION ALL SELECT 'PatientReporting', COUNT(*) FROM dbo.PatientReporting
 "@
-                Write-Host "  │  Reporting Lakehouse ($rptDb):" -ForegroundColor DarkYellow
                 $rptRows = Invoke-DiagQuery -Server $rptServer -Database $rptDb -Token $sqlToken -Query $rptQuery
                 foreach ($line in $rptRows) {
                     if ($line -match '^(.+?)\|(\d+)$') {
@@ -394,8 +418,10 @@ UNION ALL SELECT 'PatientReporting', COUNT(*) FROM dbo.PatientReporting
                         Write-Host "  │    ! $line" -ForegroundColor DarkGray
                     }
                 }
+            } elseif (-not $rptServer) {
+                Write-Host "  │    SQL endpoint not ready" -ForegroundColor DarkGray
             } else {
-                Write-Host "  │  Reporting Lakehouse exists but SQL endpoint not ready" -ForegroundColor DarkGray
+                Write-Host "  │    ⚠ No SQL token — skipping row counts" -ForegroundColor Yellow
             }
         } else {
             Write-Host "  │  Reporting Lakehouse not yet created" -ForegroundColor DarkGray
