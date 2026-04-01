@@ -15,7 +15,7 @@
 ## Priority 2 — Documentation & Communication
 
 ### 2. Demonstration Video
-- [ ] Record a walkthrough video covering:
+- [x] Record a walkthrough video covering:
   - End-to-end deployment (`Deploy-All.ps1` → Azure infra → FHIR data → Fabric RTI → Data Agents)
   - Masimo device emulator streaming telemetry to Eventstream/Eventhouse
   - Healthcare Data Solutions (HDS) ingestion from FHIR to Silver Lakehouse
