@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jre
+FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu
 
 # Install wget, unzip, and Azure CLI
 RUN apt-get update && apt-get install -y wget unzip curl apt-transport-https lsb-release gnupg ca-certificates \

@@ -1,5 +1,6 @@
-FROM python:3.9-slim
+FROM mcr.microsoft.com/cbl-mariner/base/python:3
 ENV PYTHONUNBUFFERED=1
+RUN ln -sf /usr/bin/python3 /usr/bin/python
 RUN pip install azure-eventhub azure-identity azure-keyvault-secrets
 COPY emulator.py /app/emulator.py
 WORKDIR /app

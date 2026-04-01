@@ -1,3 +1,0 @@
-ERROR: (ResourceNotFound) The Resource 'Microsoft.ContainerInstance/containerGroups/dicom-loader-job' under resource group 'rg-medtech-rti-fhir' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
-Code: ResourceNotFound
-Message: The Resource 'Microsoft.ContainerInstance/containerGroups/dicom-loader-job' under resource group 'rg-medtech-rti-fhir' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
