@@ -7,15 +7,21 @@ This script queries the FHIR service for patients with qualifying conditions
 resources linking them to the already-created Masimo devices.
 
 Run locally with: python create-device-associations.py
+Or set FHIR_SERVICE_URL environment variable before running.
 """
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
 
 # Configuration
-FHIR_SERVICE_URL = "https://hdwsiecaacmlqodcs-fhiriecaacmlqodcs.fhir.azurehealthcareapis.com"
+FHIR_SERVICE_URL = os.environ.get('FHIR_SERVICE_URL')
+if not FHIR_SERVICE_URL:
+    print("ERROR: FHIR_SERVICE_URL environment variable is required.")
+    print("  Set it with: $env:FHIR_SERVICE_URL = 'https://your-fhir-service.fhir.azurehealthcareapis.com'")
+    sys.exit(1)
 DEVICE_COUNT = 100
 
 # SNOMED codes for conditions that qualify for pulse oximetry monitoring
@@ -42,7 +48,7 @@ def get_access_token():
     """Get Azure access token using az cli"""
     result = subprocess.run(
         ["az", "account", "get-access-token", "--resource", FHIR_SERVICE_URL, "--query", "accessToken", "-o", "tsv"],
-        capture_output=True, text=True
+        capture_output=True, text=True, shell=True
     )
     if result.returncode != 0:
         print(f"Error getting access token: {result.stderr}")
@@ -94,7 +100,7 @@ def find_qualifying_patients(token, max_patients=100):
         try:
             result = fhir_request(
                 "GET",
-                f"Condition?code={code}&_include=Condition:subject&_count=50",
+                f"Condition?code={code}&_count=50",
                 token
             )
             
@@ -102,29 +108,47 @@ def find_qualifying_patients(token, max_patients=100):
             for entry in result.get('entry', []):
                 resource = entry.get('resource', {})
                 
-                if resource.get('resourceType') == 'Patient':
-                    patient_id = resource.get('id')
-                    if patient_id and patient_id not in seen_patient_ids:
-                        seen_patient_ids.add(patient_id)
-                        
-                        # Get patient name
-                        names = resource.get('name', [])
-                        name = "Unknown"
-                        if names:
-                            given = names[0].get('given', [''])[0]
-                            family = names[0].get('family', '')
-                            name = f"{given} {family}".strip()
-                        
-                        qualifying_patients.append({
-                            'id': patient_id,
-                            'name': name,
-                            'condition': display
-                        })
-                        
-                        if len(qualifying_patients) >= max_patients:
-                            break
-                elif resource.get('resourceType') == 'Condition':
+                if resource.get('resourceType') == 'Condition':
                     conditions_found += 1
+                    
+                    # Extract patient reference from the condition
+                    subject = resource.get('subject', {})
+                    patient_ref = subject.get('reference', '')
+                    
+                    if patient_ref:
+                        # Handle both "Patient/uuid" and "uuid" formats
+                        if patient_ref.startswith('Patient/'):
+                            patient_id = patient_ref.replace('Patient/', '')
+                        else:
+                            # Assume it's just the patient ID
+                            patient_id = patient_ref
+                        
+                        if patient_id and patient_id not in seen_patient_ids:
+                            seen_patient_ids.add(patient_id)
+                            
+                            # Get patient name from subject display or fetch patient
+                            patient_name = subject.get('display', '')
+                            if not patient_name:
+                                try:
+                                    patient = fhir_request("GET", f"Patient/{patient_id}", token)
+                                    names = patient.get('name', [])
+                                    if names:
+                                        given = names[0].get('given', [''])[0]
+                                        family = names[0].get('family', '')
+                                        patient_name = f"{given} {family}".strip()
+                                    else:
+                                        patient_name = f"Patient-{patient_id}"
+                                except:
+                                    patient_name = f"Patient-{patient_id}"
+                            
+                            qualifying_patients.append({
+                                'id': patient_id,
+                                'name': patient_name,
+                                'condition': display
+                            })
+                            
+                            if len(qualifying_patients) >= max_patients:
+                                break
             
             if conditions_found > 0:
                 print(f"  {display} ({code}): {conditions_found} conditions found")
@@ -146,9 +170,9 @@ def create_device_association(device_id, patient_reference, patient_name):
         },
         "code": {
             "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
-                "code": "ASSIGNED",
-                "display": "assigned device"
+                "system": "http://terminology.hl7.org/CodeSystem/basic-resource-type",
+                "code": "device-assoc",
+                "display": "Device Association"
             }],
             "text": "Device Assignment"
         },

@@ -6,11 +6,13 @@ echo "Patient Count: $PATIENT_COUNT"
 echo "Storage Account: $STORAGE_ACCOUNT"
 echo "Container Name: $CONTAINER_NAME"
 
-# Run Synthea for Atlanta, Georgia with our custom configuration
+# Run Synthea for Atlanta, Georgia with respiratory/cardiac modules
+# The -m flag restricts disease modules to conditions relevant to pulse oximetry
 echo "Running Synthea..."
 java $JAVA_OPTS -jar /synthea/synthea-with-dependencies.jar \
     -c /synthea/synthea.properties \
     -p $PATIENT_COUNT \
+    -m asthma,copd,congestive_heart_failure,pneumonia,covid19,metabolic_syndrome_disease,lung_cancer \
     --exporter.baseDirectory /output \
     Georgia Atlanta
 

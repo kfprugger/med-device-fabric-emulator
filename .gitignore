@@ -1,5 +1,5 @@
 # Deployment state (user-specific)
-.deployment-state.json
+.deployment-state*.json
 
 # Debug / log artifacts
 deploy-log*.txt
@@ -16,6 +16,11 @@ __pycache__/
 video/node_modules/
 video/out/
 video/.remotion/
+
+# Orchestrator UI (WIP — separate branch)
+orchestrator-ui/
+orchestrator/
+bicep/orchestrator-infra.bicep
 
 # OS
 .DS_Store

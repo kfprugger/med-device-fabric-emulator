@@ -991,8 +991,9 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
                     client.post_bundle(sub_bundle)
                 uploaded_count += 1
                 
-                # Check if patient qualifies for device monitoring
-                if has_qualifying_condition(bundle) and len(qualifying_patients) < DEVICE_COUNT:
+                # Associate patient with a device for monitoring
+                # Every admitted patient gets a pulse oximeter, not just those with qualifying conditions
+                if len(qualifying_patients) < DEVICE_COUNT:
                     patient_name = ''
                     names = patient.get('name', [])
                     if names:
@@ -1002,11 +1003,13 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
                         patient_name = f"{given} {family}".strip()
                     
                     patient_id = patient.get('id', '')
+                    has_condition = has_qualifying_condition(bundle)
                     qualifying_patients.append({
                         'id': patient_id,
                         'name': patient_name,
                         'birthDate': patient.get('birthDate', ''),
-                        'isPediatric': is_pediatric(patient)
+                        'isPediatric': is_pediatric(patient),
+                        'hasQualifyingCondition': has_condition
                     })
                 
                 processed_count += 1
@@ -1022,7 +1025,7 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
     print(f"Uploaded {uploaded_count} patient bundles", flush=True)
     print(f"Skipped {skipped_choa_adult} non-pediatric CHOA patients", flush=True)
     print(f"Split {bundle_splits} large bundles to stay under FHIR limit", flush=True)
-    print(f"Found {len(qualifying_patients)} qualifying patients for device monitoring", flush=True)
+    print(f"Found {len(qualifying_patients)} patients for device monitoring", flush=True)
     
     return qualifying_patients
 
@@ -1032,6 +1035,7 @@ def create_device_associations(client: FHIRClient, qualifying_patients: List[Dic
     print(f"Creating device associations for {len(qualifying_patients)} patients...", flush=True)
     
     devices = DEVICE_REGISTRY['devices'][:len(qualifying_patients)]
+    association_mapping = []
     
     for i, (device_info, patient) in enumerate(zip(devices, qualifying_patients)):
         try:
@@ -1042,6 +1046,13 @@ def create_device_associations(client: FHIRClient, qualifying_patients: List[Dic
             )
             client.put_resource(association, association['id'])
             
+            # Build mapping for DICOM loader
+            association_mapping.append({
+                "patientId": patient['id'],
+                "deviceId": device_info['id'],
+                "patientName": patient['name']
+            })
+            
             if (i + 1) % 20 == 0:
                 print(f"  - Created {i + 1}/{len(qualifying_patients)} associations", flush=True)
                 
@@ -1049,6 +1060,18 @@ def create_device_associations(client: FHIRClient, qualifying_patients: List[Dic
             print(f"  - Failed to create association for device {device_info['id']}: {e}", flush=True)
     
     print(f"Created {len(qualifying_patients)} device associations", flush=True)
+    
+    # Write association mapping to blob storage for DICOM loader (avoids FHIR search indexing dependency)
+    try:
+        blob_service = get_blob_service_client()
+        container_name = os.getenv('CONTAINER_NAME', 'synthea-output')
+        blob_client = blob_service.get_blob_client(container_name, "device-associations.json")
+        mapping_json = json.dumps(association_mapping, indent=2)
+        blob_client.upload_blob(mapping_json, overwrite=True)
+        print(f"  - Wrote device-associations.json to blob ({len(association_mapping)} entries)", flush=True)
+    except Exception as e:
+        print(f"  - WARNING: Could not write device-associations.json to blob: {e}", flush=True)
+        print(f"    DICOM loader may fall back to FHIR search", flush=True)
 
 
 def print_summary(client: FHIRClient) -> None:

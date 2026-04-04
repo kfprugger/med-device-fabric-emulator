@@ -106,6 +106,55 @@
 
 ---
 
+## Priority 5 — Deployment Orchestrator Web App
+
+### 13. Durable Functions Backend (`orchestrator/`)
+- [x] Scaffold project structure (function_app.py, activities/, shared/)
+- [x] Implement shared Azure SDK client (ARM deployments, ACR, ACI, RBAC)
+- [x] Implement shared Fabric REST API client (workspaces, items, agents, shortcuts)
+- [x] Implement shared Kusto management client (KQL scripts, queries)
+- [x] Implement Pydantic models (DeploymentConfig, DeploymentState, PhaseResult)
+- [x] Implement deploy_all_orchestrator with 9-phase sequencing + HDS human interaction gate
+- [x] Implement teardown_orchestrator (reverse-order deletion)
+- [x] Implement activity functions for all phases (1, 1b, 2, 2b, 3, 4, 4b, 5, 6)
+- [x] Implement HTTP trigger API layer (start, status, resume-hds, cancel, teardown, history)
+- [ ] Port remaining PowerShell edge cases (soft-deleted Key Vault purge, role assignment conflicts)
+- [ ] Add `-DryRun` / validation mode to test prerequisites before deployment
+- [ ] Unit tests with mocked Azure SDK calls for each activity
+- [ ] Integration test: deploy to test RG + test Fabric workspace
+- [ ] Resilience test: kill Function App mid-phase, verify checkpoint recovery
+
+### 14. React SPA Frontend (`orchestrator-ui/`)
+- [x] Scaffold Vite + TypeScript + Fluent UI project
+- [x] Implement Layout with tab navigation (Deploy, History, Teardown)
+- [x] Implement Deploy Wizard (multi-step form with phase control)
+- [x] Implement Phase Monitor (real-time status, HDS gate, resource viewer)
+- [x] Implement Deployment History (table with status badges)
+- [x] Implement Teardown View (workspace + RG deletion)
+- [x] Implement API client (typed fetch wrappers)
+- [ ] Add log streaming to Phase Monitor (poll activity function logs)
+- [ ] Add per-phase retry button on failure
+- [ ] Playwright smoke tests for deploy wizard flow
+- [ ] Responsive design for smaller screens
+
+### 15. Infrastructure & CI/CD
+- [ ] Create Bicep template for orchestrator (Function App + Static Web App + Storage + MI)
+- [ ] GitHub Actions: build + deploy Functions app
+- [ ] GitHub Actions: build + deploy Static Web App
+- [ ] Configure Function App Managed Identity with Contributor + Fabric API permissions
+
+### 16. Fabric Extensibility Toolkit Integration (Future)
+- [ ] Fork the [Extensibility Toolkit Starter-Kit](https://aka.ms/fabric-extensibility-starter-kit)
+- [ ] Create a custom **"Deployment Manager"** item type
+- [ ] Manifest declares workspace permissions, OneLake access, iFrame relaxation
+- [ ] iFrame renders the React SPA from Azure Static Web Apps
+- [ ] Item definition stores deployment state in OneLake (replaces Durable Functions entity state)
+- [ ] Native Fabric navigation, search, and sharing
+- [ ] Investigate [PackageInstallerItem](https://github.com/microsoft/Microsoft-Fabric-tools-workload) pattern for automated Fabric item deployment
+- [ ] Evaluate publishing to Workload Hub for broader consumption
+
+---
+
 ## Completed Items
 
 - [x] Deploy Azure infrastructure (FHIR, ACR, Storage, Managed Identity)

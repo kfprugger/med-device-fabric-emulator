@@ -207,4 +207,4 @@ FabricDicomCohortingToolkit/
 
 ---
 
-**Previous:** [← Phase 2 — HDS Enrichment & Data Agents](phase-2-hds-enrichment-and-agents.md) · **Overview:** [← README](../README.md)
+**Previous:** [← Phase 2 — HDS Enrichment & Data Agents](phase-2-hds-enrichment-and-agents.md) · **Next:** [Phase 4 — Ontology & Activator →](phase-4-ontology-and-activator.md) · **Overview:** [← README](../README.md)

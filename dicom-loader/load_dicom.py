@@ -67,9 +67,27 @@ class AzureClient:
 
 # ── FHIR Queries ─────────────────────────────────────────────────────────
 
+def get_device_associations_from_blob(storage_account: str, credential, container: str = "synthea-output") -> list[dict]:
+    """
+    Read device-association mapping from blob storage (written by FHIR loader).
+    Returns list of dicts with patientId, deviceId, patientName.
+    """
+    try:
+        account_url = f"https://{storage_account}.blob.core.windows.net"
+        blob_service = BlobServiceClient(account_url, credential=credential)
+        blob_client = blob_service.get_blob_client(container, "device-associations.json")
+        data = blob_client.download_blob().readall()
+        associations = json.loads(data)
+        logger.info("Loaded %d device associations from blob (device-associations.json)", len(associations))
+        return associations
+    except Exception as e:
+        logger.info("No device-associations.json in blob storage: %s", e)
+        return []
+
+
 def get_device_associated_patients(fhir_url: str, token: str) -> list[dict]:
     """
-    Query FHIR for device-associated patients via Basic resources.
+    Query FHIR for device-associated patients via Basic resources (fallback).
     Returns list of dicts with patientId and deviceId.
     """
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/fhir+json"}
@@ -260,9 +278,24 @@ def main():
         logger.info("Creating blob container '%s'...", dicom_container)
         azure.blob_service.create_container(dicom_container)
 
-    # Step 1: Get device-associated patients
-    fhir_token = azure.fhir_token
-    associations = get_device_associated_patients(fhir_url, fhir_token)
+    # Step 1: Get device-associated patients (blob first, FHIR search fallback)
+    # Blob is strongly consistent — no search indexing delay
+    associations = get_device_associations_from_blob(storage_account, azure.credential)
+    
+    if not associations:
+        # Fallback: query FHIR directly (may hit search indexing delays)
+        logger.info("Falling back to FHIR search for device associations...")
+        fhir_token = azure.fhir_token
+        for attempt in range(30):  # Retry up to 5 minutes
+            associations = get_device_associated_patients(fhir_url, fhir_token)
+            if associations:
+                break
+            if attempt < 29:
+                logger.info("Waiting for FHIR search index to be consistent... (%ds)", (attempt + 1) * 10)
+                import time
+                time.sleep(10)
+                fhir_token = azure.fhir_token
+
     if not associations:
         logger.error("No device-associated patients found. Run the FHIR loader first.")
         sys.exit(1)

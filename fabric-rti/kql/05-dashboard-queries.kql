@@ -19,7 +19,7 @@ fn_DeviceStatus()
 // ---------------------------------------------------------------------------
 // Title: "Active Clinical Alerts"
 fn_ClinicalAlerts(5)
-| project alert_tier, device_id, alert_type,
+| project alert_tier, device_id, patient_name, alert_type,
           spo2, pr, message
 | order by alert_tier asc
 

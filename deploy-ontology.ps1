@@ -302,7 +302,7 @@ $dbE = LhBind ('{"sourceColumnName":"idOrig","targetPropertyId":"'+$pEid+'"},{"s
 
 # Condition
 $eC = NextId; $pCid = NextId; $pCdn = NextId; $pCcs = NextId; $pCpr = NextId
-$ejC = EtJson $eC "Condition_1" $pCid $pCdn ((PropJson $pCid "conditionId"),(PropJson $pCdn "conditionName"),(PropJson $pCcs "clinicalStatus"),(PropJson $pCpr "patientRef") -join ',')
+$ejC = EtJson $eC "Condition" $pCid $pCdn ((PropJson $pCid "conditionId"),(PropJson $pCdn "conditionName"),(PropJson $pCcs "clinicalStatus"),(PropJson $pCpr "patientRef") -join ',')
 $dbC = LhBind ('{"sourceColumnName":"idOrig","targetPropertyId":"'+$pCid+'"},{"sourceColumnName":"code_string","targetPropertyId":"'+$pCdn+'"},{"sourceColumnName":"clinicalStatus_string","targetPropertyId":"'+$pCcs+'"},{"sourceColumnName":"subject_string","targetPropertyId":"'+$pCpr+'"}') "Condition"
 
 # MedicationRequest
@@ -312,7 +312,7 @@ $dbM = LhBind ('{"sourceColumnName":"idOrig","targetPropertyId":"'+$pMid+'"},{"s
 
 # Observation
 $eO = NextId; $pOid = NextId; $pOco = NextId; $pOvl = NextId; $pOun = NextId; $pOef = NextId; $pOpr = NextId
-$ejO = EtJson $eO "Observation_1" $pOid $pOco ((PropJson $pOid "observationId"),(PropJson $pOco "observationCode"),(PropJson $pOvl "observationValue"),(PropJson $pOun "observationUnit"),(PropJson $pOef "effectiveDateTime"),(PropJson $pOpr "patientRef") -join ',')
+$ejO = EtJson $eO "Observation" $pOid $pOco ((PropJson $pOid "observationId"),(PropJson $pOco "observationCode"),(PropJson $pOvl "observationValue"),(PropJson $pOun "observationUnit"),(PropJson $pOef "effectiveDateTime"),(PropJson $pOpr "patientRef") -join ',')
 $dbO = LhBind ('{"sourceColumnName":"idOrig","targetPropertyId":"'+$pOid+'"},{"sourceColumnName":"code_string","targetPropertyId":"'+$pOco+'"},{"sourceColumnName":"valueQuantity_value","targetPropertyId":"'+$pOvl+'"},{"sourceColumnName":"valueQuantity_unit","targetPropertyId":"'+$pOun+'"},{"sourceColumnName":"effectiveDateTime","targetPropertyId":"'+$pOef+'"},{"sourceColumnName":"subject_string","targetPropertyId":"'+$pOpr+'"}') "Observation"
 
 # DeviceAssociation

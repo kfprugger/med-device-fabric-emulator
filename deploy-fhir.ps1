@@ -542,6 +542,11 @@ Write-Host ""
 Write-Host "FHIR Loader logs (last 30 lines):" -ForegroundColor Gray
 az container logs --resource-group $ResourceGroupName --name fhir-loader-job 2>$null | Select-Object -Last 30
 
+    # Note: Device associations are created by the FHIR loader container (load_fhir.py)
+    # using basic-resource-type|device-assoc code. The standalone create-device-associations.py
+    # script is for manual/ad-hoc use only — do NOT run it here as it uses a different code system
+    # (v3-RoleCode|ASSIGNED) which overwrites the loader's resources and breaks the DICOM loader.
+
 } else {
     Write-Host ""
     Write-Host "--- STEP 4-5: SKIPPING FHIR LOADER (not selected) ---" -ForegroundColor DarkGray
@@ -551,6 +556,21 @@ az container logs --resource-group $ResourceGroupName --name fhir-loader-job 2>$
 # STEP 6: Build DICOM Loader Container
 # ============================================
 if ($doDicom) {
+
+# Pre-flight: verify device-associations.json exists in blob storage
+Write-Host ""
+Write-Host "--- PRE-FLIGHT: Device Association Check ---" -ForegroundColor Cyan
+try {
+    $blobCheck = az storage blob show --account-name $storageAccountName --container-name synthea-output --name "device-associations.json" --auth-mode login --query "properties.contentLength" -o tsv 2>$null
+    if ($blobCheck -and [int]$blobCheck -gt 10) {
+        Write-Host "  ✓ device-associations.json found in blob ($blobCheck bytes)" -ForegroundColor Green
+    } else {
+        Write-Host "  ⚠ device-associations.json not found — DICOM loader will fall back to FHIR search" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  ⚠ Could not check blob — DICOM loader will fall back to FHIR search" -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "--- STEP 6: DICOM LOADER CONTAINER IMAGE ---" -ForegroundColor Cyan
 

@@ -16,7 +16,7 @@
       "title": "Active Clinical Alerts",
       "visualType": "table",
       "position": { "x": 4, "y": 0, "width": 8, "height": 4 },
-      "query": "fn_ClinicalAlerts(5)\n| project alert_tier, device_id, alert_type, spo2, pr, message\n| order by alert_tier asc",
+      "query": "fn_ClinicalAlerts(5)\n| project alert_tier, device_id, patient_name, alert_type, spo2, pr, message\n| order by alert_tier asc",
       "database": "MasimoEventhouse"
     },
     {

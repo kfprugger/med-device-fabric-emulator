@@ -54,8 +54,17 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
 # Read deployment state for defaults if parameters not provided
-$stateFile = Join-Path $ScriptDir ".deployment-state.json"
-if (Test-Path $stateFile) {
+$stateFile = $null
+# Try workspace-specific state file first, fall back to legacy
+if ($FabricWorkspaceName) {
+    $stateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+}
+if (-not $stateFile -or -not (Test-Path $stateFile)) {
+    # Fall back to legacy state file
+    $legacyStateFile = Join-Path $ScriptDir ".deployment-state.json"
+    if (Test-Path $legacyStateFile) { $stateFile = $legacyStateFile }
+}
+if ($stateFile -and (Test-Path $stateFile)) {
     $state = Get-Content $stateFile -Raw | ConvertFrom-Json
     $lastPhase = $state.phases | Select-Object -Last 1
     if ($lastPhase.resources) {
@@ -70,7 +79,7 @@ if (Test-Path $stateFile) {
     }
 }
 
-if (-not $FabricWorkspaceName) { throw "Parameter '-FabricWorkspaceName' is required (no .deployment-state.json found)" }
+if (-not $FabricWorkspaceName) { throw "Parameter '-FabricWorkspaceName' is required (no state file found)" }
 if (-not $ResourceGroupName) { $ResourceGroupName = "rg-medtech-rti-fhir" }
 
 # ============================================================================
@@ -279,10 +288,11 @@ if (-not $SkipAzure -and $DicomViewerResourceGroup -ne $ResourceGroupName) {
 $timer.Stop()
 $totalMin = [math]::Round($timer.Elapsed.TotalMinutes, 1)
 
-# Clean up state file
-if (Test-Path $stateFile) {
-    Remove-Item $stateFile -Force
-    Write-Host "  Deployment state file removed." -ForegroundColor DarkGray
+# Clean up state file (workspace-specific)
+$wsStateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+if (Test-Path $wsStateFile) {
+    Remove-Item $wsStateFile -Force
+    Write-Host "  Deployment state file removed (.deployment-state-$FabricWorkspaceName.json)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

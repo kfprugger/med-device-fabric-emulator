@@ -19,9 +19,11 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **DICOM Medical Imaging** — Real TCIA chest CT studies are downloaded, re-tagged with Synthea patient identifiers, stored in ADLS Gen2, and ingested into Fabric HDS via a OneLake shortcut and the imaging pipeline
 - **Data Agents** — Two natural-language AI agents (Patient 360 + Clinical Triage) let users ask questions like *"Show me all patients with SpO2 below 90 and their active conditions"* — federating across KQL telemetry and Lakehouse clinical data in one response
 - **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo
+- **Fabric IQ Ontology** — A 9-entity semantic layer (Patient, Device, Encounter, Condition, MedicationRequest, Observation, DeviceAssociation, ClinicalAlert, DeviceTelemetry) with relationships across Lakehouse and Eventhouse, bound to all Data Agents
+- **Data Activator** — A Reflex item with KQL source (`fn_ClinicalAlerts`), Device object, 6 attributes, and an email rule that alerts on CRITICAL/URGENT SpO2 events — deployed fully programmatically via the Fabric REST API
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
-The entire solution deploys in under 2 hours with a single command (`Deploy-All.ps1`) and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
+The entire solution deploys in under 2 hours with a single command (`Deploy-All.ps1`) and touches seven Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, and Power BI.
 
 ---
 
@@ -32,6 +34,7 @@ The entire solution deploys in under 2 hours with a single command (`Deploy-All.
 | **Phase 1** | Azure infrastructure, FHIR + DICOM data generation, Fabric RTI pipeline, manual HDS deployment | [Phase 1 — Infrastructure & Ingestion](docs/phase-1-infrastructure-and-ingestion.md) |
 | **Phase 2** | HDS Silver Lakehouse shortcuts, enriched clinical alerts, HDS pipelines, Data Agents | [Phase 2 — HDS Enrichment & Data Agents](docs/phase-2-hds-enrichment-and-agents.md) |
 | **Phase 3** | Cohorting Agent, OHIF DICOM Viewer, materialization notebook, Power BI report | [Phase 3 — Imaging & Cohorting](docs/phase-3-imaging-and-cohorting.md) |
+| **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Ontology & Activator](docs/phase-4-ontology-and-activator.md) |
 
 **Additional guides:**
 - [HDS Setup Guide](fabric-rti/HDS-SETUP-GUIDE.md) — Manual HDS deployment walkthrough
@@ -88,6 +91,11 @@ flowchart TB
             PBI["Power BI Report\n(Direct Lake)"]
             COHORT["Cohorting Agent"]
         end
+
+        subgraph P4["Phase 4 — Ontology & Activator"]
+            ONT["ClinicalDeviceOntology\n(9 entity types)"]
+            ACT["Data Activator\n(Email Alerts)"]
+        end
     end
 
     subgraph VIEWER["Azure (Viewer)"]
@@ -106,6 +114,9 @@ flowchart TB
     GOLD --> COHORT
     SLV --> RPT --> PBI
     RPT -.-> OHIF
+    ONT -.-> DA
+    ONT -.-> COHORT
+    EVH --> ACT
 
     style EXT fill:#f5f5f5,stroke:#999,stroke-dasharray:5
     style AZ fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
@@ -114,6 +125,7 @@ flowchart TB
     style P1 fill:#fff3e6,stroke:#ff8c00
     style P2 fill:#e6ffe6,stroke:#00a000
     style P3 fill:#ffe6e6,stroke:#d40000
+    style P4 fill:#e6e6ff,stroke:#4040d4
 ```
 
 ### Deployment Sequence
@@ -122,7 +134,7 @@ flowchart TB
 |------|--------|-------|--------------|
 | 1 | `deploy.ps1` | 1 | Event Hub, ACR, Key Vault, emulator ACI |
 | 1b | Fabric API (inline) | 1 | Fabric workspace, capacity, managed identity |
-| 2 | `deploy-fhir.ps1 -SkipDicom` | 1 | FHIR Service, Synthea, FHIR Loader |
+| 2 | `deploy-fhir.ps1 -SkipDicom` | 1 | FHIR Service, Synthea, FHIR Loader, Device Associations |
 | 2b | `deploy-fhir.ps1 -RunDicom` | 1 | DICOM loader, TCIA download, re-tag, ADLS upload |
 | 3 | `deploy-fabric-rti.ps1` | 1 | Eventhouse, Eventstream, KQL, dashboard, FHIR $export |
 | 4 | **Manual** (Fabric portal) | — | Deploy HDS + add scipy + run pipelines |
@@ -130,6 +142,8 @@ flowchart TB
 | 5b | `storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines |
 | 6 | `deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents |
 | 7 | FabricDicomCohortingToolkit | 3 | Cohorting Agent, DICOM Viewer, reporting notebook, PBI report |
+| 8 | `deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entity types, 5 relationships) |
+| 9 | `Deploy-All.ps1 -Phase4` | 4 | Ontology binding to agents, Data Activator (Reflex) with email rule |
 
 ### FHIR Resource Relationships
 
@@ -201,14 +215,29 @@ graph LR
 
 ### Prerequisites
 
-- Azure CLI installed and logged in
-- PowerShell 7+
+- **PowerShell 7+** (`pwsh`) with the **Az module** installed (`Install-Module Az`)
+- **Azure CLI** installed and logged in (`az login`) with **Bicep** (`az bicep install`)
+- **Git** (for cloning the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo used in Phase 3)
+- **Python 3.10+** (for `create-device-associations.py` — device-patient linking)
 - Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
-- Microsoft Fabric capacity (trial or paid)
+- Microsoft Fabric capacity (**paid F-SKU** such as F64 — trial capacities do not support all features) with the ability to create workspaces and assign the capacity
+- Fabric tenant settings enabled: **Data Activator**, **Copilot**, and **Azure OpenAI Service**
 
 ### Deploy
 
 ```powershell
+# Full deploy (all phases, ~90 min):
+.\Deploy-All.ps1 `
+    -ResourceGroupName "rg-medtech-rti-fhir" `
+    -Location "eastus" `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -AdminSecurityGroup "sg-azure-admins" `
+    -PatientCount 100 `
+    -AlertEmail "nurse@hospital.com" `
+    -Tags @{SecurityControl='Ignore'}
+
+# ── Or run individual phases: ──
+
 # Phase 1: Azure infra + FHIR data + Fabric RTI (~25 min)
 .\Deploy-All.ps1 `
     -ResourceGroupName "rg-medtech-rti-fhir" `
@@ -227,12 +256,20 @@ graph LR
     -FabricWorkspaceName "med-device-rti-hds" `
     -Tags @{SecurityControl='Ignore'}
 
-# Phase 3: Imaging toolkit (~4 min)
+# Phase 3: Imaging toolkit (~10 min)
 .\Deploy-All.ps1 -Phase3 `
     -FabricWorkspaceName "med-device-rti-hds" `
     -Location "eastus" `
     -ResourceGroupName "rg-medtech-rti-fhir" `
     -DicomToolkitPath "C:\git\FabricDicomCohortingToolkit"
+
+# Phase 4: Ontology + Data Activator (~5 min)
+.\Deploy-All.ps1 -Phase4 `
+    -FabricWorkspaceName "med-device-rti-hds" `
+    -Location "eastus" `
+    -AlertEmail "nurse@hospital.com" `
+    -AlertTierThreshold "URGENT" `
+    -AlertCooldownMinutes 15
 ```
 
 ### Teardown
@@ -254,10 +291,10 @@ med-device-fabric-emulator/
 ├── deploy-fhir.ps1             # Phase 1: FHIR + DICOM pipeline
 ├── deploy-fabric-rti.ps1       # Phase 1 + 2: Fabric RTI
 ├── deploy-data-agents.ps1      # Phase 2: Data Agents
-├── deploy-ontology.ps1         # Fabric IQ Ontology
+├── deploy-ontology.ps1         # Phase 4: Fabric IQ Ontology
 ├── storage-access-trusted-workspace.ps1  # Phase 2: HDS pipeline triggers
 ├── update-agents-inline.ps1    # Quick-update agent definitions
-├── create-device-associations.py  # Link devices to patients
+├── create-device-associations.py  # Link devices to patients (requires FHIR_SERVICE_URL env var)
 ├── emulator.py                 # Masimo device emulator
 ├── Dockerfile                  # Emulator container
 ├── Teardown-All.ps1            # Cleanup orchestrator
@@ -268,12 +305,12 @@ med-device-fabric-emulator/
 │   ├── phase-1-infrastructure-and-ingestion.md
 │   ├── phase-2-hds-enrichment-and-agents.md
 │   ├── phase-3-imaging-and-cohorting.md
+│   ├── phase-4-ontology-and-activator.md
 │   ├── FABRIC-IQ-ONTOLOGY-PLAN.md
 │   ├── ONTOLOGY-SETUP-GUIDE.md
 │   └── images/
 ├── fabric-rti/                 # KQL scripts, dashboards, HDS guide
 ├── fhir-loader/                # FHIR bundle loader
-├── video/                      # Remotion video generation (intro overview)
 └── synthea/                    # Patient generator config
 ```
 
