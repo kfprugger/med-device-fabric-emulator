@@ -21,6 +21,14 @@ pip install -r requirements.txt
 func start
 ```
 
+## Runtime Database Files
+
+The orchestrator uses a local SQLite database under `orchestrator/shared/` at runtime.
+You may see sidecar files such as `orchestrator.db-wal` and `orchestrator.db-shm` while
+the app is running. These are SQLite write-ahead logging artifacts, are machine-local,
+and are not required for end users to build or run from source in a fresh environment.
+They should remain gitignored.
+
 ## API Endpoints
 
 | Method | Path | Description |

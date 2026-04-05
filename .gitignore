@@ -47,6 +47,7 @@ orchestrator/local.settings.json
 orchestrator/shared/orchestrator.db
 orchestrator/shared/orchestrator.db-shm
 orchestrator/shared/orchestrator.db-wal
+orchestrator/shared/*.db-*
 
 # Generic package directories
 **/node_packages/
