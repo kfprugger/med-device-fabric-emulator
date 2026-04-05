@@ -15,15 +15,19 @@ __pycache__/
 *.pyc
 .env
 .venv/
+venv/
+venv/lib/site-packages/
 
 # Node / Remotion
 video/node_modules/
+video/node_packages/
 video/out/
 video/.remotion/
 
 # Orchestrator UI
 orchestrator-ui/.azurite/
 orchestrator-ui/node_modules/
+orchestrator-ui/node_packages/
 orchestrator-ui/dist/
 orchestrator-ui/.next/
 orchestrator-ui/.env.local
@@ -32,14 +36,20 @@ orchestrator-ui/.env.development
 # Orchestrator
 orchestrator/.env
 orchestrator/.venv/
+orchestrator/venv/
+orchestrator/venv/lib/site-packages/
 orchestrator/.azurite/
 orchestrator/node_modules/
+orchestrator/node_packages/
 orchestrator/dist/
 orchestrator/__pycache__/
 orchestrator/local.settings.json
 orchestrator/shared/orchestrator.db
 orchestrator/shared/orchestrator.db-shm
 orchestrator/shared/orchestrator.db-wal
+
+# Generic package directories
+**/node_packages/
 
 # OS
 .DS_Store
