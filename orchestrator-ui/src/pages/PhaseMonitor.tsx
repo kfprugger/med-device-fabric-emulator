@@ -550,14 +550,15 @@ export function PhaseMonitor() {
       ? tokens.colorPaletteYellowForeground1
       : tokens.colorBrandForeground1;
 
-  // Milestone positions evenly spaced for visual clarity, with weight thresholds for progress
-  // Visual positions: 25%, 50%, 75%, 96%
+  // Milestone positions tuned to match the original monitor spacing,
+  // with independent weight thresholds for actual completion logic.
+  // Visual positions: 8%, 36%, 64%, 90%
   // Weight thresholds: when cumulative weight reaches endWeight, that milestone is done
   const MILESTONES = [
-    { label: "Phase 1: Infra & Ingestion", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection"], position: 25, endWeight: 40 },
-    { label: "Phase 2: Enrichment & Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent"], position: 50, endWeight: 60 },
-    { label: "Phase 3: Imaging Toolkit", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer"], position: 75, endWeight: 70 },
-    { label: "Phase 4: Ontology & Activator", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex"], position: 92, endWeight: 80 },
+    { label: "Phase 1: Infra & Ingestion", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection"], position: 8, endWeight: 40 },
+    { label: "Phase 2: Enrichment & Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent"], position: 36, endWeight: 60 },
+    { label: "Phase 3: Imaging Toolkit", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer"], position: 64, endWeight: 70 },
+    { label: "Phase 4: Ontology & Activator", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex"], position: 90, endWeight: 80 },
   ];
 
   function getMilestoneStatus(ms: typeof MILESTONES[0]): "done" | "active" | "waiting" | "pending" | "cancelled" {

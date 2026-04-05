@@ -1,9 +1,7 @@
 # Deployment state (user-specific)
- .deployment-state*.json
-# .orchestrator-state.json
-# .orchestrator-state.json.bak
-# orchestrator/orchestrator.db
-# orchestrator/shared/orchestrator.db
+.deployment-state*.json
+.orchestrator-state.json
+.orchestrator-state.json.bak
 
 # Debug / log artifacts
 deploy-log*.txt
@@ -16,16 +14,32 @@ orchestrator/orchestrator.log
 __pycache__/
 *.pyc
 .env
+.venv/
 
 # Node / Remotion
 video/node_modules/
 video/out/
 video/.remotion/
 
-# Orchestrator UI (WIP — separate branch)
-# orchestrator-ui/
-# orchestrator/
-# bicep/orchestrator-infra.bicep
+# Orchestrator UI
+orchestrator-ui/.azurite/
+orchestrator-ui/node_modules/
+orchestrator-ui/dist/
+orchestrator-ui/.next/
+orchestrator-ui/.env.local
+orchestrator-ui/.env.development
+
+# Orchestrator
+orchestrator/.env
+orchestrator/.venv/
+orchestrator/.azurite/
+orchestrator/node_modules/
+orchestrator/dist/
+orchestrator/__pycache__/
+orchestrator/local.settings.json
+orchestrator/shared/orchestrator.db
+orchestrator/shared/orchestrator.db-shm
+orchestrator/shared/orchestrator.db-wal
 
 # OS
 .DS_Store
