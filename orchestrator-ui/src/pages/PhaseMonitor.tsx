@@ -90,9 +90,12 @@ const useStyles = makeStyles({
     position: "absolute" as const,
     top: `${TRACK_TOP}px`,
     left: "4%",
+    right: "4%",
     height: `${TRACK_HEIGHT}px`,
+    transform: "scaleX(0)",
+    transformOrigin: "left center",
     borderRadius: "3px",
-    transition: "width 0.6s ease",
+    transition: "transform 0.6s ease",
     zIndex: 1,
     filter: "drop-shadow(0 0 6px currentColor)",
   },
@@ -671,24 +674,22 @@ export function PhaseMonitor() {
         <div className={styles.milestoneTrack}>
           {/* Background track line */}
           <div className={styles.trackLine} />
-          {/* Filled track line — scaled to the 92% inner track (4% to 96%) */}
+          {/* Filled track line; width is expressed in container % (track starts at 4%) */}
           <div
             className={styles.trackFill}
             style={{
-              width: `${(progressPct / 100) * 92}%`,
+              transform: `scaleX(${Math.max(0, Math.min(progressPct, 100)) / 100})`,
               backgroundColor: progressColor,
             }}
           />
           {/* Milestone nodes */}
           {MILESTONES.map((ms) => {
             const msStatus = getMilestoneStatus(ms);
-            // Map position to inner track: track spans 4% to 96% (92% width)
-            const trackLeft = 4 + (ms.position / 100) * 92;
             return (
               <div
                 key={ms.label}
                 className={styles.milestoneContainer}
-                style={{ left: `${trackLeft}%` }}
+                style={{ left: `${ms.position}%` }}
               >
                 {/* Callout label above done milestone */}
                 {msStatus === "done" && (
