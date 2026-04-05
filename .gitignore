@@ -1,11 +1,16 @@
 # Deployment state (user-specific)
-.deployment-state*.json
+ .deployment-state*.json
+# .orchestrator-state.json
+# .orchestrator-state.json.bak
+# orchestrator/orchestrator.db
+# orchestrator/shared/orchestrator.db
 
 # Debug / log artifacts
 deploy-log*.txt
 schema-dump.txt
 _dicom_logs.txt
 eh-test.json
+orchestrator/orchestrator.log
 
 # Python
 __pycache__/
@@ -18,9 +23,9 @@ video/out/
 video/.remotion/
 
 # Orchestrator UI (WIP — separate branch)
-orchestrator-ui/
-orchestrator/
-bicep/orchestrator-infra.bicep
+# orchestrator-ui/
+# orchestrator/
+# bicep/orchestrator-infra.bicep
 
 # OS
 .DS_Store

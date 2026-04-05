@@ -1,0 +1,54 @@
+'use client';
+import * as React from 'react';
+import { getIntrinsicElementProps, slot } from '@fluentui/react-utilities';
+import { ChevronRightRegular, ChevronLeftRegular } from '@fluentui/react-icons';
+import { useBreadcrumbContext_unstable } from '../Breadcrumb/BreadcrumbContext';
+import { useFluent_unstable as useFluent } from '@fluentui/react-shared-contexts';
+/**
+ * Create the state required to render BreadcrumbDivider.
+ *
+ * The returned state can be modified with hooks such as useBreadcrumbDividerStyles_unstable,
+ * before being passed to renderBreadcrumbDivider_unstable.
+ *
+ * @param props - props from this instance of BreadcrumbDivider
+ * @param ref - reference to root HTMLElement of BreadcrumbDivider
+ */ export const useBreadcrumbDivider_unstable = (props, ref)=>{
+    const { size } = useBreadcrumbContext_unstable();
+    const state = useBreadcrumbDividerBase_unstable(props, ref);
+    const { dir } = useFluent();
+    return {
+        ...state,
+        root: {
+            ...state.root,
+            children: getDividerIcon(dir)
+        },
+        size
+    };
+};
+/**
+ * Base hook for BreadcrumbDivider component, which manages state related to slots structure and ARIA attributes
+ * without design props. Note: size is provided via BreadcrumbContext in the full hook.
+ *
+ * @param props - props from this instance of BreadcrumbDivider
+ * @param ref - reference to root HTMLElement of BreadcrumbDivider
+ */ export const useBreadcrumbDividerBase_unstable = (props, ref)=>{
+    return {
+        components: {
+            root: 'li'
+        },
+        root: slot.always(getIntrinsicElementProps('li', {
+            ref,
+            'aria-hidden': true,
+            ...props
+        }), {
+            elementType: 'li'
+        })
+    };
+};
+/**
+ * Get icon of the divider
+ *
+ * @param dir - RTL or LTR
+ */ function getDividerIcon(dir) {
+    return dir === 'rtl' ? /*#__PURE__*/ React.createElement(ChevronLeftRegular, null) : /*#__PURE__*/ React.createElement(ChevronRightRegular, null);
+}

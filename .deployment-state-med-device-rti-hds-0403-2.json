@@ -1,0 +1,51 @@
+{
+  "phases": [
+    {
+      "resources": {
+        "FabricWorkspaceName": "med-device-rti-hds-0403-2",
+        "ResourceGroupName": "rg-med-device-rti-0403-2",
+        "Location": "eastus"
+      },
+      "steps": [
+        {
+          "success": true,
+          "name": "Fabric Workspace",
+          "duration": "0 min",
+          "detail": ""
+        },
+        {
+          "success": true,
+          "name": "Base Azure Infrastructure",
+          "duration": "0.6 min",
+          "detail": ""
+        },
+        {
+          "success": true,
+          "name": "FHIR Service + Synthea + Loader",
+          "duration": "0.2 min",
+          "detail": ""
+        },
+        {
+          "success": true,
+          "name": "DICOM Service + Loader",
+          "duration": "0.2 min",
+          "detail": ""
+        },
+        {
+          "success": true,
+          "name": "Fabric RTI Phase 1",
+          "duration": "0.2 min",
+          "detail": ""
+        },
+        {
+          "success": true,
+          "name": "HDS Guidance",
+          "duration": "—",
+          "detail": "Manual step: deploy HDS, then run Phase 2"
+        }
+      ],
+      "phase": "Phase1+2+3+4",
+      "timestamp": "2026-04-03T09:39:40Z"
+    }
+  ]
+}

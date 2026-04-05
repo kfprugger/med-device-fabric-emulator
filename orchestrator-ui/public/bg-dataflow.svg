@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <!-- Subtle gradient matching Fabric's teal brand palette -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a3f36" stop-opacity="0.03"/>
+      <stop offset="50%" stop-color="#117865" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#19a48a" stop-opacity="0.03"/>
+    </linearGradient>
+    <!-- Pulse/heartbeat pattern -->
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#117865" stroke-width="0.3" opacity="0.08"/>
+    </pattern>
+    <!-- Data flow dots -->
+    <pattern id="dots" width="40" height="40" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="20" r="1" fill="#117865" opacity="0.06"/>
+    </pattern>
+    <!-- Glow for nodes -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Bright sparkle glow for the EKG tracer -->
+    <filter id="sparkle-glow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- EKG path definition for the animated tracer -->
+    <path id="ekg-path" d="M 0,350 L 120,350 150,350 170,330 185,370 200,310 215,390 230,350 260,350 400,350 430,350 450,330 465,370 480,310 495,390 510,350 540,350 700,350 730,350 750,330 765,370 780,310 795,390 810,350 840,350 1000,350 1030,350 1050,330 1065,370 1080,310 1095,390 1110,350 1140,350 1300,350 1330,350 1350,330 1365,370 1380,310 1395,390 1410,350 1440,350 1600,350 1630,350 1650,330 1665,370 1680,310 1695,390 1710,350 1740,350 1920,350" fill="none"/>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <rect width="1920" height="1080" fill="url(#dots)"/>
+
+  <!-- ECG/Heartbeat line — moved to y=350, more visible -->
+  <!-- Outer glow layer -->
+  <polyline points="0,350 120,350 150,350 170,330 185,370 200,310 215,390 230,350 260,350 400,350 430,350 450,330 465,370 480,310 495,390 510,350 540,350 700,350 730,350 750,330 765,370 780,310 795,390 810,350 840,350 1000,350 1030,350 1050,330 1065,370 1080,310 1095,390 1110,350 1140,350 1300,350 1330,350 1350,330 1365,370 1380,310 1395,390 1410,350 1440,350 1600,350 1630,350 1650,330 1665,370 1680,310 1695,390 1710,350 1740,350 1920,350"
+    fill="none" stroke="#2AAC94" stroke-width="4" opacity="0.06" filter="url(#glow)"/>
+  <!-- Main visible line -->
+  <polyline points="0,350 120,350 150,350 170,330 185,370 200,310 215,390 230,350 260,350 400,350 430,350 450,330 465,370 480,310 495,390 510,350 540,350 700,350 730,350 750,330 765,370 780,310 795,390 810,350 840,350 1000,350 1030,350 1050,330 1065,370 1080,310 1095,390 1110,350 1140,350 1300,350 1330,350 1350,330 1365,370 1380,310 1395,390 1410,350 1440,350 1600,350 1630,350 1650,330 1665,370 1680,310 1695,390 1710,350 1740,350 1920,350"
+    fill="none" stroke="#19A48A" stroke-width="1.5" opacity="0.18"/>
+
+  <!-- Animated sparkle tracing the EKG wave -->
+  <circle r="4" fill="#60E9D0" opacity="0.8" filter="url(#sparkle-glow)">
+    <animateMotion dur="12s" repeatCount="indefinite">
+      <mpath href="#ekg-path"/>
+    </animateMotion>
+  </circle>
+  <!-- Second sparkle offset for continuous feel -->
+  <circle r="3" fill="#6AD6F9" opacity="0.6" filter="url(#sparkle-glow)">
+    <animateMotion dur="12s" begin="-6s" repeatCount="indefinite">
+      <mpath href="#ekg-path"/>
+    </animateMotion>
+  </circle>
+  <!-- Trailing glow -->
+  <circle r="8" fill="#117865" opacity="0.15" filter="url(#glow)">
+    <animateMotion dur="12s" begin="-0.3s" repeatCount="indefinite">
+      <mpath href="#ekg-path"/>
+    </animateMotion>
+  </circle>
+
+  <!-- Data pipeline flow lines (left to right) -->
+  <!-- Source → Ingest → Process → Intelligence -->
+  <g opacity="0.05" stroke="#117865" stroke-width="1" fill="none">
+    <!-- Horizontal flow lines -->
+    <path d="M 100,500 C 300,500 400,400 600,400"/>
+    <path d="M 600,400 C 800,400 900,500 1100,500"/>
+    <path d="M 1100,500 C 1300,500 1400,400 1600,400"/>
+    <path d="M 1600,400 C 1750,400 1800,500 1900,500"/>
+
+    <!-- Vertical connectors -->
+    <path d="M 600,400 L 600,600"/>
+    <path d="M 1100,500 L 1100,700"/>
+    <path d="M 1600,400 L 1600,600"/>
+  </g>
+
+  <!-- Architecture nodes (circles representing system components) -->
+  <g filter="url(#glow)">
+    <!-- Source: Masimo Emulator -->
+    <circle cx="100" cy="500" r="8" fill="#117865" opacity="0.08"/>
+    <circle cx="100" cy="500" r="3" fill="#117865" opacity="0.15"/>
+
+    <!-- Event Hub -->
+    <circle cx="350" cy="450" r="10" fill="#117865" opacity="0.08"/>
+    <circle cx="350" cy="450" r="4" fill="#117865" opacity="0.12"/>
+
+    <!-- FHIR Service -->
+    <circle cx="600" cy="400" r="12" fill="#117865" opacity="0.08"/>
+    <circle cx="600" cy="400" r="5" fill="#117865" opacity="0.12"/>
+
+    <!-- Fabric RTI -->
+    <circle cx="850" cy="500" r="10" fill="#117865" opacity="0.08"/>
+    <circle cx="850" cy="500" r="4" fill="#117865" opacity="0.12"/>
+
+    <!-- Eventhouse -->
+    <circle cx="1100" cy="500" r="14" fill="#117865" opacity="0.08"/>
+    <circle cx="1100" cy="500" r="6" fill="#117865" opacity="0.12"/>
+
+    <!-- HDS / Lakehouse -->
+    <circle cx="1350" cy="450" r="12" fill="#117865" opacity="0.08"/>
+    <circle cx="1350" cy="450" r="5" fill="#117865" opacity="0.12"/>
+
+    <!-- Data Agents -->
+    <circle cx="1600" cy="400" r="10" fill="#117865" opacity="0.08"/>
+    <circle cx="1600" cy="400" r="4" fill="#117865" opacity="0.12"/>
+
+    <!-- Dashboard -->
+    <circle cx="1800" cy="500" r="8" fill="#117865" opacity="0.08"/>
+    <circle cx="1800" cy="500" r="3" fill="#117865" opacity="0.15"/>
+  </g>
+
+  <!-- Bottom wave (OneLake data lake abstraction) -->
+  <path d="M 0,900 Q 240,860 480,880 T 960,870 T 1440,880 T 1920,860 L 1920,1080 L 0,1080 Z"
+    fill="#117865" opacity="0.03"/>
+  <path d="M 0,930 Q 320,900 640,920 T 1280,910 T 1920,920 L 1920,1080 L 0,1080 Z"
+    fill="#117865" opacity="0.02"/>
+
+  <!-- Floating FHIR-style cross markers (medical context) -->
+  <g opacity="0.04" fill="#117865">
+    <path d="M 300,700 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 700,800 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 1200,300 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 1500,750 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 900,650 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 200,350 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+    <path d="M 1700,300 h 6 v -6 h 4 v 6 h 6 v 4 h -6 v 6 h -4 v -6 h -6 z"/>
+  </g>
+</svg>

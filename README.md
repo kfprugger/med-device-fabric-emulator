@@ -219,8 +219,10 @@ graph LR
 - **Azure CLI** installed and logged in (`az login`) with **Bicep** (`az bicep install`)
 - **Git** (for cloning the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo used in Phase 3)
 - **Python 3.10+** (for `create-device-associations.py` — device-patient linking)
+- **Azure Bicep** for deploying Azure-based idempotent resources
 - Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
-- Microsoft Fabric capacity (**paid F-SKU** such as F64 — trial capacities do not support all features) with the ability to create workspaces and assign the capacity
+- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions) with the ability to create workspaces and assign the capacity
+- **NOTE:** If you do not use a paid F-SKU, you will not be able to deploy Healthcare Data Solutions which is core to the entire solution. Have at least an F2 deployed and your account able to use that SKU either as a Capacity Administrator or via Azure RBAC.
 - Fabric tenant settings enabled: **Data Activator**, **Copilot**, and **Azure OpenAI Service**
 
 ### Deploy

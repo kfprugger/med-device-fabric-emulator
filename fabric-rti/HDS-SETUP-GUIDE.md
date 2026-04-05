@@ -36,7 +36,7 @@ Phase 1 (Automated)         Manual Steps              Phase 2 (Automated)
 | Fabric workspace created | ✅ `deploy-fabric-rti.ps1` |
 | Eventhouse + Eventstream created | ✅ `deploy-fabric-rti.ps1` |
 | FHIR data exported to ADLS Gen2 | ✅ `deploy-fabric-rti.ps1` (Step 6.5) |
-| Fabric capacity (trial or paid) | Required |
+| Fabric capacity (paid F-SKU, e.g. F2+) | Required |
 
 ## Architecture
 

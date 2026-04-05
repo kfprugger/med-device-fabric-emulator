@@ -82,6 +82,197 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
 # ============================================================================
+# PREFLIGHT PREREQUISITE CHECKS
+# ============================================================================
+
+function Test-Prerequisites {
+    <#
+    .SYNOPSIS
+        Validates all deployment prerequisites before starting.
+        Exits with actionable error messages if any check fails.
+    #>
+    Write-Host ""
+    Write-Host "+============================================================+" -ForegroundColor Cyan
+    Write-Host "|              PREFLIGHT PREREQUISITE CHECKS                 |" -ForegroundColor Cyan
+    Write-Host "+============================================================+" -ForegroundColor Cyan
+    Write-Host ""
+
+    $failures = @()
+    $warnings = @()
+
+    # 1. PowerShell version (7+)
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        Write-Host "  ✓ PowerShell $($PSVersionTable.PSVersion)" -ForegroundColor Green
+    } else {
+        $failures += "PowerShell 7+ required (current: $($PSVersionTable.PSVersion)). Install from https://aka.ms/powershell"
+        Write-Host "  ✗ PowerShell $($PSVersionTable.PSVersion) — version 7+ required" -ForegroundColor Red
+    }
+
+    # 2. Az PowerShell module
+    $azModule = Get-Module -ListAvailable -Name Az.Accounts | Select-Object -First 1
+    if ($azModule) {
+        Write-Host "  ✓ Az module $($azModule.Version)" -ForegroundColor Green
+    } else {
+        $failures += "Az PowerShell module not found. Run: Install-Module Az -Scope CurrentUser"
+        Write-Host "  ✗ Az module not installed" -ForegroundColor Red
+    }
+
+    # 3. Azure CLI
+    try {
+        $azVer = az version --output json 2>$null | ConvertFrom-Json
+        $cliVer = $azVer.'azure-cli'
+        Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+    } catch {
+        $failures += "Azure CLI not found. Install from https://aka.ms/installazurecli"
+        Write-Host "  ✗ Azure CLI not installed" -ForegroundColor Red
+    }
+
+    # 4. Bicep
+    try {
+        $bicepOutput = (az bicep version 2>$null) -join ' '
+        if ($bicepOutput -match "(\d+\.\d+\.\d+)") {
+            Write-Host "  ✓ Bicep $($Matches[1])" -ForegroundColor Green
+        } else {
+            $warnings += "Bicep version check inconclusive. Run: az bicep install"
+            Write-Host "  ⚠ Bicep version unknown" -ForegroundColor Yellow
+        }
+    } catch {
+        $failures += "Bicep not installed. Run: az bicep install"
+        Write-Host "  ✗ Bicep not installed" -ForegroundColor Red
+    }
+
+    # 5. Azure login
+    try {
+        $account = az account show --output json 2>$null | ConvertFrom-Json
+        if ($account.id) {
+            Write-Host "  ✓ Azure login: $($account.name) ($($account.id.Substring(0,8))...)" -ForegroundColor Green
+        } else {
+            $failures += "Not logged in to Azure. Run: az login"
+            Write-Host "  ✗ Not logged in to Azure" -ForegroundColor Red
+        }
+    } catch {
+        $failures += "Not logged in to Azure. Run: az login"
+        Write-Host "  ✗ Not logged in to Azure" -ForegroundColor Red
+    }
+
+    # 6. Python 3.10+
+    try {
+        $pyVer = python --version 2>&1
+        if ($pyVer -match "(\d+)\.(\d+)\.(\d+)") {
+            $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+            if ($major -ge 3 -and $minor -ge 10) {
+                Write-Host "  ✓ Python $($Matches[0])" -ForegroundColor Green
+            } else {
+                $failures += "Python 3.10+ required (current: $($Matches[0])). Install from https://python.org"
+                Write-Host "  ✗ Python $($Matches[0]) — version 3.10+ required" -ForegroundColor Red
+            }
+        }
+    } catch {
+        $warnings += "Python not found (only needed for device associations). Install from https://python.org"
+        Write-Host "  ⚠ Python not found (optional for Phase 1)" -ForegroundColor Yellow
+    }
+
+    # 7. Git (needed for Phase 3 — DICOM toolkit)
+    try {
+        $gitVer = git --version 2>$null
+        if ($gitVer -match "(\d+\.\d+\.\d+)") {
+            Write-Host "  ✓ Git $($Matches[1])" -ForegroundColor Green
+        }
+    } catch {
+        $warnings += "Git not found (only needed for Phase 3 DICOM toolkit)"
+        Write-Host "  ⚠ Git not found (optional)" -ForegroundColor Yellow
+    }
+
+    # 8. Admin Security Group exists in Entra ID
+    if ($AdminSecurityGroup -and -not $Phase2 -and -not $Phase3 -and -not $Phase4) {
+        try {
+            $grp = az ad group show --group $AdminSecurityGroup --query "id" -o tsv 2>$null
+            if ($grp) {
+                Write-Host "  ✓ Admin group '$AdminSecurityGroup' found" -ForegroundColor Green
+            } else {
+                $failures += "Security group '$AdminSecurityGroup' not found in Entra ID"
+                Write-Host "  ✗ Security group '$AdminSecurityGroup' not found" -ForegroundColor Red
+            }
+        } catch {
+            $failures += "Security group '$AdminSecurityGroup' not found in Entra ID"
+            Write-Host "  ✗ Security group '$AdminSecurityGroup' not found" -ForegroundColor Red
+        }
+    }
+
+    # 9. Fabric API reachable (tests token acquisition)
+    try {
+        $fabToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        if ($fabToken -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabToken)
+            try { $fabToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        }
+        $fabHeaders = @{ "Authorization" = "Bearer $fabToken" }
+        $caps = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/capacities" -Headers $fabHeaders
+        $activeCaps = $caps.value | Where-Object { $_.state -eq "Active" -and $_.sku -ne "PP3" }
+        $paidCaps = $activeCaps | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" }
+
+        if ($paidCaps.Count -gt 0) {
+            $cap = $paidCaps | Select-Object -First 1
+            Write-Host "  ✓ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku))" -ForegroundColor Green
+        } elseif ($activeCaps.Count -gt 0) {
+            $cap = $activeCaps | Select-Object -First 1
+            $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
+            Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — trial not supported" -ForegroundColor Red
+        } else {
+            $failures += "No active Fabric capacity found. Resume or create one at https://app.fabric.microsoft.com"
+            Write-Host "  ✗ No active Fabric capacity" -ForegroundColor Red
+        }
+    } catch {
+        $failures += "Cannot access Fabric API. Ensure Az module login has Fabric permissions."
+        Write-Host "  ✗ Fabric API unreachable: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # 10. DicomToolkitPath (Phase 3 only)
+    if ($Phase3 -and $DicomToolkitPath) {
+        if (Test-Path $DicomToolkitPath) {
+            Write-Host "  ✓ DICOM Toolkit found at $DicomToolkitPath" -ForegroundColor Green
+        } else {
+            $failures += "DICOM Toolkit not found at '$DicomToolkitPath'. Clone from GitHub or set -DicomToolkitPath"
+            Write-Host "  ✗ DICOM Toolkit not found at $DicomToolkitPath" -ForegroundColor Red
+        }
+    }
+
+    Write-Host ""
+
+    # Report warnings
+    if ($warnings.Count -gt 0) {
+        Write-Host "  Warnings ($($warnings.Count)):" -ForegroundColor Yellow
+        foreach ($w in $warnings) {
+            Write-Host "    ⚠ $w" -ForegroundColor Yellow
+        }
+        Write-Host ""
+    }
+
+    # Fail on errors
+    if ($failures.Count -gt 0) {
+        Write-Host "  PREFLIGHT FAILED — $($failures.Count) issue(s) must be resolved:" -ForegroundColor Red
+        Write-Host ""
+        foreach ($f in $failures) {
+            Write-Host "    ✗ $f" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "  Fix the above issues and re-run the deployment." -ForegroundColor Red
+        Write-Host ""
+        Pop-Location
+        exit 1
+    }
+
+    Write-Host "  All preflight checks passed ✓" -ForegroundColor Green
+    Write-Host ""
+}
+
+# Run preflight checks (skip for teardown)
+if (-not $Teardown) {
+    Test-Prerequisites
+}
+
+# ============================================================================
 # DEPLOYMENT STATE FILE — shared context across phases
 # ============================================================================
 
@@ -622,9 +813,12 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
             $caps = Invoke-RestMethod -Uri "$fabBase/capacities" -Headers $fabHeaders
             $activeCap = $caps.value | Where-Object {
                 $_.state -eq "Active" -and $_.sku -ne "PP3"
-            } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } elseif ($_.sku -eq "FT1") { 1 } else { 2 }}} | Select-Object -First 1
+            } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } else { 1 }}} | Select-Object -First 1
 
             if ($activeCap) {
+                if ($activeCap.sku -eq "FT1") {
+                    throw "Only a trial capacity (FT1) is available. Healthcare Data Solutions requires a paid F-SKU (F2+). Provision a paid capacity at https://portal.azure.com"
+                }
                 Write-Host "  Assigning capacity: $($activeCap.displayName) (SKU: $($activeCap.sku))..." -ForegroundColor White
                 Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)/assignToCapacity" `
                     -Headers $fabHeaders -Method POST `
@@ -632,7 +826,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                 Start-Sleep -Seconds 5
                 Write-Host "  ✓ Capacity assigned" -ForegroundColor Green
             } else {
-                throw "No active Fabric capacity found. Start a trial at https://app.fabric.microsoft.com"
+                throw "No active Fabric capacity found. Provision a paid F-SKU (F2+) at https://portal.azure.com"
             }
         } else {
             Write-Host "  ✓ Capacity already assigned" -ForegroundColor Green

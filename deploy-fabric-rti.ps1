@@ -14,7 +14,7 @@
 #   - Azure CLI authenticated (az login)
 #   - Az PowerShell module installed (Install-Module Az)
 #   - Existing Azure deployment from deploy.ps1 (Event Hub, FHIR Service)
-#   - Microsoft Fabric capacity (trial or paid)
+#   - Microsoft Fabric capacity (paid F-SKU, e.g. F2+ — trial capacities cannot deploy HDS)
 #
 # Usage:
 #   Phase 1: .\deploy-fabric-rti.ps1
@@ -1335,9 +1335,15 @@ try {
         $capacities = Invoke-FabricApi -Endpoint "/capacities"
         $activeCapacity = $capacities.value | Where-Object {
             $_.state -eq "Active" -and $_.sku -ne "PP3"
-        } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } elseif ($_.sku -eq "FT1") { 1 } else { 2 }}} | Select-Object -First 1
+        } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } else { 1 }}} | Select-Object -First 1
 
         if ($activeCapacity) {
+            if ($activeCapacity.sku -eq "FT1") {
+                Write-Host "  ERROR: Only a trial capacity (FT1) is available." -ForegroundColor Red
+                Write-Host "    Healthcare Data Solutions requires a paid F-SKU (F2+)." -ForegroundColor Yellow
+                Write-Host "    Provision a paid capacity at https://portal.azure.com" -ForegroundColor Yellow
+                exit 1
+            }
             Write-Host "  Assigning capacity: $($activeCapacity.displayName) (SKU: $($activeCapacity.sku))..." -ForegroundColor White
             Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/assignToCapacity" -Body @{
                 capacityId = $activeCapacity.id
@@ -1346,7 +1352,7 @@ try {
             Write-Host "  ✓ Capacity assigned: $($activeCapacity.displayName)" -ForegroundColor Green
         } else {
             Write-Host "  ERROR: No active Fabric capacity found." -ForegroundColor Red
-            Write-Host "    Start a Fabric trial at https://app.fabric.microsoft.com or provision a capacity." -ForegroundColor Yellow
+            Write-Host "    Provision a paid F-SKU (F2+) at https://portal.azure.com" -ForegroundColor Yellow
             exit 1
         }
     } else {
@@ -1378,7 +1384,7 @@ try {
     Write-Host "  $_" -ForegroundColor Red
     Write-Host ""
     Write-Host "  Possible causes:" -ForegroundColor Yellow
-    Write-Host "    1. You don't have a Fabric capacity or trial. Start one at https://app.fabric.microsoft.com" -ForegroundColor Yellow
+    Write-Host "    1. You don't have a paid Fabric capacity. Provision an F-SKU (F2+) at https://portal.azure.com" -ForegroundColor Yellow
     Write-Host "    2. Your account doesn't have permission to create workspaces." -ForegroundColor Yellow
     Write-Host "    3. The Az PowerShell token can't reach api.fabric.microsoft.com." -ForegroundColor Yellow
     exit 1

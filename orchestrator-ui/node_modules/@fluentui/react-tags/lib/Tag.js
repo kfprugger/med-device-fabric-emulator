@@ -1,0 +1,1 @@
+export { Tag, renderTag_unstable, tagClassNames, useIconStyles, useMediaStyles, usePrimaryTextStyles, useSecondaryTextBaseClassName, useTagStyles_unstable, useTagBase_unstable, useTag_unstable } from './components/Tag/index';

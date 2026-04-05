@@ -1,0 +1,11 @@
+"use client";
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.HeadphonesMonoaural20Filled = exports.HeadphonesMonoaural20Regular = exports.HeadphonesMonoaural16Filled = exports.HeadphonesMonoaural16Regular = exports.HeadphonesMonoauralRegular = exports.HeadphonesMonoauralFilled = void 0;
+const createFluentIcon_1 = require("../../utils/createFluentIcon");
+exports.HeadphonesMonoauralFilled = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoauralFilled', "1em", ["M10 2a8 8 0 0 1 8 8v6a2 2 0 0 1-2 2h-2.5a.5.5 0 0 1-.5-.5v-6c0-.28.22-.5.5-.5H17v-1A7 7 0 0 0 3.15 8.57a.53.53 0 0 1-.51.43.48.48 0 0 1-.48-.56A8 8 0 0 1 10 2Z"]));
+exports.HeadphonesMonoauralRegular = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoauralRegular', "1em", ["M10 2a8 8 0 0 1 8 8v6a2 2 0 0 1-2 2h-2.5a.5.5 0 0 1-.5-.5v-6c0-.28.22-.5.5-.5H17v-1A7 7 0 0 0 3.15 8.57a.53.53 0 0 1-.51.43.48.48 0 0 1-.48-.56A8 8 0 0 1 10 2Zm4 15h2a1 1 0 0 0 1-1v-4h-3v5Z"]));
+exports.HeadphonesMonoaural16Regular = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoaural16Regular', "16", ["M8 1a7 7 0 0 1 7 7v4.5a2.5 2.5 0 0 1-2.5 2.5h-2a.5.5 0 0 1-.5-.5v-5c0-.28.22-.5.5-.5H14V8A6 6 0 0 0 2.17 6.58a.54.54 0 0 1-.51.42.48.48 0 0 1-.48-.57A7 7 0 0 1 8 1Zm3 13h1.5c.83 0 1.5-.67 1.5-1.5V10h-3v4Z"]));
+exports.HeadphonesMonoaural16Filled = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoaural16Filled', "16", ["M8 1a7 7 0 0 1 7 7v4.5a2.5 2.5 0 0 1-2.5 2.5h-2a.5.5 0 0 1-.5-.5v-5c0-.28.22-.5.5-.5H14V8A6 6 0 0 0 2.17 6.58a.54.54 0 0 1-.51.42.48.48 0 0 1-.48-.57A7 7 0 0 1 8 1Z"]));
+exports.HeadphonesMonoaural20Regular = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoaural20Regular', "20", ["M10 2a8 8 0 0 1 8 8v6a2 2 0 0 1-2 2h-2.5a.5.5 0 0 1-.5-.5v-6c0-.28.22-.5.5-.5H17v-1A7 7 0 0 0 3.15 8.57a.53.53 0 0 1-.51.43.48.48 0 0 1-.48-.56A8 8 0 0 1 10 2Zm4 15h2a1 1 0 0 0 1-1v-4h-3v5Z"]));
+exports.HeadphonesMonoaural20Filled = ( /*#__PURE__*/createFluentIcon_1.createFluentIcon('HeadphonesMonoaural20Filled', "20", ["M10 2a8 8 0 0 1 8 8v6a2 2 0 0 1-2 2h-2.5a.5.5 0 0 1-.5-.5v-6c0-.28.22-.5.5-.5H17v-1A7 7 0 0 0 3.15 8.57a.53.53 0 0 1-.51.43.48.48 0 0 1-.48-.56A8 8 0 0 1 10 2Z"]));

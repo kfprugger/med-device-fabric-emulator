@@ -1,0 +1,15 @@
+import type { FluentFontIcon } from '../../utils/fonts/createFluentFontIcon';
+export declare const LightbulbPulseFilled: FluentFontIcon;
+export declare const LightbulbPulseRegular: FluentFontIcon;
+export declare const LightbulbPulse16Regular: FluentFontIcon;
+export declare const LightbulbPulse16Filled: FluentFontIcon;
+export declare const LightbulbPulse20Regular: FluentFontIcon;
+export declare const LightbulbPulse20Filled: FluentFontIcon;
+export declare const LightbulbPulse24Regular: FluentFontIcon;
+export declare const LightbulbPulse24Filled: FluentFontIcon;
+export declare const LightbulbPulse28Regular: FluentFontIcon;
+export declare const LightbulbPulse28Filled: FluentFontIcon;
+export declare const LightbulbPulse32Regular: FluentFontIcon;
+export declare const LightbulbPulse32Filled: FluentFontIcon;
+export declare const LightbulbPulse48Regular: FluentFontIcon;
+export declare const LightbulbPulse48Filled: FluentFontIcon;

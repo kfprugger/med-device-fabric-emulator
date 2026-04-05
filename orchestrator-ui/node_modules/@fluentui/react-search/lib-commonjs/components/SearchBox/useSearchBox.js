@@ -1,0 +1,133 @@
+'use client';
+"use strict";
+Object.defineProperty(exports, "__esModule", {
+    value: true
+});
+function _export(target, all) {
+    for(var name in all)Object.defineProperty(target, name, {
+        enumerable: true,
+        get: all[name]
+    });
+}
+_export(exports, {
+    useSearchBoxBase_unstable: function() {
+        return useSearchBoxBase_unstable;
+    },
+    useSearchBox_unstable: function() {
+        return useSearchBox_unstable;
+    }
+});
+const _interop_require_wildcard = require("@swc/helpers/_/_interop_require_wildcard");
+const _react = /*#__PURE__*/ _interop_require_wildcard._(require("react"));
+const _reactutilities = require("@fluentui/react-utilities");
+const _reactinput = require("@fluentui/react-input");
+const _reacticons = require("@fluentui/react-icons");
+const useSearchBox_unstable = (props, ref)=>{
+    const { size = 'medium', appearance = 'outline', ...baseProps } = props;
+    const state = useSearchBoxBase_unstable(baseProps, ref);
+    if (state.contentBefore) {
+        var _state_contentBefore;
+        var _children;
+        (_children = (_state_contentBefore = state.contentBefore).children) !== null && _children !== void 0 ? _children : _state_contentBefore.children = /*#__PURE__*/ _react.createElement(_reacticons.SearchRegular, null);
+    }
+    if (state.dismiss) {
+        var _state_dismiss;
+        var _children1;
+        (_children1 = (_state_dismiss = state.dismiss).children) !== null && _children1 !== void 0 ? _children1 : _state_dismiss.children = /*#__PURE__*/ _react.createElement(_reacticons.DismissRegular, null);
+    }
+    return {
+        ...state,
+        size,
+        appearance
+    };
+};
+const useSearchBoxBase_unstable = (props, ref)=>{
+    const { disabled = false, root, contentBefore, dismiss, contentAfter, value, defaultValue, ...inputProps } = props;
+    const searchBoxRootRef = _react.useRef(null);
+    const searchBoxRef = _react.useRef(null);
+    const [internalValue, setInternalValue] = (0, _reactutilities.useControllableState)({
+        state: value,
+        defaultState: defaultValue,
+        initialState: ''
+    });
+    // Tracks the focus of the component for the contentAfter and dismiss button
+    const [focused, setFocused] = _react.useState(false);
+    const onFocus = _react.useCallback(()=>{
+        setFocused(true);
+    }, [
+        setFocused
+    ]);
+    const onBlur = _react.useCallback((ev)=>{
+        var _searchBoxRootRef_current;
+        setFocused(!!((_searchBoxRootRef_current = searchBoxRootRef.current) === null || _searchBoxRootRef_current === void 0 ? void 0 : _searchBoxRootRef_current.contains(ev.relatedTarget)));
+    }, [
+        setFocused
+    ]);
+    const rootProps = _reactutilities.slot.resolveShorthand(root);
+    const handleDismissClick = (0, _reactutilities.useEventCallback)((event)=>{
+        var _props_onChange, _searchBoxRef_current;
+        if ((0, _reactutilities.isResolvedShorthand)(dismiss)) {
+            var _dismiss_onClick;
+            (_dismiss_onClick = dismiss.onClick) === null || _dismiss_onClick === void 0 ? void 0 : _dismiss_onClick.call(dismiss, event);
+        }
+        const newValue = '';
+        setInternalValue(newValue);
+        (_props_onChange = props.onChange) === null || _props_onChange === void 0 ? void 0 : _props_onChange.call(props, event, {
+            value: newValue
+        });
+        (_searchBoxRef_current = searchBoxRef.current) === null || _searchBoxRef_current === void 0 ? void 0 : _searchBoxRef_current.focus();
+    });
+    const inputState = (0, _reactinput.useInput_unstable)({
+        type: 'search',
+        disabled,
+        value: internalValue,
+        root: _reactutilities.slot.always({
+            ...rootProps,
+            ref: (0, _reactutilities.useMergedRefs)(rootProps === null || rootProps === void 0 ? void 0 : rootProps.ref, searchBoxRootRef),
+            onFocus: (0, _reactutilities.mergeCallbacks)(rootProps === null || rootProps === void 0 ? void 0 : rootProps.onFocus, onFocus),
+            onBlur: (0, _reactutilities.mergeCallbacks)(rootProps === null || rootProps === void 0 ? void 0 : rootProps.onBlur, onBlur)
+        }, {
+            elementType: 'span'
+        }),
+        contentBefore: _reactutilities.slot.optional(contentBefore, {
+            renderByDefault: true,
+            elementType: 'span'
+        }),
+        contentAfter: _reactutilities.slot.optional(contentAfter, {
+            renderByDefault: true,
+            elementType: 'span'
+        }),
+        ...inputProps,
+        onChange: (0, _reactutilities.useEventCallback)((ev)=>{
+            var _props_onChange;
+            const newValue = ev.target.value;
+            (_props_onChange = props.onChange) === null || _props_onChange === void 0 ? void 0 : _props_onChange.call(props, ev, {
+                value: newValue
+            });
+            setInternalValue(newValue);
+        })
+    }, (0, _reactutilities.useMergedRefs)(searchBoxRef, ref));
+    const state = {
+        ...inputState,
+        components: {
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            ...inputState.components,
+            dismiss: 'span'
+        },
+        dismiss: _reactutilities.slot.optional(dismiss, {
+            defaultProps: {
+                role: 'button',
+                'aria-label': 'clear',
+                tabIndex: -1
+            },
+            renderByDefault: true,
+            elementType: 'span'
+        }),
+        disabled,
+        focused
+    };
+    if (state.dismiss) {
+        state.dismiss.onClick = handleDismissClick;
+    }
+    return state;
+};

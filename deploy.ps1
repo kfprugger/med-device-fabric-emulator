@@ -255,7 +255,25 @@ if ($adminGroupObjectId) {
 }
 
 Write-Host "--- STEP 3: BUILDING IMAGE IN AZURE ---" -ForegroundColor Cyan
-az acr build --registry $acrName --image "masimo-emulator:v1" .
+Write-Host "  ⏳ This is a long running operation (2-5 min). Building container image in ACR..." -ForegroundColor Yellow
+# Force UTF-8 to avoid charmap encoding errors on Windows (az CLI uses colorama → cp1252 crash)
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONLEGACYWINDOWSSTDIO = "0"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+az acr build --registry $acrName --image "masimo-emulator:v1" . --only-show-errors 2>$null | ForEach-Object {
+    $line = $_ -replace '[^\x20-\x7E]', ''
+    if ($line.Trim()) { Write-Host "  $line" }
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ⚠ ACR build may have failed (exit code $LASTEXITCODE) — checking if image exists..." -ForegroundColor Yellow
+    $imageExists = az acr repository show-tags --name $acrName --repository "masimo-emulator" --query "[?contains(@, 'v1')]" -o tsv 2>$null
+    if ($imageExists) {
+        Write-Host "  ✓ Image masimo-emulator:v1 exists in ACR (build succeeded despite log error)" -ForegroundColor Green
+    } else {
+        throw "ACR build failed and image not found. Check Azure portal for build logs."
+    }
+}
 
 Write-Host "--- STEP 4: DEPLOYING SYSTEM-IDENTITY EMULATOR ---" -ForegroundColor Cyan
 $fullImageTag = "$acrLoginServer/masimo-emulator:v1"

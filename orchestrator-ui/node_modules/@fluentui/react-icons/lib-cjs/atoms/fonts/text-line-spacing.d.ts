@@ -1,0 +1,11 @@
+import type { FluentFontIcon } from '../../utils/fonts/createFluentFontIcon';
+export declare const TextLineSpacingFilled: FluentFontIcon;
+export declare const TextLineSpacingRegular: FluentFontIcon;
+export declare const TextLineSpacing16Regular: FluentFontIcon;
+export declare const TextLineSpacing16Filled: FluentFontIcon;
+export declare const TextLineSpacing20Regular: FluentFontIcon;
+export declare const TextLineSpacing20Filled: FluentFontIcon;
+export declare const TextLineSpacing24Regular: FluentFontIcon;
+export declare const TextLineSpacing24Filled: FluentFontIcon;
+export declare const TextLineSpacing32Regular: FluentFontIcon;
+export declare const TextLineSpacing32Filled: FluentFontIcon;

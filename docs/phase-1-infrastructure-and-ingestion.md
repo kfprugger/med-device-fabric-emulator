@@ -108,7 +108,7 @@ Creates the Fabric workspace early so Healthcare Data Solutions can be deployed 
 | Action | Detail |
 |--------|--------|
 | Create workspace | via `POST /v1/workspaces` |
-| Assign capacity | Auto-discovers an active Fabric capacity (prefers F-SKUs over trial) |
+| Assign capacity | Auto-discovers an active paid Fabric capacity (F-SKU) |
 | Provision identity | `POST /v1/workspaces/{id}/provisionIdentity` — needed for trusted workspace access |
 
 The workspace is reused if it already exists.
