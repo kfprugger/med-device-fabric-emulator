@@ -261,18 +261,44 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONLEGACYWINDOWSSTDIO = "0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-az acr build --registry $acrName --image "masimo-emulator:v1" . --only-show-errors 2>$null | ForEach-Object {
+$acrBuildErrLog = Join-Path $env:TEMP ("acr-build-" + [Guid]::NewGuid().ToString() + ".log")
+$acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --only-show-errors 2>$acrBuildErrLog
+$acrBuildExitCode = $LASTEXITCODE
+$acrBuildOutput | ForEach-Object {
     $line = $_ -replace '[^\x20-\x7E]', ''
     if ($line.Trim()) { Write-Host "  $line" }
 }
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ⚠ ACR build may have failed (exit code $LASTEXITCODE) — checking if image exists..." -ForegroundColor Yellow
-    $imageExists = az acr repository show-tags --name $acrName --repository "masimo-emulator" --query "[?contains(@, 'v1')]" -o tsv 2>$null
+if ($acrBuildExitCode -ne 0) {
+    Write-Host "  ⚠ ACR build may have failed (exit code $acrBuildExitCode) — checking if image exists..." -ForegroundColor Yellow
+
+    if (Test-Path $acrBuildErrLog) {
+        $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 20
+        if ($stderrTail) {
+            Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
+            $stderrTail | ForEach-Object {
+                $errLine = $_ -replace '[^\x20-\x7E]', ''
+                if ($errLine.Trim()) { Write-Host "    $errLine" -ForegroundColor Yellow }
+            }
+        }
+    }
+
+    $imageExists = $null
+    for ($attempt = 1; $attempt -le 6; $attempt++) {
+        $imageExists = az acr repository show-tags --name $acrName --repository "masimo-emulator" --query "[?contains(@, 'v1')]" -o tsv 2>$null
+        if ($imageExists) { break }
+        Write-Host "  Waiting for ACR tag visibility (attempt $attempt/6)..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+    }
+
     if ($imageExists) {
         Write-Host "  ✓ Image masimo-emulator:v1 exists in ACR (build succeeded despite log error)" -ForegroundColor Green
     } else {
         throw "ACR build failed and image not found. Check Azure portal for build logs."
     }
+}
+
+if (Test-Path $acrBuildErrLog) {
+    Remove-Item $acrBuildErrLog -ErrorAction SilentlyContinue
 }
 
 Write-Host "--- STEP 4: DEPLOYING SYSTEM-IDENTITY EMULATOR ---" -ForegroundColor Cyan

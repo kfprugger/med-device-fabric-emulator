@@ -37,6 +37,25 @@
           "name": "Phase 1: Base Azure Infrastructure"
         }
       ]
+    },
+    {
+      "timestamp": "2026-04-05T17:53:38Z",
+      "phase": "Failed",
+      "resources": {},
+      "steps": [
+        {
+          "detail": "",
+          "duration": "0 min",
+          "name": "Phase 1: Fabric Workspace",
+          "success": true
+        },
+        {
+          "detail": "ACR build failed and image not found. Check Azure portal for build logs.",
+          "duration": "9.6 min",
+          "name": "Phase 1: Base Azure Infrastructure",
+          "success": false
+        }
+      ]
     }
   ]
 }
