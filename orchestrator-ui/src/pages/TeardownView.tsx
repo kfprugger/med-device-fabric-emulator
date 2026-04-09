@@ -482,7 +482,6 @@ export function TeardownView() {
     setLoading(true);
     setError("");
 
-    const selected = candidates.filter((c) => selectedIds.has(c.id));
     const fabricWs = selected.find((c) => c.type === "fabric");
     const azureRg = selected.find((c) => c.type === "azure");
 
@@ -554,6 +553,7 @@ export function TeardownView() {
                   {typeBadge(c.type)}
                   <Text weight="semibold">{c.name}</Text>
                   {statusBadge(c.status)}
+                  {c.previouslyDeployed && <Badge color="informative" size="small">Previously Deployed</Badge>}
                   {isLocked && <Badge color="subtle">Locked</Badge>}
                 </div>
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>

@@ -187,11 +187,9 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-expand when phase becomes active
-  const [userCollapsed, setUserCollapsed] = useState(false);
-
   useEffect(() => {
-    if (isActive && !userCollapsed) setExpanded(true);
-  }, [isActive, userCollapsed]);
+    if (isActive) setExpanded(true);
+  }, [isActive]);
 
   // Auto-scroll logs to bottom (respects autoScroll prop)
   useEffect(() => {
@@ -223,7 +221,7 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
       <Card
         className={`${styles.card} ${isActive ? styles.cardActive : ""}`}
         size="small"
-        onClick={() => { setExpanded((v) => !v); if (expanded) setUserCollapsed(true); }}
+        onClick={() => setExpanded((v) => !v)}
       >
         <CardHeader
           image={statusIcon(phase.status, hasWarnings)}

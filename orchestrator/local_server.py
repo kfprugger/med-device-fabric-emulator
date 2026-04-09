@@ -40,6 +40,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger("local_server")
 
+# ── Global crash handler — log unhandled exceptions before process dies ──
+def _unhandled_exception(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    logger.critical(
+        "UNHANDLED EXCEPTION — server crashing",
+        exc_info=(exc_type, exc_value, exc_tb),
+    )
+
+sys.excepthook = _unhandled_exception
+
 STATE_FILE = Path(__file__).parent / ".orchestrator-state.json"
 
 # ── Encoding-safe subprocess helper ────────────────────────────────────
@@ -65,6 +77,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Global exception handler — log unhandled route errors ──────────────
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled exception on %s %s: %s",
+        request.method, request.url.path, exc,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": f"Internal server error: {type(exc).__name__}: {exc}"},
+    )
+
 
 # ── Database ───────────────────────────────────────────────────────────
 
@@ -504,7 +535,7 @@ async def start_deploy(req: DeployRequest):
             "capacitySubscriptionId": req.capacity_subscription_id,
             "pauseCapacityAfterDeploy": req.pause_capacity_after_deploy,
             "links": {
-                "azurePortal": f"https://portal.azure.com/#@/resource/subscriptions/{req.capacity_subscription_id}/resourceGroups/{req.resource_group_name}" if req.resource_group_name else "",
+                "azurePortal": f"https://portal.azure.com/#@/resource/subscriptions//resourceGroups/{req.resource_group_name}" if req.resource_group_name else "",
                 "fabricWorkspace": f"https://app.fabric.microsoft.com/groups?experience=fabric-developer&name={req.fabric_workspace_name}" if req.fabric_workspace_name else "",
             },
             "deployConfig": req.model_dump(),
@@ -528,8 +559,6 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
 
     deployment = deployments[instance_id]
     deploy_logs: list[dict] = []
-    # Mutable container so the log handler can reference the current phase
-    phase_tracker = {"current": 0}
 
     class StatusLogHandler(_logging.Handler):
         def emit(self, record: _logging.LogRecord):
@@ -541,9 +570,8 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
                     else "warn" if record.levelno >= _logging.WARNING
                     else "info",
                 "message": msg,
-                "phase": phase_tracker["current"],
             })
-            deployment["customStatus"]["logs"] = deploy_logs[-200:]
+            deployment["customStatus"]["logs"] = deploy_logs[-100:]
             deployment["customStatus"]["detail"] = msg
             deployment["lastUpdatedTime"] = now_iso()
             save_state()
@@ -555,34 +583,16 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
     _logging.getLogger("activities.invoke_powershell").addHandler(handler)
 
     phases: list[dict] = []
-    current_major_phase = 0  # Tracks which major phase (1-4) we're in
-    current_major_phase_label = ""
 
     def step_callback(event: str, step_name: str, detail: str, duration: str):
         """Handle step events from PowerShell output parser."""
-        nonlocal current_major_phase, current_major_phase_label
-
-        if event == "phase_transition":
-            # Major phase transition: "PHASE N: Label"
-            import re
-            m = re.match(r"PHASE\s+(\d+):\s+(.+)", step_name)
-            if m:
-                current_major_phase = int(m.group(1))
-                current_major_phase_label = m.group(2)
-                phase_tracker["current"] = current_major_phase
-            deployment["customStatus"]["currentPhase"] = step_name
-            deployment["customStatus"]["currentMajorPhase"] = current_major_phase
-            deployment["lastUpdatedTime"] = now_iso()
-            save_state()
-            return
-
         if event == "step_start":
             # Mark any previously running phase as succeeded (the result line
             # for the previous step may not have been parsed yet)
             for p in phases:
                 if p["status"] == "running":
                     p["status"] = "succeeded"
-            phases.append({"phase": step_name, "status": "running", "majorPhase": current_major_phase})
+            phases.append({"phase": step_name, "status": "running"})
             deployment["customStatus"]["currentPhase"] = step_name
             deployment["customStatus"]["status"] = "running"
         elif event == "step_succeeded":
@@ -649,7 +659,21 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
         completed = [p for p in phases if p["status"] == "succeeded"]
         deployment["customStatus"]["completedPhases"] = len(completed)
         deployment["customStatus"]["resources"] = result.get("resources", {})
-        duration = result.get("duration_seconds", (datetime.now(timezone.utc) - deploy_start).total_seconds())
+        # Compute duration from sum of phase durations (excludes HDS manual wait)
+        phase_duration_sum = 0.0
+        for p in phases:
+            d = p.get("duration")
+            if isinstance(d, str) and "min" in d:
+                try:
+                    phase_duration_sum += float(d.replace("min", "").strip()) * 60
+                except ValueError:
+                    pass
+            elif isinstance(d, (int, float)):
+                phase_duration_sum += d
+        if phase_duration_sum > 0:
+            duration = phase_duration_sum
+        else:
+            duration = result.get("duration_seconds", (datetime.now(timezone.utc) - deploy_start).total_seconds())
         deployment["customStatus"]["durationSeconds"] = round(duration, 1)
         deployment["output"] = {
             "status": "succeeded",
@@ -966,6 +990,16 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
         if progress_callback:
             progress_callback(candidates, phase, message)
 
+    # ── Collect previously deployed workspace names from DB ────────
+    previously_deployed_ws_names: set[str] = set()
+    for dep in deployments.values():
+        cs = dep.get("customStatus", {})
+        ws_name = cs.get("workspaceName", "")
+        if ws_name and cs.get("runType") != "teardown":
+            previously_deployed_ws_names.add(ws_name)
+    if previously_deployed_ws_names:
+        logger.info("Previously deployed workspaces from DB: %s", previously_deployed_ws_names)
+
     # ── Scan Fabric workspaces ─────────────────────────────────────
     try:
         emit_status("fabric", "Scanning Fabric workspaces...")
@@ -990,8 +1024,11 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                 # Criterion 1: HDS deployed
                 has_hds = any(i.get("type") == "Healthcaredatasolution" for i in items)
 
-                # Skip workspaces with no HDS at all — they're not our deployments
-                if not has_hds:
+                # Check if this workspace was previously deployed via the orchestrator
+                is_previously_deployed = name in previously_deployed_ws_names
+
+                # OR condition: include if HDS detected OR previously deployed
+                if not has_hds and not is_previously_deployed:
                     continue
 
                 # Criterion 2: MasimoEventhouse present
@@ -1030,6 +1067,7 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                     "expectedCount": item_count,
                     "matchedArtifacts": artifact_list,
                     "qualified": False,
+                    "previouslyDeployed": is_previously_deployed,
                     "detectedArtifacts": {
                         "hasHDS": has_hds,
                         "hasEventhouse": has_eventhouse,
@@ -1063,21 +1101,28 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                     except Exception as kql_e:
                         logger.warning("Could not check fn_ClinicalAlerts in '%s': %s", name, kql_e)
 
-                # Fully qualified = all 3 criteria met
-                qualified = has_hds and has_eventhouse and has_fn_clinical_alerts
+                # Fully qualified = all 3 detection criteria met OR previously deployed
+                detection_qualified = has_hds and has_eventhouse and has_fn_clinical_alerts
+                qualified = detection_qualified or is_previously_deployed
 
                 missing = []
                 if not has_eventhouse:
                     missing.append("MasimoEventhouse")
                 if not has_fn_clinical_alerts:
                     missing.append("fn_ClinicalAlerts")
+                if not has_hds:
+                    missing.append("HDS")
 
-                if qualified:
+                if detection_qualified:
                     detail = f"Full deployment — {item_count} Fabric items"
+                elif is_previously_deployed and not detection_qualified:
+                    detail = f"Previously deployed workspace — {item_count} Fabric items"
+                    if missing:
+                        detail += f" (missing: {', '.join(missing)})"
                 else:
                     detail = f"Partial deployment — missing: {', '.join(missing)}"
 
-                status = "full" if qualified else "partial"
+                status = "full" if detection_qualified else "partial"
 
                 candidate = {
                     "type": "fabric",
@@ -1089,6 +1134,7 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                     "expectedCount": item_count,
                     "matchedArtifacts": artifact_list,
                     "qualified": qualified,
+                    "previouslyDeployed": is_previously_deployed,
                     "detectedArtifacts": {
                         "hasHDS": has_hds,
                         "hasEventhouse": has_eventhouse,
@@ -1097,8 +1143,8 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                 }
                 emit_candidate(candidate, "fabric", f"Discovered Fabric workspace: {name}")
                 logger.info(
-                    "Workspace '%s' — qualified=%s (HDS=%s, Eventhouse=%s, fn_ClinicalAlerts=%s)",
-                    name, qualified, has_hds, has_eventhouse, has_fn_clinical_alerts,
+                    "Workspace '%s' — qualified=%s (HDS=%s, Eventhouse=%s, fn_ClinicalAlerts=%s, previouslyDeployed=%s)",
+                    name, qualified, has_hds, has_eventhouse, has_fn_clinical_alerts, is_previously_deployed,
                 )
             except Exception as e:
                 logger.warning("Failed to scan workspace '%s': %s", name, e)
@@ -1236,16 +1282,39 @@ async def pause_capacity(subscription_id: str, resource_group: str, name: str):
 
 
 def _pause_capacity_sync(subscription_id: str, resource_group: str, name: str):
-    """Suspend a Fabric capacity via az CLI."""
+    """Suspend a Fabric capacity via az CLI (async — returns immediately)."""
     sub_arg = ["--subscription", subscription_id] if subscription_id else []
     proc = _az_run(
         ["az", "fabric", "capacity", "suspend",
          "--resource-group", resource_group,
-         "--capacity-name", name] + sub_arg,
+         "--capacity-name", name,
+         "--no-wait"] + sub_arg,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"az fabric capacity suspend failed: {proc.stderr.strip()}")
-    logger.info("Paused capacity '%s' in RG '%s'", name, resource_group)
+    logger.info("Pause initiated for capacity '%s' in RG '%s' (async)", name, resource_group)
+
+
+@app.post("/api/capacity/resume")
+async def resume_capacity(subscription_id: str, resource_group: str, name: str):
+    """Resume a paused Fabric capacity."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _resume_capacity_sync, subscription_id, resource_group, name)
+    return {"message": f"Capacity '{name}' resumed"}
+
+
+def _resume_capacity_sync(subscription_id: str, resource_group: str, name: str):
+    """Resume a Fabric capacity via az CLI (async — returns immediately)."""
+    sub_arg = ["--subscription", subscription_id] if subscription_id else []
+    proc = _az_run(
+        ["az", "fabric", "capacity", "resume",
+         "--resource-group", resource_group,
+         "--capacity-name", name,
+         "--no-wait"] + sub_arg,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"az fabric capacity resume failed: {proc.stderr.strip()}")
+    logger.info("Resume initiated for capacity '%s' in RG '%s' (async)", name, resource_group)
 
 
 # ── Deployment-to-Capacity mapping lookup ──────────────────────────────
@@ -1469,4 +1538,12 @@ def _query_fhir_counts(rg_name: str) -> dict:
 if __name__ == "__main__":
     logger.info("Starting local dev server on http://localhost:7071")
     logger.info("This calls real Azure/Fabric APIs using your current az login credentials")
-    uvicorn.run(app, host="0.0.0.0", port=7071, log_level="info", timeout_graceful_shutdown=3)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=7071, log_level="info", timeout_graceful_shutdown=3)
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user (Ctrl+C)")
+    except Exception:
+        logger.critical("SERVER CRASHED — see traceback below", exc_info=True)
+        raise
+    finally:
+        logger.info("Server process exiting")

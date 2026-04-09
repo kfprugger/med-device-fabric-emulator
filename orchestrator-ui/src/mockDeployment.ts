@@ -23,7 +23,7 @@ interface MockPhase {
 const MOCK_PHASES: MockPhase[] = [
   // ── Phase 1 ──
   {
-    phase: "Step 1: Fabric Workspace",
+    phase: "Phase 1: Fabric Workspace",
     durationMs: 3000,
     logs: [
       { delayPct: 0, level: "info", message: "Searching for workspace 'med-device-rti-hds'…" },
@@ -33,7 +33,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 1b: Base Azure Infrastructure",
+    phase: "Phase 1: Base Azure Infrastructure",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Resolving admin security group 'sg-azure-admins'…" },
@@ -50,7 +50,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 2: FHIR Service & Data Loading",
+    phase: "Phase 1: FHIR Service + Synthea + Loader",
     durationMs: 25000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying fhir-infra.bicep (FHIR workspace + service)…" },
@@ -76,7 +76,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 2b: DICOM Infrastructure & Loading",
+    phase: "Phase 1: DICOM Service + Loader",
     durationMs: 15000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying dicom-infra.bicep…" },
@@ -91,7 +91,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 3: Fabric RTI Phase 1",
+    phase: "Phase 1: Fabric RTI",
     durationMs: 10000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating Eventhouse 'MasimoEventhouse'…" },
@@ -111,7 +111,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 4: HDS Detection",
+    phase: "Phase 1: HDS Detection",
     durationMs: 3000,
     isManualGate: false,
     logs: [
@@ -125,7 +125,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 2 ──
   {
-    phase: "Step 5: Fabric RTI Phase 2",
+    phase: "Phase 2: Fabric RTI",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Discovering Silver Lakehouse…" },
@@ -142,7 +142,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 5b: HDS Pipelines",
+    phase: "Phase 2: DICOM Shortcut + HDS Pipelines",
     durationMs: 5000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating DICOM shortcut → ADLS Gen2 dicom-output/…" },
@@ -155,7 +155,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 6: Data Agents",
+    phase: "Phase 2: Data Agents",
     durationMs: 6000,
     logs: [
       { delayPct: 0, level: "info", message: "Building datasource config (2 KQL tables, 11 Lakehouse tables)…" },
@@ -168,7 +168,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 3 ──
   {
-    phase: "Step 7: Imaging Toolkit",
+    phase: "Phase 3: Imaging & Reporting",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying FabricDicomCohortingToolkit…" },
@@ -184,7 +184,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 4 ──
   {
-    phase: "Step 8: Ontology",
+    phase: "Phase 4: Ontology",
     durationMs: 7000,
     logs: [
       { delayPct: 0, level: "info", message: "Verifying clinical pipeline completion…" },
@@ -202,7 +202,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Step 9: Data Activator",
+    phase: "Phase 4: Data Activator",
     durationMs: 5000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating ClinicalAlertActivator Reflex item…" },
@@ -558,6 +558,7 @@ export interface TeardownCandidate {
   matchedArtifacts?: string[];
   subscription?: string;
   qualified?: boolean;
+  previouslyDeployed?: boolean;
 }
 
 const MOCK_SUBSCRIPTIONS: MockSubscription[] = [

@@ -347,6 +347,16 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
                 step_callback("step_warning", "HDS Pipeline", line.strip(), "")
             continue
 
+        # Detect skipped steps (e.g. ">>  Skipping FHIR / Synthea (--SkipFhir)")
+        if "Skipping" in line and ">>" in line:
+            # Extract what was skipped for progress tracking
+            skip_match = re.search(r"Skipping\s+(.+?)(?:\s+\(|$)", line)
+            if skip_match and step_callback:
+                skip_name = skip_match.group(1).strip()
+                step_callback("step_skipped", skip_name, "", "")
+            logger.info(line)
+            continue
+
         # Regular log line
         if any(marker in line for marker in ["✓", "succeeded", "Succeeded", "created", "deployed", "complete"]):
             logger.info(line)

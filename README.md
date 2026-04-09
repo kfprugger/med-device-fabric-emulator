@@ -31,10 +31,10 @@ The entire solution deploys in under 2 hours via the **Orchestrator UI** (browse
 
 | Phase | Description | Guide |
 |-------|-------------|-------|
-| **Phase 1** | Azure infrastructure, FHIR + DICOM data generation, Fabric RTI pipeline, manual HDS deployment | [Phase 1 — Infrastructure & Ingestion](docs/phase-1-infrastructure-and-ingestion.md) |
-| **Phase 2** | HDS Silver Lakehouse shortcuts, enriched clinical alerts, HDS pipelines, Data Agents | [Phase 2 — HDS Enrichment & Data Agents](docs/phase-2-hds-enrichment-and-agents.md) |
-| **Phase 3** | Cohorting Agent, OHIF DICOM Viewer, materialization notebook, Power BI report | [Phase 3 — Imaging & Cohorting](docs/phase-3-imaging-and-cohorting.md) |
-| **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Ontology & Activator](docs/phase-4-ontology-and-activator.md) |
+| **Phase 1** | Azure infrastructure, FHIR + DICOM data generation, Fabric RTI pipeline, manual HDS deployment | [Phase 1 — Infrastructure & Data](docs/phase-1-infrastructure-and-ingestion.md) |
+| **Phase 2** | HDS Silver Lakehouse shortcuts, enriched clinical alerts, HDS pipelines, Data Agents | [Phase 2 — Analytics & AI Agents](docs/phase-2-hds-enrichment-and-agents.md) |
+| **Phase 3** | Cohorting Agent, OHIF DICOM Viewer, materialization notebook, Power BI report | [Phase 3 — Imaging & Reporting](docs/phase-3-imaging-and-cohorting.md) |
+| **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Semantic Layer & Alerts](docs/phase-4-ontology-and-activator.md) |
 
 **Additional guides:**
 - [Orchestrator UI](orchestrator/README.md) — Setup and usage for the browser-based deployment dashboard

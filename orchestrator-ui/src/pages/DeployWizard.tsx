@@ -19,8 +19,8 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular } from "@fluentui/react-icons";
-import { startDeployment, listCapacities, checkExistingDeployment, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
+import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular } from "@fluentui/react-icons";
+import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -32,16 +32,18 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalL,
-    maxWidth: "720px",
     marginTop: tokens.spacingVerticalL,
   },
   section: {
-    marginBottom: tokens.spacingVerticalL,
+    marginBottom: "0",
     transition: "box-shadow 0.2s ease",
     overflow: "visible",
     ":hover": {
       boxShadow: tokens.shadow8,
     },
+  },
+  sectionFullWidth: {
+    gridColumn: "1 / -1",
   },
   sectionHeader: {
     cursor: "default",
@@ -156,6 +158,7 @@ export function DeployWizard() {
   const [selectedCapacity, setSelectedCapacity] = useState<string>("");
   const [pauseAfterDeploy, setPauseAfterDeploy] = useState(false);
   const [capacityRefreshing, setCapacityRefreshing] = useState(false);
+  const [resumingCapacity, setResumingCapacity] = useState(false);
 
   const refreshCapacities = () => {
     if (usingMock || subscriptions.length === 0) return;
@@ -237,6 +240,13 @@ export function DeployWizard() {
   const [existingDeploy, setExistingDeploy] = useState<ExistingDeploymentInfo | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [overridePriorSettings, setOverridePriorSettings] = useState(false);
+
+  // Determine which card needs attention next
+  const activeCardIndex = useNamingConvention && !namingPrefix ? 0
+    : !useNamingConvention && (!config.resource_group_name || !config.fabric_workspace_name) ? 1
+    : !selectedCapacity || !config.admin_security_group ? 1
+    : !config.fabric_workspace_name && !useNamingConvention ? 2
+    : -1; // all filled — no glow
 
   const update = (field: keyof DeploymentConfig, value: unknown) =>
     setConfig((prev) => ({ ...prev, [field]: value }));
@@ -392,9 +402,58 @@ export function DeployWizard() {
       {usingMock && <MockDataBanner />}
       <Title2>Deployment Settings</Title2>
 
-      <div className={styles.form}>
+      {/* Responsive grid: 2 columns on wide screens, 1 column on narrow */}
+      <style>{`
+        .deploy-form-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 16px;
+          margin-top: 16px;
+          transition: grid-template-columns 0.35s ease;
+        }
+        .deploy-form-grid > * {
+          animation: deploy-card-in 0.5s ease both;
+          align-self: start;
+        }
+        .deploy-form-grid > *:nth-child(1) { animation-delay: 0s; }
+        .deploy-form-grid > *:nth-child(2) { animation-delay: 0.07s; }
+        .deploy-form-grid > *:nth-child(3) { animation-delay: 0.14s; }
+        .deploy-form-grid > *:nth-child(4) { animation-delay: 0.21s; }
+        .deploy-form-grid > *:nth-child(5) { animation-delay: 0.28s; }
+        .deploy-form-grid > *:nth-child(6) { animation-delay: 0.35s; }
+        @keyframes deploy-card-in {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .deploy-form-grid .deploy-full-width {
+          grid-column: 1 / -1;
+        }
+        .deploy-card-active {
+          outline: 3px solid #0f6cbd !important;
+          outline-offset: 4px;
+          animation: deploy-card-in 0.5s ease both, deploy-card-pulse 2s ease-in-out 0.6s infinite !important;
+        }
+        @keyframes deploy-card-pulse {
+          0%, 100% { box-shadow: 0 0 16px rgba(15, 108, 189, 0.3); outline-color: #0f6cbd; }
+          50%      { box-shadow: 0 0 36px rgba(15, 108, 189, 0.6); outline-color: #78b9eb; }
+        }
+        @media (min-width: 1200px) {
+          .deploy-form-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .deploy-form-grid > *,
+          .deploy-card-active {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <div className={`${styles.form} deploy-form-grid`}>
         {/* Naming Convention */}
-        <Card className={styles.section} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Naming Convention</Subtitle1>}
@@ -451,7 +510,7 @@ export function DeployWizard() {
         </Card>
 
         {/* Azure Configuration */}
-        <Card className={styles.section} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section}${activeCardIndex === 1 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Azure Configuration</Subtitle1>}
@@ -545,6 +604,39 @@ export function DeployWizard() {
                       style={capacityRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
                     />
                   </Tooltip>
+                  {(() => {
+                    const cap = capacities.find((c) => c.name === selectedCapacity);
+                    if (!cap || cap.state === "Active") return null;
+                    return (
+                      <Tooltip content={`Resume capacity "${cap.name}" (currently ${cap.state})`} relationship="label">
+                        <Button
+                          appearance="primary"
+                          icon={<PlayRegular />}
+                          size="small"
+                          disabled={resumingCapacity}
+                          onClick={async () => {
+                            setResumingCapacity(true);
+                            setError("");
+                            try {
+                              await resumeCapacity(cap.subscription, cap.resourceGroup, cap.name);
+                              // Poll capacity status until Active (async LRO)
+                              const pollInterval = setInterval(() => {
+                                refreshCapacities();
+                              }, 5000);
+                              // Stop polling after 2 min
+                              setTimeout(() => clearInterval(pollInterval), 120000);
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : "Failed to resume capacity");
+                            } finally {
+                              setResumingCapacity(false);
+                            }
+                          }}
+                        >
+                          {resumingCapacity ? "Starting…" : cap.state === "Resuming" ? "Resuming…" : "Resume"}
+                        </Button>
+                      </Tooltip>
+                    );
+                  })()}
                 </div>
               </Field>
             </div>
@@ -684,7 +776,7 @@ export function DeployWizard() {
         </Card>
 
         {/* Fabric Configuration */}
-        <Card className={styles.section}>
+        <Card className={`${styles.section}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Fabric Configuration</Subtitle1>}
@@ -722,7 +814,7 @@ export function DeployWizard() {
         </Card>
 
         {/* Data Configuration */}
-        <Card className={styles.section} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section} deploy-full-width${activeCardIndex === 3 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Data Configuration</Subtitle1>}
@@ -857,7 +949,7 @@ export function DeployWizard() {
         </Card>
 
         {/* Phase Control */}
-        <Card className={styles.section}>
+        <Card className={`${styles.section} deploy-full-width`}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Phase Control</Subtitle1>}
@@ -876,7 +968,7 @@ export function DeployWizard() {
               positioning="after"
             >
               <Checkbox
-                label="Skip Base Infrastructure (already deployed)"
+                label={`Skip Base Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
                 checked={config.skip_base_infra}
                 onChange={(_, d) => update("skip_base_infra", d.checked)}
               />
@@ -887,7 +979,7 @@ export function DeployWizard() {
               positioning="after"
             >
               <Checkbox
-                label="Skip FHIR / Synthea (data already loaded)"
+                label={`Skip FHIR / Synthea${existingDeploy ? " (data already loaded)" : ""}`}
                 checked={config.skip_fhir}
                 onChange={(_, d) => update("skip_fhir", d.checked)}
               />
@@ -918,7 +1010,7 @@ export function DeployWizard() {
         </Card>
 
         {/* Actions */}
-        <div className={styles.actions}>
+        <div className={`${styles.actions} deploy-full-width`}>
           <Tooltip content="Launch the full deployment pipeline" relationship="description">
             <Button
               appearance="primary"

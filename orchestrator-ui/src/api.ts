@@ -207,6 +207,16 @@ export async function listCapacities(
   return resp.json();
 }
 
+export async function resumeCapacity(
+  subscriptionId: string,
+  resourceGroup: string,
+  name: string,
+): Promise<void> {
+  const params = new URLSearchParams({ subscription_id: subscriptionId, resource_group: resourceGroup, name });
+  const resp = await fetch(`${API_BASE}/capacity/resume?${params}`, { method: "POST" });
+  if (!resp.ok) throw new Error("Failed to resume capacity");
+}
+
 export interface DeploymentCapacityMapping {
   capacityName: string;
   capacityResourceGroup: string;

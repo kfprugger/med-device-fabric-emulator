@@ -713,7 +713,7 @@ if ($Teardown) {
 # ============================================================================
 
 if ($Phase2) {
-    Emit-PhaseTransition -Phase 2 -Label "Enrichment & Agents" -StepCount 3
+    Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
 
     Invoke-Step -StepName "Phase 2: Fabric RTI" `
         -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
@@ -784,7 +784,7 @@ if ($Phase4 -and -not $Phase2 -and -not $Phase3) {
 # STEP 1 — FABRIC WORKSPACE + IDENTITY (created first so HDS can be deployed during Azure steps)
 # ============================================================================
 
-Emit-PhaseTransition -Phase 1 -Label "Infra & Ingestion" -StepCount 6
+Emit-PhaseTransition -Phase 1 -Label "Infrastructure & Data" -StepCount 6
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
     Invoke-Step -StepName "Phase 1: Fabric Workspace" `
@@ -1266,7 +1266,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                 # Run Phase 2 inline
                 $Phase2 = $true
 
-                Emit-PhaseTransition -Phase 2 -Label "Enrichment & Agents" -StepCount 3
+                Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
 
                 Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
                     -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
@@ -1320,14 +1320,14 @@ if ($Phase2) {
 # Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
 # ============================================================================
 
-Emit-PhaseTransition -Phase 3 -Label "Imaging Toolkit" -StepCount 1
+Emit-PhaseTransition -Phase 3 -Label "Imaging & Reporting" -StepCount 1
 
 if ($Phase2 -or $Phase3) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
     $runPhase3 = $true
 
     if ($Phase3 -or $Phase2) {
-        Invoke-Step -StepName "Phase 3: Imaging Toolkit" `
+        Invoke-Step -StepName "Phase 3: Imaging & Reporting" `
             -Description "Cohorting Agent + DICOM Viewer (FabricDicomCohortingToolkit)" -Action {
 
             # Validate toolkit path
@@ -1534,11 +1534,11 @@ if ($Phase2 -or $Phase3) {
 #           Eventhouse with TelemetryRaw + AlertHistory tables
 # ============================================================================
 
-Emit-PhaseTransition -Phase 4 -Label "Ontology & Activator" -StepCount 2
+Emit-PhaseTransition -Phase 4 -Label "Semantic Layer & Alerts" -StepCount 2
 
 if ($Phase4 -or ($Phase2 -and -not $Phase3)) {
-    Invoke-Step -StepName "Phase 4: Ontology + Activator" `
-        -Description "Clinical pipeline check, ontology deployment, agent binding, Data Activator" -Action {
+    Invoke-Step -StepName "Phase 4: Ontology" `
+        -Description "Clinical pipeline check, ontology deployment, agent binding" -Action {
 
         function Get-FabricTokenLocal {
             $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
@@ -1893,9 +1893,22 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
             Write-Host "  ⚠ Ontology not found after deployment — agent binding skipped" -ForegroundColor Yellow
         }
 
-        # ── Step 9: Data Activator (Reflex) for Clinical Alert Emails ──
         Write-Host ""
-        Write-Host "  --- Step 9: Data Activator (Reflex) ---" -ForegroundColor Cyan
+    }
+
+    # ── Step 9: Data Activator ──
+    Invoke-Step -StepName "Phase 4: Data Activator" `
+        -Description "Reflex item with KQL source and email alerting rule" -Action {
+
+        function Get-FabricTokenLocal {
+            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            if ($t -is [System.Security.SecureString]) {
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
+                try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+            return $t
+        }
 
         if (-not $AlertEmail) {
             Write-Host "  ⚠ No -AlertEmail specified — skipping Activator deployment" -ForegroundColor Yellow
@@ -1907,6 +1920,16 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 
             $p4Token = Get-FabricTokenLocal
             $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
+            $p4Base = "https://api.fabric.microsoft.com/v1"
+
+            # Resolve workspace ID
+            $p4Workspaces = (Invoke-RestMethod -Uri "$p4Base/workspaces" -Headers $p4Headers).value
+            $p4Ws = $p4Workspaces | Where-Object { $_.displayName -eq $FabricWorkspaceName } | Select-Object -First 1
+            if (-not $p4Ws) {
+                Write-Host "  ✗ Workspace '$FabricWorkspaceName' not found — cannot deploy Activator" -ForegroundColor Red
+                return
+            }
+            $p4WsId = $p4Ws.id
 
             $reflexName = "ClinicalAlertActivator"
 

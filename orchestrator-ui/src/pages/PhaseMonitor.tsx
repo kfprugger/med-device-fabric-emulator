@@ -163,7 +163,8 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalS,
     padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`,
     backgroundColor: tokens.colorBrandForeground1,
-    color: tokens.colorNeutralForegroundOnBrand,
+    color: "#ffffff",
+    textShadow: "0 3px 3px rgba(0, 0, 0, 0.4)",
     borderRadius: tokens.borderRadiusMedium,
     fontSize: tokens.fontSizeBase200,
     fontWeight: tokens.fontWeightSemibold,
@@ -285,22 +286,22 @@ const useStyles = makeStyles({
 });
 
 const ALL_PHASES: PhaseInfo[] = [
-  // Phase 1
-  { phase: "Step 1: Fabric Workspace", status: "pending" },
-  { phase: "Step 1b: Base Azure Infrastructure", status: "pending" },
-  { phase: "Step 2: FHIR Service & Data Loading", status: "pending" },
-  { phase: "Step 2b: DICOM Infrastructure & Loading", status: "pending" },
-  { phase: "Step 3: Fabric RTI Phase 1", status: "pending" },
-  { phase: "Step 4: HDS Detection", status: "pending" },
-  // Phase 2
-  { phase: "Step 5: Fabric RTI Phase 2", status: "pending" },
-  { phase: "Step 5b: HDS Pipelines", status: "pending" },
-  { phase: "Step 6: Data Agents", status: "pending" },
-  // Phase 3
-  { phase: "Step 7: Imaging Toolkit", status: "pending" },
-  // Phase 4
-  { phase: "Step 8: Ontology", status: "pending" },
-  { phase: "Step 9: Data Activator", status: "pending" },
+  // Phase 1: Infrastructure & Data
+  { phase: "Phase 1: Fabric Workspace", status: "pending" },
+  { phase: "Phase 1: Base Azure Infrastructure", status: "pending" },
+  { phase: "Phase 1: FHIR Service + Synthea + Loader", status: "pending" },
+  { phase: "Phase 1: DICOM Service + Loader", status: "pending" },
+  { phase: "Phase 1: Fabric RTI", status: "pending" },
+  { phase: "Phase 1: HDS Detection", status: "pending" },
+  // Phase 2: Analytics & AI Agents
+  { phase: "Phase 2: Fabric RTI", status: "pending" },
+  { phase: "Phase 2: DICOM Shortcut + HDS Pipelines", status: "pending" },
+  { phase: "Phase 2: Data Agents", status: "pending" },
+  // Phase 3: Imaging & Reporting
+  { phase: "Phase 3: Imaging & Reporting", status: "pending" },
+  // Phase 4: Semantic Layer & Alerts
+  { phase: "Phase 4: Ontology", status: "pending" },
+  { phase: "Phase 4: Data Activator", status: "pending" },
 ];
 
 export function PhaseMonitor() {
@@ -410,18 +411,23 @@ export function PhaseMonitor() {
 
   useEffect(() => {
     if (!isRunning && status && frozenElapsed === null) {
-      // Priority 1: backend-computed durationSeconds
-      const backendDuration = (status.customStatus as Record<string, unknown>)?.durationSeconds;
-      if (typeof backendDuration === "number" && backendDuration > 0) {
-        setFrozenElapsed(backendDuration);
-        return;
-      }
-      // Priority 2: sum of phase durations
+      // Priority 1: sum of phase durations (excludes HDS manual wait)
       const phaseDurationSum = phases.reduce((sum, p) => {
-        return sum + (typeof p.duration === "number" ? p.duration : 0);
+        if (typeof p.duration === "number") return sum + p.duration;
+        if (typeof p.duration === "string") {
+          const m = p.duration.match(/([\d.]+)\s*min/i);
+          if (m) return sum + parseFloat(m[1]) * 60;
+        }
+        return sum;
       }, 0);
       if (phaseDurationSum > 0) {
         setFrozenElapsed(phaseDurationSum);
+        return;
+      }
+      // Priority 2: backend-computed durationSeconds
+      const backendDuration = (status.customStatus as Record<string, unknown>)?.durationSeconds;
+      if (typeof backendDuration === "number" && backendDuration > 0) {
+        setFrozenElapsed(backendDuration);
         return;
       }
       // Priority 3: lastUpdatedTime - createdTime
@@ -568,18 +574,19 @@ export function PhaseMonitor() {
   type MilestoneDef = { label: string; phaseIndices: number[]; namePatterns: string[]; position: number; endWeight: number; phaseNumber?: number };
 
   // Teardown-specific milestones: reverse order of deployment phases.
+  // Teardown-specific milestones: describe actual teardown operations.
   const TEARDOWN_MILESTONES: MilestoneDef[] = [
-    { label: "Phase 4: Ontology & Activator", phaseIndices: [0], namePatterns: ["Fabric Workspace Items"], position: 8, endWeight: 20 },
-    { label: "Phase 3: Imaging Toolkit", phaseIndices: [1], namePatterns: ["Workspace Identity"], position: 36, endWeight: 40 },
-    { label: "Phase 2: Enrichment & Agents", phaseIndices: [2], namePatterns: ["Delete Workspace"], position: 64, endWeight: 60 },
-    { label: "Phase 1: Azure RG Deletion", phaseIndices: [3], namePatterns: ["Azure Resource Group"], position: 90, endWeight: 80 },
+    { label: "Workspace Items", phaseIndices: [0], namePatterns: ["Fabric Workspace Items"], position: 8, endWeight: 20 },
+    { label: "Workspace Identity", phaseIndices: [1], namePatterns: ["Workspace Identity"], position: 36, endWeight: 40 },
+    { label: "Workspace Deletion", phaseIndices: [2], namePatterns: ["Delete Workspace"], position: 64, endWeight: 60 },
+    { label: "Azure Resources", phaseIndices: [3], namePatterns: ["Azure Resource Group"], position: 90, endWeight: 80 },
   ];
 
   const MILESTONES: MilestoneDef[] = [
-    { label: "Phase 1: Infra & Ingestion", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection"], position: 8, endWeight: 40, phaseNumber: 1 },
-    { label: "Phase 2: Enrichment & Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent"], position: 36, endWeight: 60, phaseNumber: 2 },
-    { label: "Phase 3: Imaging Toolkit", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer"], position: 64, endWeight: 70, phaseNumber: 3 },
-    { label: "Phase 4: Ontology & Activator", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex"], position: 90, endWeight: 80, phaseNumber: 4 },
+    { label: "Phase 1: Infrastructure & Data", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection", "HDS Guidance"], position: 8, endWeight: 40, phaseNumber: 1 },
+    { label: "Phase 2: Analytics & AI Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent", "Fabric RTI (auto)", "DICOM Shortcut"], position: 36, endWeight: 60, phaseNumber: 2 },
+    { label: "Phase 3: Imaging & Reporting", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer", "Reporting"], position: 64, endWeight: 70, phaseNumber: 3 },
+    { label: "Phase 4: Semantic Layer & Alerts", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex", "Data Activator"], position: 90, endWeight: 80, phaseNumber: 4 },
   ];
 
   // ── Adaptive milestones: determine active milestones from instance ID ──
@@ -887,7 +894,7 @@ export function PhaseMonitor() {
                       : ""
                   }`}
                   style={isTeardown && msStatus === "done"
-                    ? { backgroundColor: tokens.colorPaletteYellowForeground1, color: tokens.colorNeutralForeground1 }
+                    ? { backgroundColor: tokens.colorPaletteYellowForeground1, color: "#000000", textShadow: "none" }
                     : isTeardown && msStatus === "active"
                       ? { color: tokens.colorPaletteYellowForeground1 }
                       : undefined
