@@ -265,7 +265,7 @@ npm run dev
 
 **6. Teardown:** When done, use the **Teardown** tab to scan for and delete deployed resources (Fabric workspace, Azure RG, Entra SPNs) with a single click.
 
-![Deployment Monitor](docs/images/Simple%20Diagram.png)
+![Deployment Monitor](docs/images/example%20deploy%20and%20teardown.png)
 
 ---
 
