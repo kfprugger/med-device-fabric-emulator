@@ -23,8 +23,12 @@ import {
   ChevronUpRegular,
   OpenRegular,
   ArrowRepeatAllRegular,
+  TextBulletListRegular,
+  ArrowLeftRegular,
 } from "@fluentui/react-icons";
 import { PhaseCard } from "../components/PhaseCard";
+import { AllLogsStream } from "../components/AllLogsStream";
+import { DeployedResourcesPanel } from "../components/DeployedResourcesPanel";
 import {
   getDeploymentStatus,
   resumeAfterHds,
@@ -73,7 +77,7 @@ const useStyles = makeStyles({
   },
   milestoneTrack: {
     position: "relative" as const,
-    height: "90px",
+    height: "105px",
     marginTop: tokens.spacingVerticalS,
   },
   trackLine: {
@@ -132,8 +136,9 @@ const useStyles = makeStyles({
     boxShadow: `0 0 0 3px ${tokens.colorBrandBackground2}, ${tokens.shadow4}`,
   },
   milestoneDotDone: {
-    backgroundColor: tokens.colorPaletteGreenForeground1,
-    color: "white",
+    backgroundColor: tokens.colorBrandForeground1,
+    color: tokens.colorNeutralForegroundOnBrand,
+    boxShadow: `0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 6px rgba(0, 163, 153, 0.35), ${tokens.shadow4}`,
   },
   milestoneDotWaiting: {
     backgroundColor: tokens.colorPaletteYellowForeground1,
@@ -147,13 +152,25 @@ const useStyles = makeStyles({
     textAlign: "center" as const,
     whiteSpace: "normal" as const,
     maxWidth: "180px",
-    lineHeight: tokens.lineHeightBase200,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    lineHeight: tokens.lineHeightBase300,
+    paddingBottom: "2px",
   },
   milestoneLabelActive: {
     color: tokens.colorBrandForeground1,
     fontWeight: tokens.fontWeightSemibold,
+  },
+  milestoneLabelDone: {
+    marginTop: tokens.spacingVerticalS,
+    padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`,
+    backgroundColor: tokens.colorBrandForeground1,
+    color: tokens.colorNeutralForegroundOnBrand,
+    borderRadius: tokens.borderRadiusMedium,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: "nowrap" as const,
+    maxWidth: "none",
+    lineHeight: tokens.lineHeightBase200,
+    boxShadow: tokens.shadow8,
   },
   milestoneCallout: {
     position: "absolute" as const,
@@ -296,14 +313,13 @@ export function PhaseMonitor() {
   >(new Map());
   const [error, setError] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
+  const [showAllLogs, setShowAllLogs] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
   const [deployedResources, setDeployedResources] = useState<DeployedResourcesResult | null>(null);
   const [resourcesLoading, setResourcesLoading] = useState(false);
   const [lastResourceFetch, setLastResourceFetch] = useState(0);
   const [frozenElapsed, setFrozenElapsed] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
-  const [fabricExpanded, setFabricExpanded] = useState(false);
-  const [azureExpanded, setAzureExpanded] = useState(false);
 
   const isMock = instanceId ? isMockInstance(instanceId) : false;
 
@@ -344,6 +360,10 @@ export function PhaseMonitor() {
     status?.runtimeStatus === "Completed" ||
     isCancelled || isFailed;
 
+  // Detect if this is a teardown run
+  const isTeardown = (status?.customStatus as Record<string, unknown>)?.runType === "teardown"
+    || (instanceId ?? "").toLowerCase().startsWith("teardown");
+
   // Merge completed phases with the full phase list
   const completedPhases = status?.output?.phases ?? [];
   const currentPhase = status?.customStatus?.currentPhase ?? "";
@@ -378,7 +398,7 @@ export function PhaseMonitor() {
   }
 
   // Get logs from backend customStatus.logs (for real deployments)
-  const backendLogs = (status?.customStatus as Record<string, unknown>)?.logs as Array<{timestamp: string; level: string; message: string}> | undefined;
+  const backendLogs = (status?.customStatus as Record<string, unknown>)?.logs as Array<{timestamp: string; level: string; message: string; phase?: number}> | undefined;
 
   // Compute elapsed time — freeze when deployment is no longer running
   useEffect(() => {
@@ -462,6 +482,7 @@ export function PhaseMonitor() {
 
   const handleCancel = async () => {
     if (!instanceId) return;
+    if (!window.confirm("Cancel this deployment? Running processes will be terminated.")) return;
     try {
       if (isMock) {
         cancelMockDeployment(instanceId);
@@ -498,9 +519,19 @@ export function PhaseMonitor() {
     { patterns: ["Ontology"], weight: 5 },
     { patterns: ["Activator", "Reflex"], weight: 5 },
   ];
-  const TOTAL_WEIGHT = STEP_WEIGHTS.reduce((s, w) => s + w.weight, 0); // 80
 
   function getStepWeight(phaseName: string): number {
+    // Prefer explicit phase buckets when present in backend phase names to avoid
+    // keyword collisions (for example "DICOM" appearing in a Phase 2 label).
+    const phaseMatch = phaseName.match(/PHASE\s*(\d+)/i);
+    if (phaseMatch) {
+      const n = Number(phaseMatch[1]);
+      if (n === 1) return 40 / 6;
+      if (n === 2) return 20 / 3;
+      if (n === 3) return 10;
+      if (n === 4) return 5;
+    }
+
     for (const sw of STEP_WEIGHTS) {
       if (sw.patterns.some((pat) => phaseName.toUpperCase().includes(pat.toUpperCase()))) {
         return sw.weight;
@@ -521,50 +552,174 @@ export function PhaseMonitor() {
     }
   }
 
-  // Map weighted progress to visual bar position using piecewise-linear interpolation
-  // Weight thresholds → visual positions: 0→0, 40→25, 60→50, 70→75, 80→96
-  function weightToVisualPct(w: number): number {
-    const segments = [
-      { wStart: 0, wEnd: 40, vStart: 0, vEnd: 25 },
-      { wStart: 40, wEnd: 60, vStart: 25, vEnd: 50 },
-      { wStart: 60, wEnd: 70, vStart: 50, vEnd: 75 },
-      { wStart: 70, wEnd: 80, vStart: 75, vEnd: 92 },
-    ];
+  // Map weighted progress to visual bar position using piecewise-linear interpolation.
+  // Segments are built dynamically from active milestones.
+  function weightToVisualPct(w: number, segments: Array<{wStart: number; wEnd: number; vStart: number; vEnd: number}>): number {
     for (const seg of segments) {
       if (w <= seg.wEnd) {
-        const t = (w - seg.wStart) / (seg.wEnd - seg.wStart);
+        const t = seg.wEnd === seg.wStart ? 1 : (w - seg.wStart) / (seg.wEnd - seg.wStart);
         return seg.vStart + t * (seg.vEnd - seg.vStart);
       }
     }
     return 92;
   }
 
-  const progressPct = isComplete
+  // Milestone definitions (static templates)
+  type MilestoneDef = { label: string; phaseIndices: number[]; namePatterns: string[]; position: number; endWeight: number; phaseNumber?: number };
+
+  // Teardown-specific milestones: reverse order of deployment phases.
+  const TEARDOWN_MILESTONES: MilestoneDef[] = [
+    { label: "Phase 4: Ontology & Activator", phaseIndices: [0], namePatterns: ["Fabric Workspace Items"], position: 8, endWeight: 20 },
+    { label: "Phase 3: Imaging Toolkit", phaseIndices: [1], namePatterns: ["Workspace Identity"], position: 36, endWeight: 40 },
+    { label: "Phase 2: Enrichment & Agents", phaseIndices: [2], namePatterns: ["Delete Workspace"], position: 64, endWeight: 60 },
+    { label: "Phase 1: Azure RG Deletion", phaseIndices: [3], namePatterns: ["Azure Resource Group"], position: 90, endWeight: 80 },
+  ];
+
+  const MILESTONES: MilestoneDef[] = [
+    { label: "Phase 1: Infra & Ingestion", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection"], position: 8, endWeight: 40, phaseNumber: 1 },
+    { label: "Phase 2: Enrichment & Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent"], position: 36, endWeight: 60, phaseNumber: 2 },
+    { label: "Phase 3: Imaging Toolkit", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer"], position: 64, endWeight: 70, phaseNumber: 3 },
+    { label: "Phase 4: Ontology & Activator", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex"], position: 90, endWeight: 80, phaseNumber: 4 },
+  ];
+
+  // ── Adaptive milestones: determine active milestones from instance ID ──
+  // Instance ID format: P<milestone-digits>-<timestamp> (e.g. P1234-20260406-195906)
+  // Legacy formats: ALLPHASES-*, PHASE2+-*, FABRIC-*, teardown*
+  function getActiveMilestoneNumbers(): Set<number> {
+    const id = instanceId ?? "";
+
+    // New format: P followed by milestone digits (P1234, P234, P3, etc.)
+    const pMatch = id.match(/^P(\d+)-/i);
+    if (pMatch) {
+      return new Set(pMatch[1].split("").map(Number).filter((n) => n >= 1 && n <= 4));
+    }
+
+    // Legacy formats
+    if (id.startsWith("ALLPHASES")) return new Set([1, 2, 3, 4]);
+    if (id.startsWith("PHASE2+")) return new Set([1, 2, 3, 4]); // skip_base_infra still has all milestones
+    if (id.startsWith("FABRIC")) return new Set([1, 2, 3, 4]);   // reduced P1 but all milestones
+
+    // Default: show all
+    return new Set([1, 2, 3, 4]);
+  }
+
+  const activeMilestoneNumbers = getActiveMilestoneNumbers();
+
+  const allMilestonesTemplate = isTeardown ? TEARDOWN_MILESTONES : MILESTONES;
+  // Filter milestones to those whose phaseNumber is in the active set.
+  // For teardown: hide Fabric milestones when only an Azure RG is being torn down.
+  const teardownHasFabric = !!(status?.customStatus as Record<string, unknown>)?.workspaceName;
+  const teardownHasAzure = !!(status?.customStatus as Record<string, unknown>)?.resourceGroupName;
+  const FABRIC_TEARDOWN_PATTERNS = new Set(["Fabric Workspace Items", "Workspace Identity", "Delete Workspace"]);
+  const AZURE_TEARDOWN_PATTERNS = new Set(["Azure Resource Group"]);
+  const filteredMilestones = isTeardown
+    ? allMilestonesTemplate.filter((ms) => {
+        const isFabricMilestone = ms.namePatterns.some((p) => FABRIC_TEARDOWN_PATTERNS.has(p));
+        const isAzureMilestone = ms.namePatterns.some((p) => AZURE_TEARDOWN_PATTERNS.has(p));
+        if (isFabricMilestone && !teardownHasFabric) return false;
+        if (isAzureMilestone && !teardownHasAzure) return false;
+        return true;
+      })
+    : isMock
+      ? allMilestonesTemplate
+      : allMilestonesTemplate.filter((ms) => activeMilestoneNumbers.has(ms.phaseNumber ?? 0));
+
+  // Redistribute positions evenly for the surviving milestones
+  // Positions: evenly spaced between 8% and 88%
+  const POSITION_MIN = 8;
+  const POSITION_MAX = 88;
+  const activeMilestones = filteredMilestones.map((ms, i) => {
+    const n = filteredMilestones.length;
+    const position = n === 1
+      ? (POSITION_MIN + POSITION_MAX) / 2
+      : POSITION_MIN + (i / (n - 1)) * (POSITION_MAX - POSITION_MIN);
+    return { ...ms, position };
+  });
+
+  // Recompute weight segments dynamically from active milestones
+  // Build dynamic weight→visual segments from active milestones
+  const dynamicSegments: Array<{wStart: number; wEnd: number; vStart: number; vEnd: number}> = [];
+  {
+    let cumWeight = 0;
+    let prevVisual = 0;
+    for (let i = 0; i < activeMilestones.length; i++) {
+      const ms = activeMilestones[i];
+      // Sum weights for this milestone's steps
+      let msWeight = 0;
+      for (const sw of STEP_WEIGHTS) {
+        if (sw.patterns.some((pat) =>
+          ms.namePatterns.some((mp) => mp.toUpperCase().includes(pat.toUpperCase()) || pat.toUpperCase().includes(mp.toUpperCase()))
+        )) {
+          msWeight += sw.weight;
+        }
+      }
+      if (msWeight === 0) msWeight = 1; // Ensure non-zero
+      const visualEnd = i < activeMilestones.length - 1
+        ? (activeMilestones[i].position + activeMilestones[i + 1].position) / 2
+        : 92;
+      dynamicSegments.push({
+        wStart: cumWeight,
+        wEnd: cumWeight + msWeight,
+        vStart: prevVisual,
+        vEnd: visualEnd,
+      });
+      cumWeight += msWeight;
+      prevVisual = visualEnd;
+    }
+  }
+
+  const weightedProgressPct = isComplete
     ? 100
-    : TOTAL_WEIGHT > 0
-      ? weightToVisualPct(weightedCompleted + weightedRunning)
-      : 0;
+    : isTeardown
+      ? (() => {
+          const tdCompleted = phases.filter((p) => p.status === "succeeded" || p.status === "skipped").length;
+          const tdRunning = phases.filter((p) => p.status === "running").length;
+          const tdTotal = Math.max(phases.length, activeMilestones.length);
+          return ((tdCompleted + tdRunning * 0.3) / tdTotal) * 92;
+        })()
+      : dynamicSegments.length > 0
+        ? weightToVisualPct(weightedCompleted + weightedRunning, dynamicSegments)
+        : 0;
+
+  const phaseNumberMatch = currentPhase.match(/PHASE\s*(\d+)/i);
+  const currentPhaseNumber = phaseNumberMatch ? Number(phaseNumberMatch[1]) : 0;
+
+  // Build minimumVisualByPhase dynamically from active milestone positions
+  const minimumVisualByPhase: Record<number, number> = {};
+  for (const ms of activeMilestones) {
+    const pn = ms.phaseNumber;
+    if (pn) {
+      minimumVisualByPhase[pn] = ms.position + 2;
+    }
+  }
+
+  const phaseFloorPct = isTeardown ? 0 : (minimumVisualByPhase[currentPhaseNumber] ?? 0);
+  const progressPct = Math.max(weightedProgressPct, phaseFloorPct);
 
   const progressColor = (isCancelled || isFailed)
     ? tokens.colorPaletteRedForeground1
-    : isComplete
-      ? tokens.colorPaletteGreenForeground1
-      : isWaitingForHds
+    : isTeardown
       ? tokens.colorPaletteYellowForeground1
-      : tokens.colorBrandForeground1;
+      : isComplete
+        ? tokens.colorPaletteGreenForeground1
+        : isWaitingForHds
+        ? tokens.colorPaletteYellowForeground1
+        : tokens.colorBrandForeground1;
 
-  // Milestone positions tuned to match the original monitor spacing,
-  // with independent weight thresholds for actual completion logic.
-  // Visual positions: 8%, 36%, 64%, 90%
-  // Weight thresholds: when cumulative weight reaches endWeight, that milestone is done
-  const MILESTONES = [
-    { label: "Phase 1: Infra & Ingestion", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection"], position: 8, endWeight: 40 },
-    { label: "Phase 2: Enrichment & Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent"], position: 36, endWeight: 60 },
-    { label: "Phase 3: Imaging Toolkit", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer"], position: 64, endWeight: 70 },
-    { label: "Phase 4: Ontology & Activator", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex"], position: 90, endWeight: 80 },
-  ];
+  function getMilestoneStatus(ms: MilestoneDef): "done" | "active" | "waiting" | "pending" | "cancelled" {
+    if (isTeardown) {
+      // For teardown: match phases by namePatterns against the teardown phase names
+      const matchedPhases = phases.filter((p) =>
+        ms.namePatterns.some((pat) => p.phase.toUpperCase().includes(pat.toUpperCase()))
+      );
+      if (matchedPhases.length === 0) return "pending";
+      const allDone = matchedPhases.every((p) => p.status === "succeeded" || p.status === "skipped");
+      if (allDone) return "done";
+      const anyRunning = matchedPhases.some((p) => p.status === "running");
+      if (anyRunning) return "active";
+      return "pending";
+    }
 
-  function getMilestoneStatus(ms: typeof MILESTONES[0]): "done" | "active" | "waiting" | "pending" | "cancelled" {
     if (isMock) {
       // Mock mode: use array indices
       const relevantPhases = ms.phaseIndices.map((i) => phases[i]).filter(Boolean);
@@ -576,22 +731,33 @@ export function PhaseMonitor() {
       return "pending";
     }
 
-    // Real mode: a milestone is "done" only when the progress bar has passed its position
-    // This prevents lighting up a milestone while still executing steps within it
-    const doneWeight = weightedCompleted;
-    if (doneWeight >= ms.endWeight) return "done";
+    const milestoneIndex = activeMilestones.findIndex((m) => m.label === ms.label);
 
-    // Check for HDS waiting gate
+    // Phase-number progression from backend is authoritative for milestone transitions.
+    const msPhaseNumber = ms.phaseNumber ?? 0;
+    if (currentPhaseNumber > 0 && msPhaseNumber > 0) {
+      if (currentPhaseNumber > msPhaseNumber) return "done";
+      if (currentPhaseNumber === msPhaseNumber && isRunning) return "active";
+    }
+
+    // Real mode fallback: check if all phases matching this milestone are done.
     const matchedPhases = phases.filter((p) =>
       ms.namePatterns.some((pat) => p.phase.toUpperCase().includes(pat.toUpperCase()))
     );
+    const allDone = matchedPhases.length > 0 && matchedPhases.every((p) => p.status === "succeeded" || p.status === "skipped");
+    if (allDone) return "done";
+
+    // Weight-based fallback: find the dynamic segment for this milestone
+    if (milestoneIndex >= 0 && milestoneIndex < dynamicSegments.length) {
+      if (weightedCompleted >= dynamicSegments[milestoneIndex].wEnd) return "done";
+    }
     const hasWaiting = matchedPhases.some((p) => p.status === "waiting_for_input");
     if (hasWaiting) return "waiting";
 
-    // If cancelled/failed and we haven't reached this milestone
-    if ((isCancelled || isFailed) && doneWeight < ms.endWeight) {
-      // If any steps in this milestone ran, show as cancelled; otherwise pending
-      return matchedPhases.length > 0 ? "cancelled" : "pending";
+    // If cancelled/failed, check if this milestone had any activity
+    if (isCancelled || isFailed) {
+      const anyRan = matchedPhases.some((p) => p.status !== "pending");
+      return anyRan ? "cancelled" : "pending";
     }
 
     return "pending";
@@ -616,16 +782,24 @@ export function PhaseMonitor() {
     }
   }
   // Compute milestone-level counts for the pill (4 phases, not 12 steps)
-  const milestoneStatuses = MILESTONES.map((ms) => getMilestoneStatus(ms));
-  const milestonesDone = milestoneStatuses.filter((s) => s === "done").length;
-  const totalMilestones = MILESTONES.length;
+  const milestoneStatuses = activeMilestones.map((ms: MilestoneDef) => getMilestoneStatus(ms));
+  const milestonesDone = milestoneStatuses.filter((s: string) => s === "done").length;
+  const totalMilestones = activeMilestones.length;
   return (
     <div>
       <div className={styles.header}>
         <div>
-          <Title2>Deployment Monitor</Title2>
-          <Text size={200} block>
-            Instance: {instanceId}
+          <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS }}>
+            <Button
+              appearance="subtle"
+              icon={<ArrowLeftRegular />}
+              onClick={() => navigate("/history")}
+              size="small"
+            />
+            <Title2>{isTeardown ? "Teardown Monitor" : "Deployment Monitor"}</Title2>
+          </div>
+          <Text size={200} block style={{ marginLeft: 36 }}>
+            {instanceId}
             {isMock && (
               <Badge color="informative" style={{ marginLeft: 8 }}>
                 Mock Mode
@@ -636,11 +810,11 @@ export function PhaseMonitor() {
 
         <div className={styles.actions}>
           <Badge
-            color={isCancelled ? "warning" : isFailed ? "danger" : isComplete ? "success" : isRunning ? "informative" : "subtle"}
+            color={isCancelled ? "warning" : isFailed ? "danger" : isComplete ? (isTeardown ? "warning" : "success") : isRunning ? "informative" : "subtle"}
             size="large"
           >
             {milestonesDone}/{totalMilestones} phases{" "}
-            {isCancelled ? "cancelled" : isComplete ? "complete" : ""}{" "}
+            {isCancelled ? "cancelled" : isComplete ? (isTeardown ? "torn down" : "complete") : ""}{" "}
             {elapsedFormatted && `(${elapsedFormatted})`}
           </Badge>
           {isRunning && (
@@ -670,7 +844,7 @@ export function PhaseMonitor() {
       </div>
 
       {/* Milestone progress track */}
-      <div className={styles.progressSection}>
+      <div className={styles.progressSection} style={isTeardown ? { boxShadow: `${tokens.shadow8}, 0 0 12px rgba(255, 185, 0, 0.25)` } : undefined}>
         <div className={styles.milestoneTrack}>
           {/* Background track line */}
           <div className={styles.trackLine} />
@@ -683,7 +857,7 @@ export function PhaseMonitor() {
             }}
           />
           {/* Milestone nodes */}
-          {MILESTONES.map((ms) => {
+          {activeMilestones.map((ms) => {
             const msStatus = getMilestoneStatus(ms);
             return (
               <div
@@ -691,26 +865,33 @@ export function PhaseMonitor() {
                 className={styles.milestoneContainer}
                 style={{ left: `${ms.position}%` }}
               >
-                {/* Callout label above done milestone */}
-                {msStatus === "done" && (
-                  <div className={styles.milestoneCallout}>
-                    {ms.label}
-                    <div className={styles.milestoneCalloutArrow} />
-                  </div>
-                )}
                 {/* Dot */}
                 <div
                   className={`${styles.milestoneDot} ${getDotClass(msStatus)}`}
+                  style={isTeardown && msStatus === "done"
+                    ? { backgroundColor: tokens.colorPaletteYellowForeground1, boxShadow: `0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 6px rgba(255, 185, 0, 0.35), ${tokens.shadow4}` }
+                    : isTeardown && msStatus === "active"
+                      ? { backgroundColor: tokens.colorPaletteYellowForeground1, boxShadow: `0 0 0 3px rgba(255, 185, 0, 0.3), ${tokens.shadow4}` }
+                      : undefined
+                  }
                 >
                   {getDotContent(msStatus)}
                 </div>
                 {/* Label below */}
                 <span
                   className={`${styles.milestoneLabel} ${
-                    msStatus === "done" || msStatus === "waiting"
+                    msStatus === "done"
+                      ? styles.milestoneLabelDone
+                      : msStatus === "waiting"
                       ? styles.milestoneLabelActive
                       : ""
                   }`}
+                  style={isTeardown && msStatus === "done"
+                    ? { backgroundColor: tokens.colorPaletteYellowForeground1, color: tokens.colorNeutralForeground1 }
+                    : isTeardown && msStatus === "active"
+                      ? { color: tokens.colorPaletteYellowForeground1 }
+                      : undefined
+                  }
                 >
                   {ms.label}
                 </span>
@@ -721,7 +902,7 @@ export function PhaseMonitor() {
         <div className={styles.progressSummary}>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {milestonesDone}/{totalMilestones} phases
-            {isComplete ? " complete" : ""}
+            {isComplete ? (isTeardown ? " torn down" : " complete") : ""}
             {isRunning && currentPhase ? ` · ${currentPhase}` : ""}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
@@ -755,190 +936,64 @@ export function PhaseMonitor() {
         </div>
       )}
 
+      {/* Log view toggle */}
+      {backendLogs && backendLogs.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: tokens.spacingVerticalS }}>
+          <Tooltip
+            content={showAllLogs ? "Show logs grouped by phase" : "Show all logs in a single stream"}
+            relationship="label"
+          >
+            <Button
+              appearance={showAllLogs ? "primary" : "outline"}
+              icon={<TextBulletListRegular />}
+              onClick={() => setShowAllLogs((v) => !v)}
+              size="small"
+            >
+              {showAllLogs ? "Viewing: All Logs" : "View: All Logs"}
+            </Button>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* All Logs stream view */}
+      {showAllLogs && backendLogs && backendLogs.length > 0 && (
+        <AllLogsStream logs={backendLogs} />
+      )}
+
       {/* Phase Cards with logs */}
+      {!showAllLogs && (
       <div className={styles.phases}>
-        {phases.map((phase) => (
-          <PhaseCard
-            key={phase.phase}
-            phase={phase}
-            logs={
-              isMock
-                ? (mockPhaseLogs.get(phase.phase) ?? [])
-                : ((backendLogs ?? []) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>)
-            }
-            autoScroll={autoScroll}
-          />
-        ))}
+        {phases.map((phase) => {
+          // Route logs to the correct phase card based on majorPhase tag
+          const phaseMajor = (phase as unknown as Record<string, unknown>).majorPhase as number | undefined;
+          const filteredLogs = isMock
+            ? (mockPhaseLogs.get(phase.phase) ?? [])
+            : phaseMajor != null && backendLogs
+              ? backendLogs.filter((l) => l.phase === phaseMajor) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>
+              : (backendLogs ?? []) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>;
+
+          return (
+            <PhaseCard
+              key={phase.phase}
+              phase={phase}
+              logs={filteredLogs}
+              autoScroll={autoScroll}
+            />
+          );
+        })}
       </div>
+      )}
 
       {/* Deployed Resources */}
       {(isComplete || completedCount > 0) && !isMock && (
-        <Card className={styles.resources}>
-          <CardHeader header={<Subtitle1>Deployed Resources</Subtitle1>} />
-
-          {resourcesLoading && !deployedResources && (
-            <div className={styles.resourceLoading}>
-              <span style={{ display: "inline-block" }}>⟳</span>
-              <Text size={200}>Scanning Azure &amp; Fabric APIs…</Text>
-            </div>
-          )}
-
-          {!resourcesLoading && !deployedResources && (
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3, padding: tokens.spacingVerticalS, display: "block" }}>
-              Restart the backend server to enable live resource scanning.
-            </Text>
-          )}
-
-          {deployedResources && (
-            <>
-              {/* Fabric Workspace */}
-              {deployedResources.workspace && (
-                <div className={styles.resourceSection}>
-                  <div
-                    className={styles.resourceSectionHeader}
-                    onClick={() => setFabricExpanded((v) => !v)}
-                    style={{ cursor: "pointer", userSelect: "none" }}
-                  >
-                    <Badge color="brand" size="small">Fabric</Badge>
-                    <Text weight="semibold" size={300}>
-                      Workspace: {deployedResources.workspace.name}
-                    </Text>
-                    <Badge color="subtle" size="small">{deployedResources.fabric.length} items</Badge>
-                    <Button
-                      as="a"
-                      appearance="subtle"
-                      icon={<OpenRegular />}
-                      size="small"
-                      href={deployedResources.workspace.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                    >
-                      Open in Fabric
-                    </Button>
-                    <Button
-                      appearance="subtle"
-                      icon={fabricExpanded ? <ChevronUpRegular /> : <ChevronDownRegular />}
-                      size="small"
-                      onClick={(e) => { e.stopPropagation(); setFabricExpanded((v) => !v); }}
-                      style={{ marginLeft: "auto" }}
-                    />
-                  </div>
-                  {fabricExpanded && deployedResources.fabric.length > 0 && (
-                    <table className={styles.resourceTable}>
-                      <thead>
-                        <tr>
-                          <th className={styles.resourceCell} style={{ textAlign: "left", color: tokens.colorNeutralForeground3 }}>Name</th>
-                          <th className={styles.resourceCell} style={{ textAlign: "left", color: tokens.colorNeutralForeground3 }}>Type</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {deployedResources.fabric.map((item) => (
-                          <tr key={item.id} className={styles.resourceRow}>
-                            <td className={styles.resourceCell}>
-                              <Text size={200}>{item.name}</Text>
-                            </td>
-                            <td className={styles.resourceCell}>
-                              <span className={styles.resourceType}>{item.type}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                  {fabricExpanded && deployedResources.fabric.length === 0 && (
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3, padding: tokens.spacingVerticalS }}>
-                      No Fabric items found yet
-                    </Text>
-                  )}
-                </div>
-              )}
-
-              {/* Azure Resources */}
-              {deployedResources.azure.length > 0 && (
-                <div className={styles.resourceSection}>
-                  <div
-                    className={styles.resourceSectionHeader}
-                    onClick={() => setAzureExpanded((v) => !v)}
-                    style={{ cursor: "pointer", userSelect: "none" }}
-                  >
-                    <Badge color="informative" size="small">Azure</Badge>
-                    <Text weight="semibold" size={300}>
-                      Resource Group: {status?.customStatus?.resourceGroupName || ""}
-                    </Text>
-                    <Badge color="subtle" size="small">{deployedResources.azure.length} resources</Badge>
-                    <Button
-                      as="a"
-                      appearance="subtle"
-                      icon={<OpenRegular />}
-                      size="small"
-                      href={`https://portal.azure.com/#@/resource/subscriptions//resourceGroups/${status?.customStatus?.resourceGroupName || ""}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                    >
-                      Open in Azure
-                    </Button>
-                    <Button
-                      appearance="subtle"
-                      icon={azureExpanded ? <ChevronUpRegular /> : <ChevronDownRegular />}
-                      size="small"
-                      onClick={(e) => { e.stopPropagation(); setAzureExpanded((v) => !v); }}
-                      style={{ marginLeft: "auto" }}
-                    />
-                  </div>
-                  {azureExpanded && (
-                  <table className={styles.resourceTable}>
-                    <thead>
-                      <tr>
-                        <th className={styles.resourceCell} style={{ textAlign: "left", color: tokens.colorNeutralForeground3 }}>Name</th>
-                        <th className={styles.resourceCell} style={{ textAlign: "left", color: tokens.colorNeutralForeground3 }}>Type</th>
-                        <th className={styles.resourceCell} style={{ textAlign: "left", color: tokens.colorNeutralForeground3 }}>Location</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deployedResources.azure.map((r) => (
-                        <tr key={r.id} className={styles.resourceRow}>
-                          <td className={styles.resourceCell}>
-                            <Text size={200}>{r.name}</Text>
-                          </td>
-                          <td className={styles.resourceCell}>
-                            <span className={styles.resourceType}>{r.type}</span>
-                          </td>
-                          <td className={styles.resourceCell}>
-                            <span className={styles.resourceType}>{r.location}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  )}
-                </div>
-              )}
-
-              {/* Nothing found at all */}
-              {!deployedResources.workspace && deployedResources.azure.length === 0 && (
-                <Text size={200} style={{ color: tokens.colorNeutralForeground3, padding: tokens.spacingVerticalS }}>
-                  No deployed resources detected yet
-                </Text>
-              )}
-            </>
-          )}
-        </Card>
-      )}
-
-      {/* Floating cancel button - bottom left */}
-      {isRunning && (
-        <Button
-          className={styles.floatingCancelBtn}
-          appearance="outline"
-          icon={<DismissRegular />}
-          onClick={handleCancel}
-          size="medium"
-          style={{ color: tokens.colorPaletteRedForeground1, border: `1px solid ${tokens.colorPaletteRedForeground1}` }}
-        >
-          Cancel Deployment
-        </Button>
+        <DeployedResourcesPanel
+          deployedResources={deployedResources}
+          resourcesLoading={resourcesLoading}
+          resourceGroupName={status?.customStatus?.resourceGroupName as string || ""}
+          azurePortalUrl={(status?.customStatus as Record<string, unknown>)?.links
+            ? ((status?.customStatus as Record<string, unknown>)?.links as Record<string, string>)?.azurePortal
+            : undefined}
+        />
       )}
 
       {/* Floating redeploy button - bottom left (shown on failure/cancel) */}

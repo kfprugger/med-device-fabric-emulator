@@ -262,7 +262,7 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONLEGACYWINDOWSSTDIO = "0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $acrBuildErrLog = Join-Path $env:TEMP ("acr-build-" + [Guid]::NewGuid().ToString() + ".log")
-$acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --only-show-errors 2>$acrBuildErrLog
+$acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --no-logs 2>$acrBuildErrLog
 $acrBuildExitCode = $LASTEXITCODE
 $acrBuildOutput | ForEach-Object {
     $line = $_ -replace '[^\x20-\x7E]', ''

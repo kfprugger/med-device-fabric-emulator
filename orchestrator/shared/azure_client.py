@@ -173,7 +173,7 @@ class AzureClient:
         full_image = f"{image_name}:{image_tag}"
         logger.info("Building image %s in ACR %s…", full_image, acr_name)
 
-        subprocess.run(
+        result = subprocess.run(
             [
                 "az",
                 "acr",
@@ -183,13 +183,30 @@ class AzureClient:
                 "--image",
                 full_image,
                 docker_context_path,
-                "--only-show-errors",
+                "--no-logs",
             ],
-            check=True,
-            # Fix Windows encoding (from deploy.ps1 pattern)
-            env={**__import__("os").environ, "PYTHONUTF8": "1"},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
             shell=(sys.platform == "win32"),
         )
+
+        if result.returncode != 0:
+            logger.warning("ACR build returned exit code %d, checking if image exists...", result.returncode)
+            # Fallback: check if image was actually built despite the exit code
+            tag_check = subprocess.run(
+                ["az", "acr", "repository", "show-tags", "--name", acr_name,
+                 "--repository", image_name, "--query", "contains(@, '" + image_tag + "')", "-o", "tsv"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                shell=(sys.platform == "win32"),
+            )
+            if tag_check.stdout.strip().lower() == "true":
+                logger.info("Image %s exists in ACR despite build error \u2014 continuing", full_image)
+            else:
+                logger.error("Image %s NOT found in ACR \u2014 build failed. stderr: %s", full_image, result.stderr[:500])
+                raise RuntimeError(f"ACR build failed for {full_image}: {result.stderr[:500]}")
 
         login_server = f"{acr_name}.azurecr.io"
         return f"{login_server}/{full_image}"

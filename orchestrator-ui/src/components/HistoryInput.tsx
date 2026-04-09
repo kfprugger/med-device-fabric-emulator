@@ -16,7 +16,7 @@ const useStyles = makeStyles({
     top: "100%",
     left: 0,
     right: 0,
-    zIndex: 100,
+    zIndex: 1000,
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: tokens.borderRadiusMedium,

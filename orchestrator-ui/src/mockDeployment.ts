@@ -557,6 +557,7 @@ export interface TeardownCandidate {
   expectedCount?: number;
   matchedArtifacts?: string[];
   subscription?: string;
+  qualified?: boolean;
 }
 
 const MOCK_SUBSCRIPTIONS: MockSubscription[] = [

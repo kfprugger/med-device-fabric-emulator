@@ -10,3 +10,5 @@ azure-storage-blob>=12.19.0
 azure-kusto-data>=4.4.0
 requests>=2.31.0
 pydantic>=2.6.0
+fastapi>=0.115.0
+uvicorn>=0.30.0

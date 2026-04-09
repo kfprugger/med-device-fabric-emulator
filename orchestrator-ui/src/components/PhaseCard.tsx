@@ -17,6 +17,7 @@ import {
   PauseCircleRegular,
   ChevronDownRegular,
   ChevronUpRegular,
+  WarningFilled,
 } from "@fluentui/react-icons";
 import type { PhaseInfo } from "../api";
 import type { PhaseLog } from "../mockDeployment";
@@ -78,9 +79,19 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground4,
     fontStyle: "italic",
   },
+  warningBanner: {
+    backgroundColor: tokens.colorStatusWarningBackground1,
+    borderLeft: `3px solid ${tokens.colorPaletteYellowForeground1}`,
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground1,
+  },
 });
 
-function statusIcon(status: string) {
+function statusIcon(status: string, hasWarnings?: boolean) {
+  if (status === "succeeded" && hasWarnings) {
+    return <WarningFilled color={tokens.colorPaletteYellowForeground1} />;
+  }
   switch (status) {
     case "succeeded":
       return <CheckmarkCircleFilled color={tokens.colorPaletteGreenForeground1} />;
@@ -97,7 +108,10 @@ function statusIcon(status: string) {
   }
 }
 
-function statusBadge(status: string) {
+function statusBadge(status: string, hasWarnings?: boolean) {
+  if (status === "succeeded" && hasWarnings) {
+    return <Badge color="warning">warnings</Badge>;
+  }
   const colorMap: Record<string, "success" | "danger" | "informative" | "warning" | "subtle"> = {
     succeeded: "success",
     failed: "danger",
@@ -168,13 +182,16 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   const styles = useStyles();
   const tooltip = PHASE_TOOLTIPS[phase.phase] || phase.phase;
   const isActive = phase.status === "running" || phase.status === "waiting_for_input";
+  const hasWarnings = (phase.warnings?.length ?? 0) > 0;
   const [expanded, setExpanded] = useState(defaultExpanded ?? isActive);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-expand when phase becomes active
+  const [userCollapsed, setUserCollapsed] = useState(false);
+
   useEffect(() => {
-    if (isActive) setExpanded(true);
-  }, [isActive]);
+    if (isActive && !userCollapsed) setExpanded(true);
+  }, [isActive, userCollapsed]);
 
   // Auto-scroll logs to bottom (respects autoScroll prop)
   useEffect(() => {
@@ -206,14 +223,14 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
       <Card
         className={`${styles.card} ${isActive ? styles.cardActive : ""}`}
         size="small"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => { setExpanded((v) => !v); if (expanded) setUserCollapsed(true); }}
       >
         <CardHeader
-          image={statusIcon(phase.status)}
+          image={statusIcon(phase.status, hasWarnings)}
           header={
             <div className={styles.row}>
               <Text weight="semibold">{phase.phase}</Text>
-              {statusBadge(phase.status)}
+              {statusBadge(phase.status, hasWarnings)}
               <Text className={styles.duration} size={200}>
                 {formatDuration(phase.duration)}
               </Text>
@@ -224,6 +241,13 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
           }
         />
         {phase.status === "running" && <ProgressBar />}
+        {expanded && hasWarnings && (
+          <div className={styles.warningBanner}>
+            {phase.warnings!.map((w, i) => (
+              <div key={i}>⚠ {w}</div>
+            ))}
+          </div>
+        )}
         {expanded && (
           <div className={styles.logPanel}>
             {logs.length === 0 && (

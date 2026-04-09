@@ -20,6 +20,7 @@ export interface DeploymentConfig {
   capacity_resource_group: string;
   capacity_name: string;
   pause_capacity_after_deploy: boolean;
+  reuse_patients: boolean;
 }
 
 export interface DeploymentStatus {
@@ -48,6 +49,7 @@ export interface PhaseInfo {
   phase: string;
   status: string;
   duration?: number;
+  warnings?: string[];
 }
 
 export interface DeploymentSummary {
@@ -151,6 +153,36 @@ export async function clearAllDeployments(): Promise<void> {
     method: "POST",
   });
   if (!resp.ok) throw new Error("Failed to clear");
+}
+
+export interface ExistingDeploymentInfo {
+  found: boolean;
+  instanceId: string;
+  createdTime: string;
+  workspaceName: string;
+  resourceGroupName: string;
+  configuredPatientCount: number;
+  fhirPatientCount: number;
+  fhirDeviceCount: number;
+  exportedFiles: number;
+  dicomStudies: number;
+  emulatorRunning: boolean;
+  emulatorDeviceCount?: number;
+  azureRgExists: boolean;
+  priorConfig?: Partial<DeploymentConfig>;
+}
+
+export async function checkExistingDeployment(
+  workspaceName: string,
+  resourceGroup: string,
+): Promise<ExistingDeploymentInfo | null> {
+  const params = new URLSearchParams();
+  if (workspaceName) params.set("workspace_name", workspaceName);
+  if (resourceGroup) params.set("resource_group", resourceGroup);
+  const resp = await fetch(`${API_BASE}/deploy/check-existing?${params}`);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data?.found ? data : null;
 }
 
 // ── Fabric Capacity API ───────────────────────────────────────────────

@@ -195,7 +195,7 @@ export function Layout() {
           </a>
           <div className={styles.iconDivider} />
           <a
-            href="https://github.com/yourrepo/med-device-fabric-emulator"
+            href="https://github.com/kfprugger/med-device-fabric-emulator"
             target="_blank"
             rel="noopener noreferrer"
             className={styles.iconPill}
@@ -240,7 +240,7 @@ export function Layout() {
         <Text size={200}>Medical Device FHIR Integration Platform</Text>
         <span className={styles.iconDivider} />
         <a
-          href="https://github.com/yourrepo/med-device-fabric-emulator"
+          href="https://github.com/kfprugger/med-device-fabric-emulator"
           target="_blank"
           rel="noopener noreferrer"
           className={styles.footerLink}

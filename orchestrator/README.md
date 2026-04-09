@@ -21,6 +21,34 @@ pip install -r requirements.txt
 func start
 ```
 
+## First-Time Full Stack Setup (Backend + UI)
+
+Use this once on a fresh clone to ensure all local dependencies are installed before running either app:
+
+```bash
+# Backend API dependencies
+cd orchestrator
+python -m venv .venv
+.venv\Scripts\activate      # Windows
+pip install -r requirements.txt
+
+# Frontend UI dependencies
+cd ..\orchestrator-ui
+npm install
+```
+
+Then run:
+
+```bash
+# Terminal 1
+cd orchestrator
+.venv\Scripts\python local_server.py
+
+# Terminal 2
+cd orchestrator-ui
+npm run dev
+```
+
 ## Runtime Database Files
 
 The orchestrator uses a local SQLite database under `orchestrator/shared/` at runtime.

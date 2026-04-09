@@ -96,12 +96,12 @@ const useStyles = makeStyles({
   },
   dotRunning: {
     backgroundColor: tokens.colorPaletteRedForeground1,
-    color: "white",
+    color: tokens.colorNeutralForegroundOnBrand,
     boxShadow: `0 0 0 3px ${tokens.colorPaletteRedBackground1}, ${tokens.shadow4}`,
   },
   dotDeleted: {
     backgroundColor: tokens.colorPaletteRedForeground1,
-    color: "white",
+    color: tokens.colorNeutralForegroundOnBrand,
   },
   dotSkipped: {
     backgroundColor: tokens.colorNeutralStroke2,
@@ -131,7 +131,7 @@ const useStyles = makeStyles({
     lineHeight: "1.6",
   },
   logInfo: { color: tokens.colorNeutralForeground2 },
-  logSuccess: { color: tokens.colorPaletteRedForeground1 },
+  logSuccess: { color: tokens.colorPaletteGreenForeground1 },
   statusRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -200,10 +200,10 @@ function TeardownInstanceCard({ instance, onDismiss }: { instance: TeardownInsta
       <CardHeader
         image={
           instance.status === "completed"
-            ? <DismissCircleFilled color={tokens.colorPaletteRedForeground1} fontSize={24} />
+            ? <CheckmarkCircleFilled color={tokens.colorPaletteGreenForeground1} fontSize={24} />
             : instance.status === "running"
               ? <ArrowSyncCircleRegular color={tokens.colorPaletteRedForeground1} fontSize={24} />
-              : <CheckmarkCircleFilled color={tokens.colorPaletteGreenForeground1} fontSize={24} />
+              : <DismissCircleFilled color={tokens.colorPaletteRedForeground1} fontSize={24} />
         }
         header={
           <div className={styles.headerRow}>

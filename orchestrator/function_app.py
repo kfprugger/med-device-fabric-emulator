@@ -210,8 +210,8 @@ async def list_deployments(req: func.HttpRequest, client: df.DurableOrchestratio
 # ═══════════════════════════════════════════════════════════════════════
 
 
-@app.orchestration_trigger(context_name="ctx")
-def deploy_all_orchestrator(ctx):
+@app.orchestration_trigger(context_name="context")
+def deploy_all_orchestrator(context):
     """Main deployment orchestrator — maps to Deploy-All.ps1.
 
     Phase sequence:
@@ -226,12 +226,12 @@ def deploy_all_orchestrator(ctx):
       5. Data Agents (deploy-data-agents.ps1)
       6. Ontology (deploy-ontology.ps1)
     """
-    config: dict = ctx.get_input()
+    config: dict = context.get_input()
     resources: dict = {}
     phases: list[dict] = []
 
     def update_status(phase_name: str, status: str, detail: str = ""):
-        ctx.set_custom_status({
+        context.set_custom_status({
             "currentPhase": phase_name,
             "status": status,
             "detail": detail,
@@ -243,7 +243,7 @@ def deploy_all_orchestrator(ctx):
     # ── Phase 1: Base Azure Infrastructure ─────────────────────────
     if not config.get("skip_base_infra"):
         update_status("Phase 1: Base Azure Infrastructure", "running")
-        result = yield ctx.call_activity_with_retry(
+        result = yield context.call_activity_with_retry(
             "activity_deploy_azure_infra", RETRY_POLICY, config
         )
         resources.update(result.get("resources", {}))
@@ -253,7 +253,7 @@ def deploy_all_orchestrator(ctx):
 
     # ── Phase 1b: Fabric Workspace ─────────────────────────────────
     update_status("Phase 1b: Fabric Workspace", "running")
-    result = yield ctx.call_activity_with_retry(
+    result = yield context.call_activity_with_retry(
         "activity_provision_workspace", RETRY_POLICY, config
     )
     resources.update(result.get("resources", {}))
@@ -263,7 +263,7 @@ def deploy_all_orchestrator(ctx):
     if not config.get("skip_fhir"):
         update_status("Phase 2: FHIR Service & Data Loading", "running")
         phase2_input = {"config": config, "resources": resources}
-        result = yield ctx.call_activity_with_retry(
+        result = yield context.call_activity_with_retry(
             "activity_deploy_fhir", RETRY_POLICY, phase2_input
         )
         resources.update(result.get("resources", {}))
@@ -275,7 +275,7 @@ def deploy_all_orchestrator(ctx):
     if not config.get("skip_dicom"):
         update_status("Phase 2b: DICOM Infrastructure & Loading", "running")
         phase2b_input = {"config": config, "resources": resources}
-        result = yield ctx.call_activity_with_retry(
+        result = yield context.call_activity_with_retry(
             "activity_deploy_dicom", RETRY_POLICY, phase2b_input
         )
         resources.update(result.get("resources", {}))
@@ -287,7 +287,7 @@ def deploy_all_orchestrator(ctx):
     if not config.get("skip_fabric"):
         update_status("Phase 3: Fabric RTI Phase 1", "running")
         phase3_input = {"config": config, "resources": resources}
-        result = yield ctx.call_activity_with_retry(
+        result = yield context.call_activity_with_retry(
             "activity_deploy_fabric_rti", RETRY_POLICY, phase3_input
         )
         resources.update(result.get("resources", {}))
@@ -299,7 +299,7 @@ def deploy_all_orchestrator(ctx):
                   "install scipy in the environment, then click 'Continue' in the dashboard.")
 
     # Wait up to 24 hours for the user to deploy HDS and resume
-    hds_event = yield ctx.wait_for_external_event("hds_deployed", timedelta(hours=24))
+    hds_event = yield context.wait_for_external_event("hds_deployed", timedelta(hours=24))
 
     if not hds_event:
         # Timeout — mark as waiting and return partial results
@@ -315,7 +315,7 @@ def deploy_all_orchestrator(ctx):
     # ── Phase 4: Fabric RTI Phase 2 ───────────────────────────────
     update_status("Phase 4: Fabric RTI Phase 2", "running")
     phase4_input = {"config": config, "resources": resources}
-    result = yield ctx.call_activity_with_retry(
+    result = yield context.call_activity_with_retry(
         "activity_deploy_rti_phase2", RETRY_POLICY, phase4_input
     )
     resources.update(result.get("resources", {}))
@@ -324,7 +324,7 @@ def deploy_all_orchestrator(ctx):
     # ── Phase 4b: HDS Pipeline Triggers ───────────────────────────
     update_status("Phase 4b: HDS Pipeline Triggers", "running")
     phase4b_input = {"config": config, "resources": resources}
-    result = yield ctx.call_activity_with_retry(
+    result = yield context.call_activity_with_retry(
         "activity_deploy_hds_pipelines", RETRY_POLICY, phase4b_input
     )
     resources.update(result.get("resources", {}))
@@ -333,7 +333,7 @@ def deploy_all_orchestrator(ctx):
     # ── Phase 5: Data Agents ──────────────────────────────────────
     update_status("Phase 5: Data Agents", "running")
     phase5_input = {"config": config, "resources": resources}
-    result = yield ctx.call_activity_with_retry(
+    result = yield context.call_activity_with_retry(
         "activity_deploy_data_agents", RETRY_POLICY, phase5_input
     )
     resources.update(result.get("resources", {}))
@@ -342,7 +342,7 @@ def deploy_all_orchestrator(ctx):
     # ── Phase 6: Ontology ─────────────────────────────────────────
     update_status("Phase 6: Ontology", "running")
     phase6_input = {"config": config, "resources": resources}
-    result = yield ctx.call_activity_with_retry(
+    result = yield context.call_activity_with_retry(
         "activity_deploy_ontology", RETRY_POLICY, phase6_input
     )
     resources.update(result.get("resources", {}))
@@ -358,16 +358,16 @@ def deploy_all_orchestrator(ctx):
     }
 
 
-@app.orchestration_trigger(context_name="ctx")
-def teardown_orchestrator(ctx):
+@app.orchestration_trigger(context_name="context")
+def teardown_orchestrator(context):
     """Teardown orchestrator — maps to Remove-AllResources.ps1."""
-    config = ctx.get_input()
+    config = context.get_input()
 
-    ctx.set_custom_status({"currentPhase": "Teardown", "status": "running"})
+    context.set_custom_status({"currentPhase": "Teardown", "status": "running"})
 
-    result = yield ctx.call_activity("activity_teardown", config)
+    result = yield context.call_activity("activity_teardown", config)
 
-    ctx.set_custom_status({"currentPhase": "Teardown", "status": "succeeded"})
+    context.set_custom_status({"currentPhase": "Teardown", "status": "succeeded"})
 
     return result
 

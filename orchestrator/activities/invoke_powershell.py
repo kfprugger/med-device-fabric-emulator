@@ -32,7 +32,22 @@ PREFLIGHT_SCRIPT = SCRIPT_DIR / "Preflight-Check.ps1"
 # Sub-steps from deploy.ps1 use dashes: --- STEP N: TITLE ---
 STEP_BANNER_RE = re.compile(r"^\|\s+STEP\s+(\d+):\s+(.+?)\s*\|$")
 # Step results: ✓/✗ (or û/Ã— on Windows encoding) followed by name and duration
-STEP_RESULT_RE = re.compile(r"[✓✗û]\s+(.+?)\s+[-—]\s+(.+)")
+# Duration must look like "X.X min", just "—", or be empty (to avoid matching arbitrary error messages)
+STEP_RESULT_RE = re.compile(r"[✓✗û]\s+(.+?)\s+[-—]\s+(\d+\.?\d*\s*min|—)")
+# Fallback: summary lines use space-padded names with duration at end (no dash separator)
+STEP_SUMMARY_RE = re.compile(r"[✓✗û]\s+(.+?)\s{2,}(\d+\.?\d*\s*min|—)")
+# Phase transition marker: @@PHASE|<number>|<label>|<stepCount>@@
+PHASE_TRANSITION_RE = re.compile(r"@@PHASE\|(\d+)\|(.+?)\|(\d+)@@")
+
+# HDS pipeline sub-step names (failures here are warnings, not hard failures)
+HDS_PIPELINE_SUBSTEPS = {"Imaging Pipeline", "Clinical Pipeline", "OMOP Pipeline"}
+# Regex to detect HDS pipeline warning/failure lines from PowerShell
+HDS_PIPELINE_WARN_RE = re.compile(
+    r"⚠.*(?:pipeline|Pipeline).*(?:Failed|FAILED|Cancelled|TIMEOUT|did not complete|SKIPPED)"
+    r"|(?:pipeline|Pipeline).*(?:FAILED|Failed|Cancelled)"
+    r"|SKIPPING OMOP pipeline",
+    re.IGNORECASE,
+)
 
 # Callback type for step events
 StepCallback = Any
@@ -174,6 +189,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipDicom")
         if config.get("skip_fabric"):
             params.append("-SkipFabric")
+        if config.get("reuse_patients"):
+            params.append("-ReusePatients")
         if config.get("phase2_only"):
             params.append("-Phase2")
         if config.get("phase3_only"):
@@ -245,6 +262,7 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     """Run a PowerShell command, streaming stdout/stderr to the logger.
 
     Parses step markers from Deploy-All.ps1 output:
+    - Phase:  @@PHASE|N|Label|StepCount@@ → phase_transition event
     - Banner: |  STEP N: TITLE  | → step_start event
     - Result: ✓  StepName — X.X min → step_succeeded event
     - Result: ✗  StepName — X.X min → step_failed event
@@ -252,6 +270,9 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     Returns the exit code.
     """
     logger.info("$ %s", " ".join(args))
+
+    current_phase = 0
+    current_phase_label = ""
 
     process = subprocess.Popen(
         args,
@@ -274,6 +295,17 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
         if not line:
             continue
 
+        # Parse phase transition: @@PHASE|N|Label|StepCount@@
+        phase_match = PHASE_TRANSITION_RE.search(line)
+        if phase_match:
+            current_phase = int(phase_match.group(1))
+            current_phase_label = phase_match.group(2)
+            step_count = int(phase_match.group(3))
+            logger.info("Phase transition → Phase %d: %s (%d steps)", current_phase, current_phase_label, step_count)
+            if step_callback:
+                step_callback("phase_transition", f"PHASE {current_phase}: {current_phase_label}", str(step_count), "")
+            continue
+
         # Parse step banner: |  STEP N: TITLE  | (main Deploy-All.ps1 steps only)
         banner_match = STEP_BANNER_RE.match(line.strip())
         if banner_match:
@@ -285,19 +317,34 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
             continue
 
         # Parse step result: ✓/✗/û  StepName - Duration
-        result_match = STEP_RESULT_RE.search(line)
+        result_match = STEP_RESULT_RE.search(line) or STEP_SUMMARY_RE.search(line)
         if result_match:
             step_name = result_match.group(1).strip()
             duration = result_match.group(2).strip()
             # Determine success/failure from the line content
             is_success = "\u2713" in line or "\u00fb" in line  # ✓ or û
-            event = "step_succeeded" if is_success else "step_failed"
+            if is_success:
+                event = "step_succeeded"
+            elif step_name in HDS_PIPELINE_SUBSTEPS:
+                # HDS pipeline sub-step failures are warnings, not hard failures
+                event = "step_warning"
+            else:
+                event = "step_failed"
             if step_callback:
                 step_callback(event, step_name, "", duration)
             if is_success:
                 logger.info(line)
+            elif event == "step_warning":
+                logger.warning(line)
             else:
                 logger.error(line)
+            continue
+
+        # Detect HDS pipeline warning/failure lines (e.g. "⚠ Clinical pipeline Failed")
+        if HDS_PIPELINE_WARN_RE.search(line):
+            logger.warning(line)
+            if step_callback:
+                step_callback("step_warning", "HDS Pipeline", line.strip(), "")
             continue
 
         # Regular log line

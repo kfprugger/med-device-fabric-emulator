@@ -132,17 +132,55 @@ if (-not $SkipFabric) {
     $token = (az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv)
     $headers = @{ Authorization = "Bearer $token" }
 
-    # Resolve workspace ID
-    $workspaces = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $headers).value
+    # Resolve workspace ID with better diagnostics
+    Write-Host "  Fetching workspaces..." -ForegroundColor DarkGray
+    try {
+        $wsResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $headers
+        $workspaces = $wsResp.value
+        Write-Host "    Found $($workspaces.Count) workspace(s)" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  ✗ Failed to fetch workspaces: $($_.Exception.Message)" -ForegroundColor Red
+        $workspaces = @()
+    }
+
     $ws = $workspaces | Where-Object { $_.displayName -eq $FabricWorkspaceName } | Select-Object -First 1
     if (-not $ws) {
-        Write-Host "  Workspace '$FabricWorkspaceName' not found. Skipping." -ForegroundColor Yellow
+        Write-Host "  Workspace '$FabricWorkspaceName' not found." -ForegroundColor Yellow
+        Write-Host "  Available workspaces:" -ForegroundColor Yellow
+        foreach ($w in $workspaces) {
+            Write-Host "    - $($w.displayName)" -ForegroundColor DarkGray
+        }
+        Write-Host "  Skipping Fabric cleanup." -ForegroundColor Yellow
     } else {
         $wsId = $ws.id
-        Write-Host "  Workspace: $FabricWorkspaceName ($wsId)" -ForegroundColor White
+        Write-Host "  ✓ Workspace found: $FabricWorkspaceName" -ForegroundColor Green
+        Write-Host "    ID: $wsId" -ForegroundColor DarkGray
+        Write-Host "    Fetching items..." -ForegroundColor DarkGray
 
-        $items = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers).value
-        Write-Host "  Items to delete: $($items.Count)" -ForegroundColor White
+        try {
+            $itemResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers -ErrorAction Stop
+            $items = $itemResp.value
+            
+            if ($null -eq $items) {
+                $items = @()
+            } elseif ($items -isnot [array]) {
+                $items = @($items)
+            }
+            
+            Write-Host "  Items to delete: $($items.Count)" -ForegroundColor White
+            
+            if ($items.Count -gt 0) {
+                Write-Host "  Item types found:" -ForegroundColor DarkGray
+                $items | Group-Object -Property type | ForEach-Object { 
+                    Write-Host "    - $($_.Name): $($_.Count)" -ForegroundColor DarkGray 
+                }
+                Write-Host "" -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "  ✗ Failed to fetch workspace items: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    Status Code: $([int]$_.Exception.Response.StatusCode)" -ForegroundColor Red
+            $items = @()
+        }
 
         if ($items.Count -gt 0) {
             # Delete in dependency order to minimize conflicts
@@ -165,7 +203,7 @@ if (-not $SkipFabric) {
 
             # First pass: ordered types
             foreach ($type in $deleteOrder) {
-                $typeItems = $items | Where-Object { $_.type -eq $type }
+                $typeItems = @($items | Where-Object { $_.type -eq $type })
                 foreach ($item in $typeItems) {
                     Write-Host "  DEL $($item.type.PadRight(25)) $($item.displayName)..." -NoNewline
                     try {
@@ -183,38 +221,56 @@ if (-not $SkipFabric) {
             }
 
             # Second pass: catch any types not in the ordered list
-            $items2 = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers).value
-            foreach ($item in $items2) {
-                Write-Host "  DEL $($item.type.PadRight(25)) $($item.displayName) (retry)..." -NoNewline
-                try {
-                    Invoke-RestMethod -Method Delete `
-                        -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items/$($item.id)" `
-                        -Headers $headers -ErrorAction Stop | Out-Null
-                    Write-Host " OK" -ForegroundColor Green
-                    $deleted++
-                } catch {
-                    Write-Host " FAIL" -ForegroundColor Red
+            try {
+                $items2 = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers).value
+                if ($null -eq $items2) { $items2 = @() }
+                elseif ($items2 -isnot [array]) { $items2 = @($items2) }
+                
+                foreach ($item in $items2) {
+                    Write-Host "  DEL $($item.type.PadRight(25)) $($item.displayName) (retry)..." -NoNewline
+                    try {
+                        Invoke-RestMethod -Method Delete `
+                            -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items/$($item.id)" `
+                            -Headers $headers -ErrorAction Stop | Out-Null
+                        Write-Host " OK" -ForegroundColor Green
+                        $deleted++
+                    } catch {
+                        Write-Host " FAIL" -ForegroundColor Red
+                    }
+                    Start-Sleep -Milliseconds 300
                 }
-                Start-Sleep -Milliseconds 300
+            } catch {
+                Write-Host "  ⚠ Could not fetch items for retry pass: $($_.Exception.Message)" -ForegroundColor Yellow
             }
 
             Write-Host ""
             Write-Host "  Deleted: $deleted items" -ForegroundColor Green
         } else {
-            Write-Host "  Workspace is already empty." -ForegroundColor DarkGray
+            Write-Host "  Workspace is already empty or items API returned no results." -ForegroundColor DarkGray
         }
 
         # Delete Fabric connections created by the deployment scripts
         Write-Host ""
         Write-Host "  Cleaning up Fabric connections..." -ForegroundColor White
-        $connections = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/connections" -Headers $headers).value
+        try {
+            $connResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/connections" -Headers $headers -ErrorAction Stop
+            $connections = $connResp.value
+            if ($null -eq $connections) { $connections = @() }
+            elseif ($connections -isnot [array]) { $connections = @($connections) }
+            
+            Write-Host "    Found $($connections.Count) connection(s)" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "    ⚠ Could not fetch connections: $($_.Exception.Message)" -ForegroundColor Yellow
+            $connections = @()
+        }
+        
         $matchPatterns = @('masimo', 'fhir', 'dicom', 'stfhir', 'EventHub', 'telemetry', 'fab-')
-        $connToDelete = $connections | Where-Object {
+        $connToDelete = @($connections | Where-Object {
             $name = $_.displayName
             $matchPatterns | Where-Object { $name -match $_ }
-        }
+        })
 
-        if ($connToDelete) {
+        if ($connToDelete.Count -gt 0) {
             foreach ($conn in $connToDelete) {
                 Write-Host "  DEL Connection: $($conn.displayName)..." -NoNewline
                 try {
@@ -227,15 +283,26 @@ if (-not $SkipFabric) {
                 }
             }
         } else {
-            Write-Host "  No matching connections found." -ForegroundColor DarkGray
+            Write-Host "    No matching connections found." -ForegroundColor DarkGray
         }
 
         # Final verification
         Write-Host ""
-        $finalItems = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers).value
-        Write-Host "  Items remaining: $($finalItems.Count)" -ForegroundColor $(if ($finalItems.Count -eq 0) { 'Green' } else { 'Yellow' })
-        foreach ($item in $finalItems) {
-            Write-Host "    $($item.type): $($item.displayName)" -ForegroundColor DarkGray
+        Write-Host "  Final verification..." -ForegroundColor DarkGray
+        try {
+            $finalResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$wsId/items" -Headers $headers -ErrorAction Stop
+            $finalItems = $finalResp.value
+            if ($null -eq $finalItems) { $finalItems = @() }
+            elseif ($finalItems -isnot [array]) { $finalItems = @($finalItems) }
+            
+            Write-Host "  Items remaining: $($finalItems.Count)" -ForegroundColor $(if ($finalItems.Count -eq 0) { 'Green' } else { 'Yellow' })
+            if ($finalItems.Count -gt 0) {
+                foreach ($item in $finalItems) {
+                    Write-Host "    - $($item.type): $($item.displayName)" -ForegroundColor DarkGray
+                }
+            }
+        } catch {
+            Write-Host "  ⚠ Could not verify remaining items: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
 } else {

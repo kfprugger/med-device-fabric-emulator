@@ -2216,6 +2216,22 @@ if ($SkipFhirExport) {
     Write-Host "  ⚠ FHIR Service URL not detected — skipping `$export" -ForegroundColor Yellow
     Write-Host "    Provide -FhirServiceUrl or export FHIR data manually." -ForegroundColor Yellow
 } else {
+    # Check if export data already exists from deploy-fhir.ps1 (post-loader / post-DICOM exports)
+    $exportAlreadyDone = $false
+    try {
+        $existingBlobs = az storage blob list --container-name $exportContainerName `
+            --account-name (az storage account list --resource-group $ResourceGroupName `
+                --query "[?kind=='StorageV2'].name" -o tsv 2>$null | Select-Object -First 1) `
+            --auth-mode login --num-results 5 --query "[].name" -o tsv 2>$null
+        if ($existingBlobs) {
+            Write-Host "  ✓ FHIR export data already exists in '$exportContainerName' (from deploy-fhir.ps1)" -ForegroundColor Green
+            Write-Host "    Skipping redundant `$export — data is available for HDS ingestion." -ForegroundColor Gray
+            $exportAlreadyDone = $true
+            $fhirExportDone = $true
+        }
+    } catch {}
+
+    if (-not $exportAlreadyDone) {
     Write-Host "  Exporting FHIR data directly to ADLS Gen2 storage." -ForegroundColor White
     Write-Host "  (No Azure Marketplace offer or Fabric AHDS capability needed.)" -ForegroundColor Gray
     Write-Host ""
@@ -2366,6 +2382,7 @@ if ($SkipFhirExport) {
             }
         }
     }
+    } # end if (-not $exportAlreadyDone)
 }
 
 if ($fhirExportDone -or $exportStorageAccountName) {

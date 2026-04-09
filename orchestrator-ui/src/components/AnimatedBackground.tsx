@@ -94,10 +94,17 @@ export function AnimatedBackground() {
           0%, 100% { box-shadow: 0 0 2px currentColor; }
           50% { box-shadow: 0 0 8px currentColor, 0 0 16px currentColor; }
         }
+        @media (prefers-reduced-motion: reduce) {
+          .firefly-particle {
+            animation: none !important;
+            opacity: 0.15 !important;
+          }
+        }
       `}</style>
       {particles.map((p) => (
         <div
           key={p.id}
+          className="firefly-particle"
           style={{
             position: "absolute",
             left: `${p.x}%`,

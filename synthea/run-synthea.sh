@@ -12,7 +12,7 @@ echo "Running Synthea..."
 java $JAVA_OPTS -jar /synthea/synthea-with-dependencies.jar \
     -c /synthea/synthea.properties \
     -p $PATIENT_COUNT \
-    -m asthma,copd,congestive_heart_failure,pneumonia,covid19,metabolic_syndrome_disease,lung_cancer \
+    -m asthma:copd:congestive_heart_failure:covid19:metabolic_syndrome_disease:lung_cancer \
     --exporter.baseDirectory /output \
     Georgia Atlanta
 

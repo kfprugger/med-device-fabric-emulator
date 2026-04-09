@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Badge,
   Button,
   Card,
   CardHeader,
@@ -19,7 +20,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular } from "@fluentui/react-icons";
-import { startDeployment, listCapacities, type DeploymentConfig, type FabricCapacity } from "../api";
+import { startDeployment, listCapacities, checkExistingDeployment, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -36,11 +37,10 @@ const useStyles = makeStyles({
   },
   section: {
     marginBottom: tokens.spacingVerticalL,
-    transition: "box-shadow 0.2s ease, transform 0.15s ease",
+    transition: "box-shadow 0.2s ease",
     overflow: "visible",
     ":hover": {
       boxShadow: tokens.shadow8,
-      transform: "translateY(-1px)",
     },
   },
   sectionHeader: {
@@ -225,6 +225,7 @@ export function DeployWizard() {
     capacity_resource_group: "",
     capacity_name: "",
     pause_capacity_after_deploy: false,
+    reuse_patients: false,
   });
 
   const [useNamingConvention, setUseNamingConvention] = useState(true);
@@ -233,18 +234,70 @@ export function DeployWizard() {
     { name: "", value: "" },
   ]);
   const [namingPrefix, setNamingPrefix] = useState("");
+  const [existingDeploy, setExistingDeploy] = useState<ExistingDeploymentInfo | null>(null);
+  const [checkingExisting, setCheckingExisting] = useState(false);
+  const [overridePriorSettings, setOverridePriorSettings] = useState(false);
 
   const update = (field: keyof DeploymentConfig, value: unknown) =>
     setConfig((prev) => ({ ...prev, [field]: value }));
 
+  // Check for existing deployment when workspace/RG names are set
+  useEffect(() => {
+    const ws = config.fabric_workspace_name;
+    const rg = config.resource_group_name;
+    if (!ws && !rg) {
+      setExistingDeploy(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCheckingExisting(true);
+      checkExistingDeployment(ws, rg)
+        .then((info) => {
+          setExistingDeploy(info);
+          if (info) {
+            update("reuse_patients", true);
+            setOverridePriorSettings(false);
+            // Auto-populate config fields from prior deployment
+            const pc = info.priorConfig;
+            if (pc) {
+              setConfig((prev) => ({
+                ...prev,
+                location: pc.location || prev.location,
+                admin_security_group: pc.admin_security_group || prev.admin_security_group,
+                alert_email: pc.alert_email || prev.alert_email,
+                patient_count: pc.patient_count || prev.patient_count,
+                reuse_patients: true,
+              }));
+              // Auto-select capacity if it was used before
+              if (pc.capacity_name) {
+                setSelectedCapacity(pc.capacity_name);
+              }
+              // Restore tags
+              if (pc.tags && Object.keys(pc.tags).length > 0) {
+                setUseTags(true);
+                setTagRows(
+                  Object.entries(pc.tags).map(([name, value]) => ({ name, value }))
+                );
+              }
+            }
+          }
+        })
+        .catch(() => setExistingDeploy(null))
+        .finally(() => setCheckingExisting(false));
+    }, 500); // debounce
+    return () => clearTimeout(timer);
+  }, [config.fabric_workspace_name, config.resource_group_name]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // When naming prefix changes, auto-derive RG and workspace names
   const handleNamingChange = (prefix: string) => {
-    setNamingPrefix(prefix);
-    if (useNamingConvention && prefix) {
+    // Azure resource names: max 90 chars, alphanumeric + dashes
+    const sanitized = prefix.replace(/[^a-zA-Z0-9-]/g, "").substring(0, 40);
+    setNamingPrefix(sanitized);
+    if (useNamingConvention && sanitized) {
       setConfig((prev) => ({
         ...prev,
-        resource_group_name: `rg-${prefix}`,
-        fabric_workspace_name: prefix,
+        resource_group_name: `rg-${sanitized}`,
+        fabric_workspace_name: sanitized,
       }));
     }
   };
@@ -337,11 +390,11 @@ export function DeployWizard() {
   return (
     <div>
       {usingMock && <MockDataBanner />}
-      <Title2>New Deployment</Title2>
+      <Title2>Deployment Settings</Title2>
 
       <div className={styles.form}>
         {/* Naming Convention */}
-        <Card className={styles.section}>
+        <Card className={styles.section} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Naming Convention</Subtitle1>}
@@ -398,13 +451,34 @@ export function DeployWizard() {
         </Card>
 
         {/* Azure Configuration */}
-        <Card className={styles.section}>
+        <Card className={styles.section} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Azure Configuration</Subtitle1>}
             description="Target Azure subscription and resource group settings"
           />
           <div className={styles.fieldGroup}>
+
+            {existingDeploy?.priorConfig && (
+              <div style={{
+                padding: tokens.spacingHorizontalM,
+                backgroundColor: tokens.colorNeutralBackground4,
+                borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
+                borderRadius: tokens.borderRadiusMedium,
+                marginBottom: tokens.spacingVerticalS,
+              }}>
+                <Text size={200} block>
+                  <Badge color="informative" size="small" style={{ marginRight: 6 }}>Auto-populated</Badge>
+                  Settings restored from prior deployment <strong>{existingDeploy.instanceId}</strong>
+                </Text>
+                <Checkbox
+                  checked={overridePriorSettings}
+                  onChange={(_, d) => setOverridePriorSettings(!!d.checked)}
+                  label="Override previous settings"
+                  style={{ marginTop: tokens.spacingVerticalXS }}
+                />
+              </div>
+            )}
             <div className={styles.subscriptionRow}>
               <Field
                 label={
@@ -508,6 +582,7 @@ export function DeployWizard() {
                 field="location"
                 value={config.location}
                 onChange={(v) => update("location", v)}
+                disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
               />
             </Field>
             <Field
@@ -525,6 +600,7 @@ export function DeployWizard() {
                 field="admin-security-group"
                 value={config.admin_security_group}
                 onChange={(v) => update("admin_security_group", v)}
+                disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
               />
             </Field>
             <Checkbox
@@ -646,20 +722,109 @@ export function DeployWizard() {
         </Card>
 
         {/* Data Configuration */}
-        <Card className={styles.section}>
+        <Card className={styles.section} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
             header={<Subtitle1>Data Configuration</Subtitle1>}
             description="Synthetic patient data generation and alerting"
           />
           <div className={styles.fieldGroup}>
+
+            {/* Existing deployment detection banner */}
+            {checkingExisting && (
+              <div style={{
+                padding: tokens.spacingHorizontalM,
+                backgroundColor: tokens.colorNeutralBackground4,
+                borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
+                borderRadius: tokens.borderRadiusMedium,
+                marginBottom: tokens.spacingVerticalM,
+                display: "flex",
+                alignItems: "center",
+                gap: tokens.spacingHorizontalS,
+              }}>
+                <Badge color="informative" size="small">Checking</Badge>
+                <Text size={200}>Querying Azure for existing deployment resources...</Text>
+              </div>
+            )}
+
+            {existingDeploy && (
+              <div style={{
+                padding: tokens.spacingHorizontalM,
+                backgroundColor: tokens.colorStatusWarningBackground1,
+                borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
+                borderRadius: tokens.borderRadiusMedium,
+                marginBottom: tokens.spacingVerticalM,
+              }}>
+                <Text weight="semibold" block>
+                  Previous deployment detected
+                </Text>
+                <Text size={200} block style={{ marginTop: 4, color: tokens.colorNeutralForeground2 }}>
+                  Workspace <strong>{existingDeploy.workspaceName}</strong> was deployed on{" "}
+                  {new Date(existingDeploy.createdTime).toLocaleString()}
+                </Text>
+                {existingDeploy.azureRgExists && (
+                  <>
+                  <Text size={200} block style={{ marginTop: 4 }}>
+                    FHIR: <strong>{existingDeploy.fhirPatientCount}</strong> patients,{" "}
+                    <strong>{existingDeploy.fhirDeviceCount}</strong> Masimo devices
+                  </Text>
+                  <Tooltip
+                    content="FHIR $export writes NDJSON files to ADLS Gen2. HDS pipelines, Bronze Lakehouse shortcuts, and Silver/Gold tables all depend on this data. If 0, the $export has not run yet — it will be triggered automatically on deploy."
+                    relationship="description"
+                    positioning="above"
+                  >
+                    <Text size={200} block style={{
+                      marginTop: 4,
+                      padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`,
+                      borderRadius: tokens.borderRadiusMedium,
+                      backgroundColor: (existingDeploy.exportedFiles ?? 0) === 0
+                        ? tokens.colorStatusDangerBackground1
+                        : "transparent",
+                      cursor: "help",
+                    }}>
+                      {(existingDeploy.exportedFiles ?? 0) === 0 && (
+                        <Badge color="danger" size="small" style={{ marginRight: 6 }}>Critical</Badge>
+                      )}
+                      Storage: <strong>{existingDeploy.exportedFiles ?? 0}</strong> exported FHIR files,{" "}
+                      <strong>{existingDeploy.dicomStudies ?? 0}</strong> DICOM imaging blobs
+                      {(existingDeploy.exportedFiles ?? 0) === 0 && (
+                        <span style={{ color: tokens.colorStatusDangerForeground1, marginLeft: 6 }}>
+                          — $export required for HDS pipelines
+                        </span>
+                      )}
+                    </Text>
+                  </Tooltip>
+                  <Text size={200} block style={{ marginTop: 2 }}>
+                    {existingDeploy.emulatorRunning ? (
+                      <>Emulator: <strong style={{ color: tokens.colorPaletteGreenForeground1 }}>running</strong> ({existingDeploy.emulatorDeviceCount ?? 100} devices streaming telemetry)</>
+                    ) : (
+                      <>Emulator: <strong style={{ color: tokens.colorStatusDangerForeground1 }}>stopped</strong></>
+                    )}
+                  </Text>
+                  </>
+                )}
+                <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
+                  <Checkbox
+                    checked={config.reuse_patients}
+                    onChange={(_, d) => update("reuse_patients", !!d.checked)}
+                    label={`Reuse existing ${existingDeploy.fhirPatientCount} patients and ${existingDeploy.fhirDeviceCount} devices`}
+                  />
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
+                    {config.reuse_patients
+                      ? "Synthea generation, FHIR Loader, and DICOM Loader will be skipped. Emulator stays running."
+                      : `New batch of ${config.patient_count} patients will be generated with ${config.patient_count} new device associations. Existing data will be cleared and replaced.`}
+                  </Text>
+                </div>
+              </div>
+            )}
+
             <Field
               label={
-                <InfoLabel info="Number of synthetic patients generated by Synthea. More patients = longer FHIR load time. 100 patients \u2248 15 min." infoButton={{ popover: { positioning: "after" } }}>
+                <InfoLabel info="Number of synthetic patients generated by Synthea. More patients = longer FHIR load time. 100 patients ≈ 15 min." infoButton={{ popover: { positioning: "after" } }}>
                   <span className={styles.fieldLabelWithIcon}>
                     <img src="/icon-patient.svg" alt="" width={14} height={14} />
                     <span className={styles.labelSeparator} />
-                    Patient Count
+                    Patient Count{config.reuse_patients ? " (ignored — reusing existing)" : existingDeploy ? " (new batch)" : " (to be generated)"}
                   </span>
                 </InfoLabel>
               }
@@ -670,6 +835,7 @@ export function DeployWizard() {
                 max={10000}
                 step={10}
                 onChange={(_, d) => update("patient_count", d.value ?? 100)}
+                disabled={config.reuse_patients}
               />
             </Field>
             <Field
@@ -765,16 +931,17 @@ export function DeployWizard() {
           </Tooltip>
           <Tooltip content="Run a simulated deployment to preview the UI (no Azure/Fabric resources created)" relationship="description">
             <Button
-              appearance="secondary"
+              appearance="outline"
               icon={<BeakerRegular />}
               onClick={handleMockDeploy}
+              size="small"
             >
               Mock Deploy
             </Button>
           </Tooltip>
         </div>
 
-        {error && <div className={styles.error}>{error}</div>}
+        {error && <div className={styles.error} ref={(el) => el?.scrollIntoView({ behavior: "smooth" })}>{error}</div>}
       </div>
     </div>
   );

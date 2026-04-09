@@ -55,6 +55,7 @@ param (
     [switch]$Phase3,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$Phase4,             # Run only Phase 4 (Ontology + Agent binding)
     [switch]$RebuildContainers,      # Force container image rebuilds
+    [switch]$ReusePatients,          # Reuse existing patients — skip Synthea/Loader, keep emulator
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
 
@@ -341,6 +342,17 @@ function Write-Banner {
     Write-Host "+$border+" -ForegroundColor $Color
     Write-Host "|$line|" -ForegroundColor $Color
     Write-Host "+$border+" -ForegroundColor $Color
+}
+
+function Emit-PhaseTransition {
+    param(
+        [Parameter(Mandatory)][int]$Phase,
+        [Parameter(Mandatory)][string]$Label,
+        [int]$StepCount = 0
+    )
+    # Structured line for the Python orchestrator to parse.
+    # Format: @@PHASE|<number>|<label>|<stepCount>@@
+    Write-Host "@@PHASE|$Phase|$Label|$StepCount@@"
 }
 
 function Write-StepHeader {
@@ -701,6 +713,8 @@ if ($Teardown) {
 # ============================================================================
 
 if ($Phase2) {
+    Emit-PhaseTransition -Phase 2 -Label "Enrichment & Agents" -StepCount 3
+
     Invoke-Step -StepName "Phase 2: Fabric RTI" `
         -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
         $phase2Args = @{
@@ -769,6 +783,8 @@ if ($Phase4 -and -not $Phase2 -and -not $Phase3) {
 # ============================================================================
 # STEP 1 — FABRIC WORKSPACE + IDENTITY (created first so HDS can be deployed during Azure steps)
 # ============================================================================
+
+Emit-PhaseTransition -Phase 1 -Label "Infra & Ingestion" -StepCount 6
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
     Invoke-Step -StepName "Phase 1: Fabric Workspace" `
@@ -957,6 +973,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
 # ============================================================================
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir) {
+    if ($ReusePatients) {
+        Write-Host "  >>  Reusing existing patients — skipping Synthea + FHIR Loader" -ForegroundColor Yellow
+        Write-Host "      Existing patient/device data in FHIR will be preserved." -ForegroundColor DarkGray
+    } else {
     Invoke-Step -StepName "Phase 1: FHIR Service + Synthea + Loader" `
         -Description "$PatientCount patients -> FHIR (deploy-fhir.ps1)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -982,6 +1002,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir) {
 
         & "$ScriptDir\deploy-fhir.ps1" @fhirArgs
     }
+    }
 } else {
     Write-Host "  >>  Skipping FHIR / Synthea (--SkipFhir)" -ForegroundColor DarkGray
 }
@@ -991,6 +1012,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir) {
 # ============================================================================
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom -and -not $SkipFhir) {
+    if ($ReusePatients) {
+        Write-Host "  >>  Reusing existing patients — skipping DICOM Loader" -ForegroundColor Yellow
+        Write-Host "      Existing DICOM/ImagingStudy data will be preserved." -ForegroundColor DarkGray
+    } else {
     Invoke-Step -StepName "Phase 1: DICOM Service + Loader" `
         -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -1010,10 +1035,127 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom -and -not $SkipFhir) {
 
         & "$ScriptDir\deploy-fhir.ps1" @dicomArgs
     }
+    }
 } elseif ($SkipDicom) {
     Write-Host "  >>  Skipping DICOM (--SkipDicom)" -ForegroundColor DarkGray
 } else {
     Write-Host "  >>  Skipping DICOM (FHIR was skipped)" -ForegroundColor DarkGray
+}
+
+# ============================================================================
+# STEP 2c — FHIR $EXPORT (ensure data exists for HDS pipelines)
+# ============================================================================
+
+if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir -and $ReusePatients) {
+    Invoke-Step -StepName "Phase 1: FHIR `$export (catch-up)" `
+        -Description "Export existing FHIR data to ADLS Gen2 for HDS pipelines" -Action {
+        Write-Host "  Ensuring FHIR `$export data exists for downstream HDS ingestion." -ForegroundColor White
+        Write-Host "  (Synthea/Loader were skipped — but HDS needs the export files.)" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $exportArgs = @{
+            ResourceGroupName  = $ResourceGroupName
+            Location           = $Location
+            AdminSecurityGroup = $AdminSecurityGroup
+            InfraOnly          = $true
+        }
+        if ($Tags.Count -gt 0) { $exportArgs['Tags'] = $Tags }
+
+        # InfraOnly will verify infra then exit, but deploy-fhir.ps1 now has
+        # the Step 8 catch-up $export that fires regardless of mode.
+        # Instead, invoke deploy-fhir.ps1 in a minimal mode that only triggers export.
+        & "$ScriptDir\deploy-fhir.ps1" @exportArgs
+
+        # The InfraOnly mode exits before Step 8. Call $export directly.
+        # Find FHIR URL from existing deployment
+        $fhirResource = az resource list -g $ResourceGroupName `
+            --resource-type "Microsoft.HealthcareApis/workspaces/fhirservices" `
+            --query "[0].name" -o tsv 2>`$null
+        if ($fhirResource) {
+            $parts = $fhirResource -split "/"
+            if ($parts.Count -eq 2) {
+                $fhirUrl = "https://$($parts[0])-$($parts[1]).fhir.azurehealthcareapis.com"
+                # Check if export data already exists
+                $stAcct = az storage account list -g $ResourceGroupName `
+                    --query "[?kind=='StorageV2'].name | [0]" -o tsv 2>`$null
+                $hasExport = $false
+                if ($stAcct) {
+                    $existingBlob = az storage blob list --container-name "fhir-export" `
+                        --account-name $stAcct --auth-mode login --num-results 1 `
+                        --query "[0].name" -o tsv 2>`$null
+                    if ($existingBlob) { $hasExport = $true }
+                }
+                if (-not $hasExport) {
+                    Write-Host "  No FHIR export data found — triggering `$export now..." -ForegroundColor Yellow
+                    # Source the Invoke-FhirExport function from deploy-fhir.ps1 is not available here,
+                    # so use the Fabric RTI script's export via a direct API call approach
+                    Write-Host "  FHIR URL: $fhirUrl" -ForegroundColor DarkGray
+                    $fhirToken = az account get-access-token --resource $fhirUrl --query accessToken -o tsv 2>`$null
+                    if ($fhirToken) {
+                        # Ensure export container exists
+                        if ($stAcct) {
+                            az storage container create --name "fhir-export" --account-name $stAcct --auth-mode login 2>`$null | Out-Null
+                        }
+                        # Configure export destination
+                        $fhirResId = az resource list -g $ResourceGroupName `
+                            --resource-type "Microsoft.HealthcareApis/workspaces/fhirservices" `
+                            --query "[0].id" -o tsv 2>`$null
+                        if ($fhirResId -and $stAcct) {
+                            az rest --method patch --url "$fhirResId`?api-version=2023-11-01" `
+                                --body "{`"properties`":{`"exportConfiguration`":{`"storageAccountName`":`"$stAcct`"}}}" 2>`$null | Out-Null
+                            # Ensure RBAC
+                            $fhirMi = az resource show --ids $fhirResId --query "identity.principalId" -o tsv 2>`$null
+                            $stId = az storage account show -n $stAcct -g $ResourceGroupName --query id -o tsv 2>`$null
+                            if ($fhirMi -and $stId) {
+                                az role assignment create --assignee-object-id $fhirMi --assignee-principal-type ServicePrincipal `
+                                    --role "ba92f5b4-2d11-453d-a403-e96b0029c9fe" --scope $stId 2>`$null | Out-Null
+                            }
+                        }
+                        # Trigger export
+                        try {
+                            $exportResp = Invoke-WebRequest `
+                                -Uri "$fhirUrl/`$export?_container=fhir-export" `
+                                -Headers @{ Authorization = "Bearer $fhirToken"; Accept = "application/fhir+json"; Prefer = "respond-async" } `
+                                -Method GET -UseBasicParsing
+                            if ($exportResp.StatusCode -eq 202) {
+                                $statusUrl = $exportResp.Headers["Content-Location"]
+                                if ($statusUrl -is [array]) { $statusUrl = $statusUrl[0] }
+                                Write-Host "  ✓ FHIR `$export started" -ForegroundColor Green
+                                Write-Host "    Polling for completion..." -ForegroundColor DarkGray
+                                $pollStart = Get-Date
+                                while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt 30) {
+                                    Start-Sleep -Seconds 15
+                                    $elapsed = [math]::Round((New-TimeSpan -Start $pollStart).TotalMinutes, 1)
+                                    if ([math]::Floor($elapsed) % 5 -eq 0 -and $elapsed -gt 0) {
+                                        $fhirToken = az account get-access-token --resource $fhirUrl --query accessToken -o tsv 2>`$null
+                                    }
+                                    try {
+                                        $pollResp = Invoke-WebRequest -Uri $statusUrl `
+                                            -Headers @{ Authorization = "Bearer $fhirToken" } -UseBasicParsing
+                                        if ($pollResp.StatusCode -eq 200) {
+                                            $exportResult = $pollResp.Content | ConvertFrom-Json
+                                            $fileCount = ($exportResult.output | Measure-Object).Count
+                                            Write-Host "  ✓ FHIR `$export complete — $fileCount files" -ForegroundColor Green
+                                            break
+                                        }
+                                    } catch {
+                                        $sc = $null; try { $sc = $_.Exception.Response.StatusCode.value__ } catch {}
+                                        if ($sc -eq 202) { Write-Host "    Exporting... (${elapsed}m)" -ForegroundColor DarkGray }
+                                    }
+                                }
+                            }
+                        } catch {
+                            $sc = $null; try { $sc = $_.Exception.Response.StatusCode.value__ } catch {}
+                            if ($sc -eq 409) { Write-Host "  ⚠ Export already running" -ForegroundColor Yellow }
+                            else { Write-Host "  ⚠ Export trigger failed: $($_.Exception.Message)" -ForegroundColor Yellow }
+                        }
+                    }
+                } else {
+                    Write-Host "  ✓ FHIR export data already exists — no action needed" -ForegroundColor Green
+                }
+            }
+        }
+    }
 }
 
 # ============================================================================
@@ -1124,6 +1266,8 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                 # Run Phase 2 inline
                 $Phase2 = $true
 
+                Emit-PhaseTransition -Phase 2 -Label "Enrichment & Agents" -StepCount 3
+
                 Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
                     -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
                     $phase2Args = @{
@@ -1175,6 +1319,8 @@ if ($Phase2) {
 # STEP 7 — PHASE 3: COHORTING AGENT + DICOM VIEWER (FabricDicomCohortingToolkit)
 # Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
 # ============================================================================
+
+Emit-PhaseTransition -Phase 3 -Label "Imaging Toolkit" -StepCount 1
 
 if ($Phase2 -or $Phase3) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
@@ -1387,6 +1533,8 @@ if ($Phase2 -or $Phase3) {
 # Requires: Silver Lakehouse populated, clinical pipeline completed,
 #           Eventhouse with TelemetryRaw + AlertHistory tables
 # ============================================================================
+
+Emit-PhaseTransition -Phase 4 -Label "Ontology & Activator" -StepCount 2
 
 if ($Phase4 -or ($Phase2 -and -not $Phase3)) {
     Invoke-Step -StepName "Phase 4: Ontology + Activator" `
