@@ -23,7 +23,7 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **Data Activator** — A Reflex item with KQL source (`fn_ClinicalAlerts`), Device object, 6 attributes, and an email rule that alerts on CRITICAL/URGENT SpO2 events — deployed fully programmatically via the Fabric REST API
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
-The entire solution deploys in under 2 hours with a single command (`Deploy-All.ps1`) and touches seven Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, and Power BI.
+The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches seven Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, and Power BI.
 
 ---
 
@@ -37,6 +37,7 @@ The entire solution deploys in under 2 hours with a single command (`Deploy-All.
 | **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Ontology & Activator](docs/phase-4-ontology-and-activator.md) |
 
 **Additional guides:**
+- [Orchestrator UI](orchestrator/README.md) — Setup and usage for the browser-based deployment dashboard
 - [HDS Setup Guide](fabric-rti/HDS-SETUP-GUIDE.md) — Manual HDS deployment walkthrough
 - [Dashboard Guide](fabric-rti/dashboard/DASHBOARD-GUIDE.md) — Real-time dashboard details
 - [Ontology Setup Guide](docs/ONTOLOGY-SETUP-GUIDE.md) — Fabric IQ Ontology configuration
@@ -215,17 +216,62 @@ graph LR
 
 ### Prerequisites
 
-- **PowerShell 7+** (`pwsh`) with the **Az module** installed (`Install-Module Az`)
-- **Azure CLI** installed and logged in (`az login`) with **Bicep** (`az bicep install`)
-- **Git** (for cloning the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo used in Phase 3)
-- **Python 3.10+** (for `create-device-associations.py` — device-patient linking)
-- **Azure Bicep** for deploying Azure-based idempotent resources
+Run the setup script to check and install all dependencies:
+
+```powershell
+# Windows (PowerShell)
+.\setup-prereqs.ps1
+
+# macOS / Linux (bash — installs PowerShell Core if missing)
+chmod +x setup-prereqs.sh
+./setup-prereqs.sh
+```
+
+This checks and installs: PowerShell 7+, Azure CLI + Bicep, Az PowerShell module, Python 3.10+, Node.js 18+, Git, plus it creates the Python virtual environment and installs both backend and frontend dependencies.
+
+To check without installing anything: `.\setup-prereqs.ps1 -CheckOnly`
+
+**Required Azure/Fabric:**
 - Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
-- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions) with the ability to create workspaces and assign the capacity
-- **NOTE:** If you do not use a paid F-SKU, you will not be able to deploy Healthcare Data Solutions which is core to the entire solution. Have at least an F2 deployed and your account able to use that SKU either as a Capacity Administrator or via Azure RBAC.
+- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions)
+- **NOTE:** If you do not use a paid F-SKU, you will not be able to deploy Healthcare Data Solutions which is core to the entire solution
 - Fabric tenant settings enabled: **Data Activator**, **Copilot**, and **Azure OpenAI Service**
 
-### Deploy
+### Deploy with the Orchestrator UI (Recommended)
+
+The Orchestrator UI provides a visual deployment wizard, real-time progress monitoring, teardown management, and deployment history — all through a browser.
+
+**1. Start the backend (Terminal 1):**
+
+```powershell
+cd orchestrator
+.\.venv\Scripts\Activate.ps1   # Windows
+# source .venv/bin/activate     # macOS/Linux
+python local_server.py
+```
+
+**2. Start the frontend (Terminal 2):**
+
+```powershell
+cd orchestrator-ui
+npm run dev
+```
+
+**3. Open the UI:** Navigate to [http://localhost:5173](http://localhost:5173)
+
+**4. Deploy:** Click the **Deploy** tab, enter a deployment name (e.g., `med-rojo-0408`), select your Azure subscription and Fabric capacity, and click **Start Deployment**. The UI will orchestrate all phases automatically.
+
+**5. Monitor:** The deployment monitor shows real-time progress with milestone tracking, phased log streaming, and elapsed time.
+
+**6. Teardown:** When done, use the **Teardown** tab to scan for and delete deployed resources (Fabric workspace, Azure RG, Entra SPNs) with a single click.
+
+![Deployment Monitor](docs/images/Simple%20Diagram.png)
+
+---
+
+### Command Line Only (No UI)
+
+If you prefer to deploy without the UI, use `Deploy-All.ps1` directly from PowerShell:
 
 ```powershell
 # Full deploy (all phases, ~90 min):
@@ -274,7 +320,7 @@ graph LR
     -AlertCooldownMinutes 15
 ```
 
-### Teardown
+### Teardown (CLI)
 
 ```powershell
 # Full teardown: Azure RGs + Fabric workspace + DICOM viewer
@@ -282,12 +328,15 @@ graph LR
     -ResourceGroupName "rg-med-device-rti" -Force -Wait
 ```
 
+> **Tip:** The Orchestrator UI's **Teardown** tab provides a visual resource scanner that discovers all deployed workspaces, resource groups, and Entra SPNs — with lock protection and confirmation dialogs.
+
 ---
 
 ## 📁 Project Structure
 
 ```
 med-device-fabric-emulator/
+├── setup-prereqs.ps1           # Cross-platform prerequisite installer
 ├── Deploy-All.ps1              # Full orchestrator (all phases)
 ├── deploy.ps1                  # Phase 1: Emulator infrastructure
 ├── deploy-fhir.ps1             # Phase 1: FHIR + DICOM pipeline
@@ -296,10 +345,20 @@ med-device-fabric-emulator/
 ├── deploy-ontology.ps1         # Phase 4: Fabric IQ Ontology
 ├── storage-access-trusted-workspace.ps1  # Phase 2: HDS pipeline triggers
 ├── update-agents-inline.ps1    # Quick-update agent definitions
-├── create-device-associations.py  # Link devices to patients (requires FHIR_SERVICE_URL env var)
+├── create-device-associations.py  # Link devices to patients
 ├── emulator.py                 # Masimo device emulator
 ├── Dockerfile                  # Emulator container
 ├── Teardown-All.ps1            # Cleanup orchestrator
+├── orchestrator/               # Deployment backend (FastAPI + Python)
+│   ├── local_server.py         # Backend API server (port 7071)
+│   ├── requirements.txt        # Python dependencies
+│   ├── activities/             # Deployment activities (PowerShell invocation)
+│   └── shared/                 # Fabric client, Kusto client, database
+├── orchestrator-ui/            # Deployment frontend (React + Fluent UI)
+│   ├── package.json            # Node.js dependencies
+│   └── src/
+│       ├── pages/              # Deploy wizard, History, Teardown, Monitor
+│       └── components/         # PhaseCard, AllLogsStream, ResourcesPanel
 ├── bicep/                      # ARM/Bicep templates
 ├── cleanup/                    # Teardown scripts
 ├── dicom-loader/               # TCIA download + DICOM re-tagging

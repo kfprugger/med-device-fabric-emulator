@@ -1,53 +1,40 @@
-# Deployment Orchestrator — Azure Durable Functions (Python v2)
+# Deployment Orchestrator — FastAPI Backend + React UI
 
-This Azure Functions app orchestrates the end-to-end deployment of the
-Medical Device FHIR Integration Platform, replacing the PowerShell-based
-`Deploy-All.ps1` with a durable, checkpoint-based workflow.
+The orchestrator provides a visual deployment experience for the Medical Device FHIR Integration Platform. It consists of a Python FastAPI backend that calls the same PowerShell scripts (`Deploy-All.ps1`, `Teardown-All.ps1`) and a React + Fluent UI frontend.
 
-## Architecture
+## Quick Start
 
-- **HTTP Triggers** — REST API for the React frontend
-- **Orchestrator Functions** — Phase sequencing with checkpointing
-- **Activity Functions** — One per deployment phase (Azure infra, FHIR, Fabric RTI, etc.)
-- **Entity Functions** — Deployment state tracking
-
-## Local Development
+From the repo root, run the setup script to install all prerequisites:
 
 ```bash
-cd orchestrator
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-func start
+# Windows
+.\setup-prereqs.ps1
+
+# macOS / Linux
+chmod +x setup-prereqs.sh && ./setup-prereqs.sh
 ```
 
-## First-Time Full Stack Setup (Backend + UI)
-
-Use this once on a fresh clone to ensure all local dependencies are installed before running either app:
+Then start both services:
 
 ```bash
-# Backend API dependencies
+# Terminal 1 — Backend (port 7071)
 cd orchestrator
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-pip install -r requirements.txt
+.venv\Scripts\Activate.ps1    # Windows
+# source .venv/bin/activate    # macOS/Linux
+python local_server.py
 
-# Frontend UI dependencies
-cd ..\orchestrator-ui
-npm install
-```
-
-Then run:
-
-```bash
-# Terminal 1
-cd orchestrator
-.venv\Scripts\python local_server.py
-
-# Terminal 2
+# Terminal 2 — Frontend (port 5173)
 cd orchestrator-ui
 npm run dev
 ```
+
+Open [http://localhost:5173](http://localhost:5173) to access the UI.
+
+## Architecture
+
+- **FastAPI Backend** — REST API that invokes PowerShell deployment scripts, streams logs in real-time, and manages deployment state in SQLite
+- **React Frontend** — Fluent UI v9 dashboard with Deploy wizard, Run History, Teardown scanner, and Phase Monitor
+- **SQLite Database** — Persistent deployment/teardown history, resource locks, and form history
 
 ## Runtime Database Files
 
@@ -67,3 +54,21 @@ They should remain gitignored.
 | POST | `/api/deploy/{instanceId}/cancel` | Cancel a running deployment |
 | POST | `/api/teardown/start` | Start teardown |
 | GET | `/api/deployments` | List deployment history |
+| DELETE | `/api/deploy/{instanceId}` | Delete a deployment record |
+| POST | `/api/deployments/clear` | Clear all deployment history |
+| GET | `/api/deploy/check-existing` | Check for prior deployment by workspace/RG |
+| GET | `/api/scan/subscriptions` | List Azure subscriptions |
+| POST | `/api/scan/resources/start` | Start incremental teardown resource scan |
+| GET | `/api/scan/resources/{scanId}` | Poll scan progress |
+| GET | `/api/scan/capacities` | List Fabric capacities |
+| GET/POST/DELETE | `/api/locks/{resourceId}` | Manage teardown resource locks |
+| GET | `/api/deployment-capacity/{rgName}` | Look up capacity for a resource group |
+
+## UI Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Deploy** | `/` | Deployment wizard with naming convention, capacity selection, patient reuse detection |
+| **History** | `/history` | Run history with filters (type, name, date range), deployment/teardown badges |
+| **Teardown** | `/teardown` | Resource scanner with incremental discovery, paired RG/workspace highlighting, locks |
+| **Monitor** | `/monitor/:id` | Real-time phase progress with milestone track, phased log routing, resource verification |
