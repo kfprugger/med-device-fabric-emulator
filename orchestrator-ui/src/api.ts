@@ -158,6 +158,24 @@ export async function getDeployedResources(
   return resp.json();
 }
 
+export interface PhaseLogEntry {
+  timestamp: string;
+  level: "info" | "warn" | "error" | "success";
+  message: string;
+  phase: string;
+}
+
+export async function getPhaseLogs(
+  instanceId: string,
+  phaseName: string
+): Promise<PhaseLogEntry[]> {
+  const resp = await fetch(
+    `${API_BASE}/deploy/${instanceId}/logs?phase=${encodeURIComponent(phaseName)}`
+  );
+  if (!resp.ok) return [];
+  return resp.json();
+}
+
 export async function clearAllDeployments(): Promise<void> {
   const resp = await fetch(`${API_BASE}/deployments/clear`, {
     method: "POST",

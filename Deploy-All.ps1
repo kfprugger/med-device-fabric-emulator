@@ -736,6 +736,7 @@ if ($Teardown) {
 if ($Phase2) {
     Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
 
+    if (-not $SkipRtiPhase2) {
     Invoke-Step -StepName "Phase 2: Fabric RTI" `
         -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
         $phase2Args = @{
@@ -750,6 +751,7 @@ if ($Phase2) {
 
         & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
     }
+    } # end if (-not $SkipRtiPhase2)
 
     # DICOM shortcut + HDS pipelines (clinical, imaging, OMOP)
     if (-not $SkipDicom -and -not $SkipHdsPipelines) {
@@ -1291,6 +1293,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
 
                 Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
 
+                if (-not $SkipRtiPhase2) {
                 Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
                     -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
                     $phase2Args = @{
@@ -1302,6 +1305,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                     if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
                     & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
                 }
+                } # end if (-not $SkipRtiPhase2)
 
                 if (-not $SkipDicom -and -not $SkipHdsPipelines) {
                     Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
@@ -1345,7 +1349,7 @@ if ($Phase2 -and -not $SkipDataAgents) {
 
 Emit-PhaseTransition -Phase 3 -Label "Imaging & Reporting" -StepCount 1
 
-if ($Phase2 -or $Phase3) {
+if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
     $runPhase3 = $true
 

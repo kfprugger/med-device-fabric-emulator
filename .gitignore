@@ -9,6 +9,7 @@ schema-dump.txt
 _dicom_logs.txt
 eh-test.json
 orchestrator/orchestrator.log
+orchestrator/logs/
 orchestrator/backend-stdout.log
 orchestrator/backend-stderr.log
 orchestrator-ui/frontend-stdout.log

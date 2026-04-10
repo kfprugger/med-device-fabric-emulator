@@ -93,7 +93,7 @@ async def _global_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content={"error": f"Internal server error: {type(exc).__name__}: {exc}"},
+        content={"error": "Internal server error. Check backend logs for details."},
     )
 
 
@@ -203,11 +203,28 @@ class TeardownRequest(BaseModel):
     delete_azure_rg: bool = True
 
 
+import re as _re
+
+def _validate_safe_name(v: str, field_name: str) -> str:
+    """Reject shell metacharacters in names passed to PowerShell subprocesses."""
+    if v and not _re.match(r'^[a-zA-Z0-9_.\-]{0,128}$', v):
+        raise ValueError(f"{field_name} contains invalid characters (allowed: a-z, 0-9, -, _, .)")
+    return v
+
 class DeployRequest(BaseModel):
     resource_group_name: str = ""
     location: str = "eastus"
     admin_security_group: str = ""
     fabric_workspace_name: str = ""
+
+    @staticmethod
+    def _check_name(v: str, info) -> str:
+        return _validate_safe_name(v, info.field_name) if v else v
+
+    _v_rg = __import__('pydantic').field_validator('resource_group_name', mode='after')(_check_name)
+    _v_ws = __import__('pydantic').field_validator('fabric_workspace_name', mode='after')(_check_name)
+    _v_sg = __import__('pydantic').field_validator('admin_security_group', mode='after')(_check_name)
+    _v_cap = __import__('pydantic').field_validator('capacity_name', mode='after')(_check_name)
     patient_count: int = 100
     tags: dict[str, str] = {}
     skip_base_infra: bool = False
@@ -570,21 +587,38 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
     deployment = deployments[instance_id]
     deploy_logs: list[dict] = []
 
+    # Per-deployment log file for on-demand phase log retrieval
+    deploy_log_dir = Path(__file__).parent / "logs"
+    deploy_log_dir.mkdir(exist_ok=True)
+    deploy_log_file = deploy_log_dir / f"{instance_id}.jsonl"
+    current_phase_name: list[str] = [""]  # mutable container for closure
+
     class StatusLogHandler(_logging.Handler):
         def emit(self, record: _logging.LogRecord):
             msg = self.format(record)
-            deploy_logs.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "level": "success" if any(w in msg.lower() for w in ["succeeded", "deployed", "created", "completed", "ready", "provisioned", "built", "✓"])
+            level = ("success" if any(w in msg.lower() for w in ["succeeded", "deployed", "created", "completed", "ready", "provisioned", "built", "✓"])
                     else "error" if record.levelno >= _logging.ERROR
                     else "warn" if record.levelno >= _logging.WARNING
-                    else "info",
+                    else "info")
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": level,
                 "message": msg,
-            })
+                "phase": current_phase_name[0],
+            }
+            deploy_logs.append(entry)
             deployment["customStatus"]["logs"] = deploy_logs[-100:]
             deployment["customStatus"]["detail"] = msg
             deployment["lastUpdatedTime"] = now_iso()
-            save_state()
+            # Debounce save_state: only persist every 50th log or on level changes
+            if len(deploy_logs) % 50 == 0 or record.levelno >= _logging.WARNING:
+                save_state()
+            # Append to per-deployment log file (JSONL)
+            try:
+                with open(deploy_log_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
+            except Exception as e:
+                logger.warning("Failed to write deployment log file: %s", e)
 
     handler = StatusLogHandler()
     handler.setLevel(_logging.INFO)
@@ -597,6 +631,8 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
     def step_callback(event: str, step_name: str, detail: str, duration: str):
         """Handle step events from PowerShell output parser."""
         if event == "step_start":
+            # Track current phase for log tagging
+            current_phase_name[0] = step_name
             # Mark any previously running phase as succeeded (the result line
             # for the previous step may not have been parsed yet)
             for p in phases:
@@ -730,6 +766,33 @@ async def get_status(instance_id: str):
     if instance_id not in deployments:
         raise HTTPException(404, "Instance not found")
     return deployments[instance_id]
+
+
+@app.get("/api/deploy/{instance_id}/logs")
+async def get_phase_logs(instance_id: str, phase: str = ""):
+    """Return logs for a specific phase from the per-deployment log file.
+
+    Query params:
+      phase — exact phase name to filter (e.g. "PHASE 1: FABRIC RTI")
+              If empty, returns all logs.
+    """
+    log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
+    if not log_file.exists():
+        return []
+
+    logs = []
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                if not phase or entry.get("phase", "") == phase:
+                    logs.append(entry)
+    except Exception:
+        pass
+    return logs
 
 
 @app.get("/api/deploy/{instance_id}/deployed-resources")

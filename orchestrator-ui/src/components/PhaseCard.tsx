@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Badge,
   Card,
@@ -20,6 +20,7 @@ import {
   WarningFilled,
 } from "@fluentui/react-icons";
 import type { PhaseInfo } from "../api";
+import { getPhaseLogs } from "../api";
 import type { PhaseLog } from "../mockDeployment";
 
 const useStyles = makeStyles({
@@ -152,6 +153,7 @@ interface PhaseCardProps {
   logs?: PhaseLog[];
   defaultExpanded?: boolean;
   autoScroll?: boolean;
+  instanceId?: string;
 }
 
 const PHASE_TOOLTIPS: Record<string, string> = {
@@ -178,13 +180,42 @@ function formatLogTime(iso: string): string {
   }
 }
 
-export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true }: PhaseCardProps) {
+export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true, instanceId }: PhaseCardProps) {
   const styles = useStyles();
   const tooltip = PHASE_TOOLTIPS[phase.phase] || phase.phase;
   const isActive = phase.status === "running" || phase.status === "waiting_for_input";
   const hasWarnings = (phase.warnings?.length ?? 0) > 0;
   const [expanded, setExpanded] = useState(defaultExpanded ?? isActive);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [fetchedLogs, setFetchedLogs] = useState<PhaseLog[] | null>(null);
+  const [fetchingLogs, setFetchingLogs] = useState(false);
+  const hasFetched = useRef(false);
+
+  // Fetch per-phase logs from backend when card is expanded and we have no logs
+  const fetchPhaseLogs = useCallback(async () => {
+    if (!instanceId || hasFetched.current || fetchingLogs) return;
+    if (phase.status === "pending") return;
+    hasFetched.current = true;
+    setFetchingLogs(true);
+    try {
+      const result = await getPhaseLogs(instanceId, phase.phase);
+      if (result.length > 0) {
+        setFetchedLogs(result as PhaseLog[]);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setFetchingLogs(false);
+    }
+  }, [instanceId, phase.phase, phase.status, fetchingLogs]);
+
+  useEffect(() => {
+    if (expanded && logs.length === 0 && !fetchedLogs && instanceId) {
+      fetchPhaseLogs();
+    }
+  }, [expanded, logs.length, fetchedLogs, instanceId, fetchPhaseLogs]);
+
+  const displayLogs = logs.length > 0 ? logs : (fetchedLogs ?? []);
 
   // Auto-expand when phase becomes active
   useEffect(() => {
@@ -196,7 +227,7 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
     if (autoScroll && expanded && logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs.length, expanded, autoScroll]);
+  }, [displayLogs.length, expanded, autoScroll]);
 
   const logLevelStyle = (level: PhaseLog["level"]) => {
     switch (level) {
@@ -248,14 +279,20 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
         )}
         {expanded && (
           <div className={styles.logPanel}>
-            {logs.length === 0 && (
+            {displayLogs.length === 0 && (
               <div className={styles.emptyLog}>
-                {phase.status === "pending"
+                {fetchingLogs
+                  ? "Loading logs…"
+                  : phase.status === "pending"
                   ? "Waiting to start…"
-                  : "No logs yet…"}
+                  : phase.status === "succeeded" || phase.status === "skipped"
+                  ? "Completed — no logs available for this phase."
+                  : phase.status === "running"
+                  ? "Waiting for output…"
+                  : "No logs available"}
               </div>
             )}
-            {logs.map((log, i) => (
+            {displayLogs.map((log, i) => (
               <div key={i} className={styles.logLine}>
                 <span className={styles.logTime}>{formatLogTime(log.timestamp)}</span>
                 <span className={logLevelStyle(log.level)}>

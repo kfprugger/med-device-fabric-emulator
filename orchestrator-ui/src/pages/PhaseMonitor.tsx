@@ -1064,24 +1064,63 @@ export function PhaseMonitor() {
       {/* Phase Cards with logs */}
       {!showAllLogs && (
       <div className={styles.phases}>
-        {phases.map((phase) => {
-          // Route logs to the correct phase card based on majorPhase tag
-          const phaseMajor = (phase as unknown as Record<string, unknown>).majorPhase as number | undefined;
-          const filteredLogs = isMock
-            ? (mockPhaseLogs.get(phase.phase) ?? [])
-            : phaseMajor != null && backendLogs
-              ? backendLogs.filter((l) => l.phase === phaseMajor) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>
-              : (backendLogs ?? []) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>;
+        {(() => {
+          // Build log-to-phase mapping by scanning for step transition markers.
+          // Logs are a rolling buffer — we find phase boundaries by matching
+          // phase names in the log messages and assigning ranges.
+          const logPhaseMap = new Map<number, number[]>(); // phaseIndex → log indices
+          if (!isMock && backendLogs && backendLogs.length > 0) {
+            let currentPhaseIdx = -1;
+            for (let logIdx = 0; logIdx < backendLogs.length; logIdx++) {
+              const msg = backendLogs[logIdx].message.toUpperCase();
+              // Check if this log starts a new phase by matching any phase name
+              for (let pIdx = 0; pIdx < phases.length; pIdx++) {
+                const pName = phases[pIdx].phase.toUpperCase();
+                // Match step banners like "| STEP N: PHASE 1: FABRIC WORKSPACE |"
+                // or phase names appearing in log lines
+                if (msg.includes(pName) && (msg.includes("STEP") || msg.includes("╔") || msg.includes("───"))) {
+                  currentPhaseIdx = pIdx;
+                  break;
+                }
+              }
+              if (currentPhaseIdx >= 0) {
+                if (!logPhaseMap.has(currentPhaseIdx)) logPhaseMap.set(currentPhaseIdx, []);
+                logPhaseMap.get(currentPhaseIdx)!.push(logIdx);
+              }
+            }
+            // If no markers found (log buffer rotated past them), assign all logs
+            // to the currently running phase or the last phase
+            if (logPhaseMap.size === 0) {
+              const runningIdx = phases.findIndex((p) => p.status === "running");
+              const targetIdx = runningIdx >= 0 ? runningIdx : phases.length - 1;
+              if (targetIdx >= 0) {
+                logPhaseMap.set(targetIdx, backendLogs.map((_, i) => i));
+              }
+            }
+          }
 
-          return (
-            <PhaseCard
-              key={phase.phase}
-              phase={phase}
-              logs={filteredLogs}
-              autoScroll={autoScroll}
-            />
-          );
-        })}
+          return phases.map((phase, phaseIdx) => {
+            let filteredLogs: Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>;
+            if (isMock) {
+              filteredLogs = (mockPhaseLogs.get(phase.phase) ?? []);
+            } else if (logPhaseMap.has(phaseIdx) && backendLogs) {
+              const indices = logPhaseMap.get(phaseIdx)!;
+              filteredLogs = indices.map((i) => backendLogs[i]) as Array<{timestamp: string; level: "info" | "warn" | "error" | "success"; message: string}>;
+            } else {
+              filteredLogs = [];
+            }
+
+            return (
+              <PhaseCard
+                key={phase.phase}
+                phase={phase}
+                logs={filteredLogs}
+                autoScroll={autoScroll}
+                instanceId={instanceId}
+              />
+            );
+          });
+        })()}
       </div>
       )}
 
