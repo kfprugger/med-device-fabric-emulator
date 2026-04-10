@@ -59,6 +59,16 @@ param (
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
 
+    # ── Granular component skips ──
+    [switch]$SkipSynthea,            # Skip Synthea patient generation (implies SkipDeviceAssoc)
+    [switch]$SkipDeviceAssoc,        # Skip Device resource creation / association
+    [switch]$SkipRtiPhase2,          # Skip RTI Phase 2 (KQL shortcuts + enriched alerts)
+    [switch]$SkipHdsPipelines,       # Skip DICOM shortcut + HDS pipeline triggers
+    [switch]$SkipDataAgents,         # Skip Patient 360 + Clinical Triage agents
+    [switch]$SkipImaging,            # Skip Imaging Toolkit (Cohorting Agent, DICOM Viewer, PBI)
+    [switch]$SkipOntology,           # Skip ClinicalDeviceOntology + agent binding
+    [switch]$SkipActivator,          # Skip Data Activator (Reflex + email rule)
+
     # ── Phase 3 (FabricDicomCohortingToolkit) ──
     [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
     [string]$DicomViewerResourceGroup = "rg-hds-dicom-viewer",
@@ -81,6 +91,17 @@ if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -n
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
+
+# ── Granular flag reconciliation ──────────────────────────────────────
+# Fine-grained skip flags from the Orchestrator UI are translated into
+# the coarser switches consumed by the existing step logic.
+# SkipSynthea implies the FHIR loader has nothing new to load; however
+# the FHIR *service* infra still deploys so HDS / $export keep working.
+if ($SkipSynthea) { $ReusePatients = $true }
+# Additional granular skips are checked inline at each step entry point.
+# The skip variables are available as $SkipRtiPhase2, $SkipHdsPipelines,
+# $SkipDataAgents, $SkipImaging, $SkipOntology, $SkipActivator,
+# $SkipDeviceAssoc.
 
 # ============================================================================
 # PREFLIGHT PREREQUISITE CHECKS
@@ -731,7 +752,7 @@ if ($Phase2) {
     }
 
     # DICOM shortcut + HDS pipelines (clinical, imaging, OMOP)
-    if (-not $SkipDicom) {
+    if (-not $SkipDicom -and -not $SkipHdsPipelines) {
         Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines" `
             -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
             & "$ScriptDir\storage-access-trusted-workspace.ps1" `
@@ -741,6 +762,7 @@ if ($Phase2) {
     }
 
     # Data Agents (Patient 360 + Clinical Triage) — part of Phase 2
+    if (-not $SkipDataAgents) {
     Invoke-Step -StepName "Phase 2: Data Agents" `
         -Description "Deploy Patient 360 + Clinical Triage agents" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -752,6 +774,7 @@ if ($Phase2) {
         & "$ScriptDir\deploy-data-agents.ps1" `
             -FabricWorkspaceName $FabricWorkspaceName
     }
+    } # end if (-not $SkipDataAgents)
 
     Write-Summary -Title "PHASE 2 DEPLOYMENT SUMMARY" -PhaseName "Phase2" -PhaseResources @{
         FabricWorkspaceName = $FabricWorkspaceName
@@ -1280,7 +1303,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                     & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
                 }
 
-                if (-not $SkipDicom) {
+                if (-not $SkipDicom -and -not $SkipHdsPipelines) {
                     Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
                         -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
                         & "$ScriptDir\storage-access-trusted-workspace.ps1" `
@@ -1301,7 +1324,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
 # ============================================================================
 
 # Deploy Data Agents if running Phase 2 or if the Silver Lakehouse is available
-if ($Phase2) {
+if ($Phase2 -and -not $SkipDataAgents) {
     Invoke-Step -StepName "Phase 2: Data Agents" `
         -Description "Deploy Patient 360 + Clinical Triage agents" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -1536,7 +1559,7 @@ if ($Phase2 -or $Phase3) {
 
 Emit-PhaseTransition -Phase 4 -Label "Semantic Layer & Alerts" -StepCount 2
 
-if ($Phase4 -or ($Phase2 -and -not $Phase3)) {
+if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
     Invoke-Step -StepName "Phase 4: Ontology" `
         -Description "Clinical pipeline check, ontology deployment, agent binding" -Action {
 
@@ -1897,6 +1920,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
     }
 
     # ── Step 9: Data Activator ──
+    if (-not $SkipActivator) {
     Invoke-Step -StepName "Phase 4: Data Activator" `
         -Description "Reflex item with KQL source and email alerting rule" -Action {
 
@@ -2101,6 +2125,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 
         Write-Host ""
     }
+    } # end if (-not $SkipActivator)
 }
 
 # ============================================================================

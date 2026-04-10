@@ -50,6 +50,12 @@ const useStyles = makeStyles({
     gap: spacing.s,
     flex: 1,
   },
+  headerLogo: {
+    width: "28px",
+    height: "28px",
+    flexShrink: 0,
+    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))",
+  },
   headerTitle: {
     color: tokens.colorNeutralForeground1,
     fontWeight: tokens.fontWeightSemibold,
@@ -158,6 +164,7 @@ export function Layout() {
       <AnimatedBackground />
       <div className={styles.header}>
         <div className={styles.headerLeft}>
+          <img src="/favicon.svg" alt="" className={styles.headerLogo} />
           <Text className={styles.brandAccent}>Fabric</Text>
           <Text className={styles.headerTitle}>
             Medical Device FHIR Platform — Deployment Orchestrator

@@ -567,6 +567,44 @@ const MOCK_SUBSCRIPTIONS: MockSubscription[] = [
   { id: "f9e8d7c6-b5a4-3210-fedc-ba0987654321", name: "Production" },
 ];
 
+export interface MockCapacity {
+  name: string;
+  id: string;
+  state: string;
+  sku: string;
+  resourceGroup: string;
+  location: string;
+  subscription: string;
+}
+
+const MOCK_CAPACITIES: MockCapacity[] = [
+  {
+    name: "fabrjbwu3",
+    id: "/subscriptions/5772d06a/resourceGroups/rg-fabricskus/providers/Microsoft.Fabric/capacities/fabrjbwu3",
+    state: "Active",
+    sku: "F64",
+    resourceGroup: "rg-fabricskus",
+    location: "eastus",
+    subscription: "5772d06a-5513-4cc5-ac08-a3805440c60e",
+  },
+  {
+    name: "fabr-dev-f2",
+    id: "/subscriptions/a1b2c3d4/resourceGroups/rg-fabric-dev/providers/Microsoft.Fabric/capacities/fabr-dev-f2",
+    state: "Paused",
+    sku: "F2",
+    resourceGroup: "rg-fabric-dev",
+    location: "eastus",
+    subscription: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  },
+];
+
+/**
+ * Get mock Fabric capacities.
+ */
+export function getMockCapacities(): MockCapacity[] {
+  return MOCK_CAPACITIES;
+}
+
 const MOCK_TEARDOWN_CANDIDATES: TeardownCandidate[] = [
   // Real workspace — matches actual deployed state
   {

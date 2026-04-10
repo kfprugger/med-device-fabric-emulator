@@ -288,19 +288,17 @@ Write-Host ""
 Write-Host "  ┌─────────────────────────────────────────────────────────┐" -ForegroundColor DarkCyan
 Write-Host "  │  TO START THE ORCHESTRATOR UI:                         │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
-Write-Host "  │  Terminal 1 (backend):                                 │" -ForegroundColor DarkCyan
-Write-Host "  │    cd orchestrator                                     │" -ForegroundColor DarkCyan
-if ($isWindows) {
-Write-Host "  │    .\.venv\Scripts\Activate.ps1                        │" -ForegroundColor DarkCyan
-} else {
-Write-Host "  │    source .venv/bin/activate                           │" -ForegroundColor DarkCyan
-}
-Write-Host "  │    python local_server.py                              │" -ForegroundColor DarkCyan
-Write-Host "  │                                                        │" -ForegroundColor DarkCyan
-Write-Host "  │  Terminal 2 (frontend):                                │" -ForegroundColor DarkCyan
-Write-Host "  │    cd orchestrator-ui                                  │" -ForegroundColor DarkCyan
-Write-Host "  │    npm run dev                                         │" -ForegroundColor DarkCyan
+Write-Host "  │    .\Start-WebUI.ps1          # start both servers     │" -ForegroundColor DarkCyan
+Write-Host "  │    .\Start-WebUI.ps1 -Stop    # stop both servers      │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
 Write-Host "  │  Then open: http://localhost:5173                      │" -ForegroundColor DarkCyan
 Write-Host "  └─────────────────────────────────────────────────────────┘" -ForegroundColor DarkCyan
+
+if (-not $CheckOnly) {
+    Write-Host ""
+    $startAnswer = Read-Host "  Start the Orchestrator UI now? [Y/n]"
+    if (-not $startAnswer -or $startAnswer -match '^[Yy]') {
+        & "$PSScriptRoot\Start-WebUI.ps1" -Force
+    }
+}
 Write-Host ""

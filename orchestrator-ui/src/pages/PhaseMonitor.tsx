@@ -212,6 +212,23 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
   },
+  configCard: {
+    marginBottom: tokens.spacingVerticalM,
+    padding: tokens.spacingHorizontalM,
+  },
+  configGrid: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalL}`,
+    marginTop: tokens.spacingVerticalS,
+  },
+  configItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+    fontSize: tokens.fontSizeBase200,
+    minWidth: "200px",
+  },
   hdsGate: {
     marginTop: tokens.spacingVerticalL,
     marginBottom: tokens.spacingVerticalL,
@@ -839,9 +856,14 @@ export function PhaseMonitor() {
                 </Button>
               </Tooltip>
               <Button
-                appearance="subtle"
+                appearance="outline"
                 icon={<DismissRegular />}
                 onClick={handleCancel}
+                style={{
+                  borderColor: tokens.colorPaletteRedForeground1,
+                  color: tokens.colorPaletteRedForeground1,
+                  boxShadow: `0 0 8px ${tokens.colorPaletteRedForeground1}, 0 0 2px ${tokens.colorPaletteRedForeground1}`,
+                }}
               >
                 Cancel
               </Button>
@@ -917,6 +939,78 @@ export function PhaseMonitor() {
           </Text>
         </div>
       </div>
+
+      {/* Deployment / Teardown Configuration Summary */}
+      {(() => {
+        const cs = status?.customStatus as Record<string, unknown> | null;
+        const cfg = cs?.deployConfig as Record<string, unknown> | undefined;
+        if (isTeardown) {
+          // Teardown config card
+          const wsName = cs?.workspaceName as string || "";
+          const rgName = cs?.resourceGroupName as string || "";
+          const targets = cs?.teardownTargets as string[] | undefined;
+          return (
+            <Card className={styles.configCard} size="small">
+              <CardHeader header={<Text weight="semibold" size={300}>Teardown Configuration</Text>} />
+              <div className={styles.configGrid}>
+                {wsName && <span className={styles.configItem}><Badge color="brand" size="small">Workspace</Badge> {wsName}</span>}
+                {rgName && <span className={styles.configItem}><Badge color="informative" size="small">Resource Group</Badge> {rgName}</span>}
+                {targets && targets.map((t, i) => <span key={i} className={styles.configItem}><Badge color="warning" size="small">Target</Badge> {t}</span>)}
+              </div>
+            </Card>
+          );
+        }
+        if (!cfg) return null;
+        // Deployment config card
+        const COMPONENTS = [
+          { key: "skip_base_infra", label: "Azure Emulator Infra", phase: 1 },
+          { key: "skip_fhir", label: "FHIR Service + Loader", phase: 1 },
+          { key: "skip_synthea", label: "Synthea Patients", phase: 1 },
+          { key: "skip_device_assoc", label: "Device Associations", phase: 1 },
+          { key: "skip_dicom", label: "DICOM Download", phase: 1 },
+          { key: "skip_fabric", label: "Fabric RTI", phase: 1 },
+          { key: "skip_fhir_export", label: "FHIR $export", phase: 1 },
+          { key: "skip_rti_phase2", label: "RTI Phase 2", phase: 2 },
+          { key: "skip_hds_pipelines", label: "HDS Pipelines", phase: 2 },
+          { key: "skip_data_agents", label: "Data Agents", phase: 2 },
+          { key: "skip_imaging", label: "Imaging Toolkit", phase: 3 },
+          { key: "skip_ontology", label: "Ontology", phase: 4 },
+          { key: "skip_activator", label: "Data Activator", phase: 4 },
+        ];
+        const enabled = COMPONENTS.filter((c) => !cfg[c.key]);
+        const skipped = COMPONENTS.filter((c) => cfg[c.key]);
+        return (
+          <Card className={styles.configCard} size="small">
+            <CardHeader header={<Text weight="semibold" size={300}>Deployment Configuration</Text>} />
+            <div className={styles.configGrid}>
+              {(cfg.fabric_workspace_name as string) && (
+                <span className={styles.configItem}><Badge color="brand" size="small">Workspace</Badge> {cfg.fabric_workspace_name as string}</span>
+              )}
+              {(cfg.resource_group_name as string) && (
+                <span className={styles.configItem}><Badge color="informative" size="small">RG</Badge> {cfg.resource_group_name as string}</span>
+              )}
+              {(cfg.patient_count as number) > 0 && (
+                <span className={styles.configItem}><Badge color="subtle" size="small">Patients</Badge> {cfg.patient_count as number}</span>
+              )}
+              {(cfg.alert_email as string) && (
+                <span className={styles.configItem}><Badge color="subtle" size="small">Alerts</Badge> {cfg.alert_email as string}</span>
+              )}
+            </div>
+            <div className={styles.configGrid} style={{ marginTop: tokens.spacingVerticalXS }}>
+              {enabled.map((c) => (
+                <span key={c.key} className={styles.configItem}>
+                  <span style={{ color: tokens.colorPaletteGreenForeground1 }}>✓</span> {c.label}
+                </span>
+              ))}
+              {skipped.map((c) => (
+                <span key={c.key} className={styles.configItem} style={{ color: tokens.colorNeutralForeground4 }}>
+                  <span>—</span> {c.label}
+                </span>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       {error && (
         <MessageBar intent="error">

@@ -21,7 +21,7 @@ import {
 } from "@fluentui/react-components";
 import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular } from "@fluentui/react-icons";
 import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
-import { startMockDeployment, getMockSubscriptions } from "../mockDeployment";
+import { startMockDeployment, getMockSubscriptions, getMockCapacities } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
 import { HistoryInput } from "../components/HistoryInput";
@@ -63,7 +63,7 @@ const useStyles = makeStyles({
   },
   capacityFieldRow: {
     display: "flex",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: tokens.spacingHorizontalXS,
   },
   fieldLabelWithIcon: {
@@ -161,7 +161,14 @@ export function DeployWizard() {
   const [resumingCapacity, setResumingCapacity] = useState(false);
 
   const refreshCapacities = () => {
-    if (usingMock || subscriptions.length === 0) return;
+    if (subscriptions.length === 0) return;
+    if (usingMock) {
+      // In mock mode, simulate resume completing after a few refreshes
+      setCapacities((prev) => prev.map((c) =>
+        c.state === "Resuming" ? { ...c, state: "Active" } : c
+      ));
+      return;
+    }
     setCapacityRefreshing(true);
     Promise.all(subscriptions.map((s) => listCapacities(s.id)))
       .then((results) => {
@@ -195,7 +202,15 @@ export function DeployWizard() {
 
   // Fetch Fabric capacities across all subscriptions
   useEffect(() => {
-    if (usingMock || subscriptions.length === 0) return;
+    if (subscriptions.length === 0) return;
+    if (usingMock) {
+      // Use mock capacities in mock mode
+      const mockCaps = getMockCapacities() as FabricCapacity[];
+      setCapacities(mockCaps);
+      const active = mockCaps.find((c) => c.state === "Active");
+      if (active && !selectedCapacity) setSelectedCapacity(active.name);
+      return;
+    }
     setCapacityRefreshing(true);
     // Scan all subscriptions since capacity may be in a different sub
     Promise.all(subscriptions.map((s) => listCapacities(s.id)))
@@ -229,6 +244,16 @@ export function DeployWizard() {
     capacity_name: "",
     pause_capacity_after_deploy: false,
     reuse_patients: false,
+    // Granular component toggles
+    skip_synthea: false,
+    skip_device_assoc: false,
+    skip_fhir_export: false,
+    skip_rti_phase2: false,
+    skip_hds_pipelines: false,
+    skip_data_agents: false,
+    skip_imaging: false,
+    skip_ontology: false,
+    skip_activator: false,
   });
 
   const [useNamingConvention, setUseNamingConvention] = useState(true);
@@ -248,8 +273,77 @@ export function DeployWizard() {
     : !config.fabric_workspace_name && !useNamingConvention ? 2
     : -1; // all filled — no glow
 
-  const update = (field: keyof DeploymentConfig, value: unknown) =>
-    setConfig((prev) => ({ ...prev, [field]: value }));
+  const update = (field: keyof DeploymentConfig, value: unknown) => {
+    setConfig((prev) => {
+      const next = { ...prev, [field]: value };
+
+      // ── Dependency auto-toggle rules ──
+      // When a component is disabled, auto-disable its dependents.
+      // When re-enabled, dependents stay as-is (user re-enables manually).
+
+      // skip_fhir → forces skip_synthea, skip_device_assoc, skip_fhir_export
+      if (field === "skip_fhir" && value) {
+        next.skip_synthea = true;
+        next.skip_device_assoc = true;
+        next.skip_fhir_export = true;
+      }
+      // skip_synthea → forces skip_device_assoc (no patients = no devices)
+      if (field === "skip_synthea" && value) {
+        next.skip_device_assoc = true;
+      }
+      // skip_dicom → forces skip_hds_pipelines, skip_imaging
+      if (field === "skip_dicom" && value) {
+        next.skip_hds_pipelines = true;
+        next.skip_imaging = true;
+      }
+      // skip_fabric (RTI) → forces skip_fhir_export, skip_rti_phase2, skip_activator
+      if (field === "skip_fabric" && value) {
+        next.skip_fhir_export = true;
+        next.skip_rti_phase2 = true;
+        next.skip_activator = true;
+      }
+      // skip_base_infra → forces skip_synthea, skip_fhir, skip_dicom, skip_device_assoc
+      if (field === "skip_base_infra" && value) {
+        next.skip_fhir = true;
+        next.skip_synthea = true;
+        next.skip_device_assoc = true;
+        next.skip_dicom = true;
+        next.skip_fhir_export = true;
+        next.skip_hds_pipelines = true;
+        next.skip_imaging = true;
+      }
+
+      // Re-enabling a parent → unblock children (restore to not-skipped)
+      if (field === "skip_fhir" && !value) {
+        next.skip_synthea = false;
+        next.skip_device_assoc = false;
+        next.skip_fhir_export = false;
+      }
+      if (field === "skip_synthea" && !value) {
+        next.skip_device_assoc = false;
+      }
+      if (field === "skip_dicom" && !value) {
+        next.skip_hds_pipelines = false;
+        next.skip_imaging = false;
+      }
+      if (field === "skip_fabric" && !value) {
+        next.skip_fhir_export = false;
+        next.skip_rti_phase2 = false;
+        next.skip_activator = false;
+      }
+      if (field === "skip_base_infra" && !value) {
+        next.skip_fhir = false;
+        next.skip_synthea = false;
+        next.skip_device_assoc = false;
+        next.skip_dicom = false;
+        next.skip_fhir_export = false;
+        next.skip_hds_pipelines = false;
+        next.skip_imaging = false;
+      }
+
+      return next;
+    });
+  };
 
   // Check for existing deployment when workspace/RG names are set
   useEffect(() => {
@@ -606,35 +700,84 @@ export function DeployWizard() {
                   </Tooltip>
                   {(() => {
                     const cap = capacities.find((c) => c.name === selectedCapacity);
-                    if (!cap || cap.state === "Active") return null;
+                    if (!cap) return null;
+                    const isActive = cap.state === "Active";
+                    const isPaused = cap.state === "Paused" || cap.state === "Suspended";
+                    const isResuming = cap.state === "Resuming" || resumingCapacity;
                     return (
-                      <Tooltip content={`Resume capacity "${cap.name}" (currently ${cap.state})`} relationship="label">
-                        <Button
-                          appearance="primary"
-                          icon={<PlayRegular />}
-                          size="small"
-                          disabled={resumingCapacity}
-                          onClick={async () => {
-                            setResumingCapacity(true);
-                            setError("");
-                            try {
-                              await resumeCapacity(cap.subscription, cap.resourceGroup, cap.name);
-                              // Poll capacity status until Active (async LRO)
-                              const pollInterval = setInterval(() => {
-                                refreshCapacities();
-                              }, 5000);
-                              // Stop polling after 2 min
-                              setTimeout(() => clearInterval(pollInterval), 120000);
-                            } catch (e) {
-                              setError(e instanceof Error ? e.message : "Failed to resume capacity");
-                            } finally {
-                              setResumingCapacity(false);
-                            }
-                          }}
-                        >
-                          {resumingCapacity ? "Starting…" : cap.state === "Resuming" ? "Resuming…" : "Resume"}
-                        </Button>
-                      </Tooltip>
+                      <>
+                      {/* Status badge — always visible */}
+                      {isActive && !resumingCapacity && (
+                        <Badge color="success" size="small">Active</Badge>
+                      )}
+                      {isResuming && (
+                        <Badge color="warning" size="small" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>
+                          {cap.state === "Active" ? "Active ✓" : "Resuming…"}
+                        </Badge>
+                      )}
+                      {isPaused && !resumingCapacity && (
+                        <Badge color="danger" size="small">{cap.state}</Badge>
+                      )}
+                      {/* Resume button — only when not active and not already resuming */}
+                      {!isActive && (
+                        <Tooltip content={`Resume capacity "${cap.name}" (currently ${cap.state})`} relationship="label">
+                          <Button
+                            appearance="primary"
+                            icon={<PlayRegular />}
+                            size="small"
+                            disabled={resumingCapacity}
+                            onClick={async () => {
+                              setResumingCapacity(true);
+                              setError("");
+                              try {
+                                if (usingMock) {
+                                  // Mock: set state to Resuming, then Active after a delay
+                                  setCapacities((prev) => prev.map((c) =>
+                                    c.name === cap.name ? { ...c, state: "Resuming" } : c
+                                  ));
+                                  setTimeout(() => {
+                                    setCapacities((prev) => prev.map((c) =>
+                                      c.name === cap.name ? { ...c, state: "Active" } : c
+                                    ));
+                                    setResumingCapacity(false);
+                                  }, 5000);
+                                  return;
+                                }
+                                await resumeCapacity(cap.subscription, cap.resourceGroup, cap.name);
+                                // Poll capacity status until Active (max 3 min)
+                                let elapsed = 0;
+                                const capName = cap.name;
+                                const poll = setInterval(() => {
+                                  elapsed += 5;
+                                  refreshCapacities();
+                                  if (elapsed >= 180) {
+                                    clearInterval(poll);
+                                    setResumingCapacity(false);
+                                  }
+                                }, 5000);
+                                const checkActive = setInterval(() => {
+                                  setCapacities((current) => {
+                                    const fresh = current.find((c) => c.name === capName);
+                                    if (fresh?.state === "Active") {
+                                      clearInterval(poll);
+                                      clearInterval(checkActive);
+                                      setResumingCapacity(false);
+                                    }
+                                    return current;
+                                  });
+                                }, 3000);
+                                setTimeout(() => clearInterval(checkActive), 180000);
+                              } catch (e) {
+                                setError(e instanceof Error ? e.message : "Failed to resume capacity");
+                                setResumingCapacity(false);
+                              }
+                            }}
+                          >
+                            {resumingCapacity ? "Resuming…" : "Resume"}
+                          </Button>
+                        </Tooltip>
+                      )}
+                      </>
                     );
                   })()}
                 </div>
@@ -948,62 +1091,141 @@ export function DeployWizard() {
           </div>
         </Card>
 
-        {/* Phase Control */}
+        {/* Phase & Component Control */}
         <Card className={`${styles.section} deploy-full-width`}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Phase Control</Subtitle1>}
+            header={<Subtitle1>Phase &amp; Component Control</Subtitle1>}
             description={
               <span className={styles.fieldLabelWithIcon}>
                 <img src="/icon-phases.svg" alt="" width={14} height={14} />
                 <span className={styles.labelSeparator} />
-                Skip phases that are already deployed to resume from a checkpoint
+                Toggle individual components — dependencies auto-adjust
               </span>
             }
           />
           <div className={styles.checkboxGroup}>
-            <Tooltip
-              content="Skip Event Hub, ACR, emulator ACI, and Bicep infra deployment"
-              relationship="description"
-              positioning="after"
-            >
+            {/* ── Phase 1: Infrastructure & Data ── */}
+            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalS, color: tokens.colorBrandForeground1 }}>
+              Phase 1: Infrastructure &amp; Data
+            </Text>
+            <Tooltip content="Skip Event Hub, ACR, emulator ACI, Storage, and Bicep infra" relationship="description" positioning="after">
               <Checkbox
-                label={`Skip Base Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
-                checked={config.skip_base_infra}
-                onChange={(_, d) => update("skip_base_infra", d.checked)}
+                label={`Azure Emulator Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
+                checked={!config.skip_base_infra}
+                onChange={(_, d) => update("skip_base_infra", !d.checked)}
               />
             </Tooltip>
-            <Tooltip
-              content="Skip FHIR Service, Synthea patient generation, and FHIR data loading"
-              relationship="description"
-              positioning="after"
-            >
+            <Tooltip content="Skip FHIR R4 service deployment and data loading" relationship="description" positioning="after">
               <Checkbox
-                label={`Skip FHIR / Synthea${existingDeploy ? " (data already loaded)" : ""}`}
-                checked={config.skip_fhir}
-                onChange={(_, d) => update("skip_fhir", d.checked)}
+                label={`FHIR Service + Data Loading${existingDeploy ? " (already deployed)" : ""}`}
+                checked={!config.skip_fhir}
+                onChange={(_, d) => update("skip_fhir", !d.checked)}
+                disabled={config.skip_base_infra}
               />
             </Tooltip>
-            <Tooltip
-              content="Skip DICOM infrastructure, TCIA download, and imaging study upload"
-              relationship="description"
-              positioning="after"
-            >
+            <div style={{ paddingLeft: 24 }}>
+              <Tooltip content="Skip Synthea patient generation — use existing patients" relationship="description" positioning="after">
+                <Checkbox
+                  label="Synthea Patient Generation"
+                  checked={!config.skip_synthea}
+                  onChange={(_, d) => update("skip_synthea", !d.checked)}
+                  disabled={config.skip_fhir}
+                />
+              </Tooltip>
+              <Tooltip content="Skip Device resource creation + patient associations" relationship="description" positioning="after">
+                <Checkbox
+                  label="Device Associations"
+                  checked={!config.skip_device_assoc}
+                  onChange={(_, d) => update("skip_device_assoc", !d.checked)}
+                  disabled={config.skip_synthea || config.skip_fhir}
+                />
+              </Tooltip>
+            </div>
+            <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
               <Checkbox
-                label="Skip DICOM"
-                checked={config.skip_dicom}
-                onChange={(_, d) => update("skip_dicom", d.checked)}
+                label="DICOM Download + Upload"
+                checked={!config.skip_dicom}
+                onChange={(_, d) => update("skip_dicom", !d.checked)}
+                disabled={config.skip_base_infra}
               />
             </Tooltip>
-            <Tooltip
-              content="Skip Eventhouse, KQL Database, Eventstream, and dashboard creation"
-              relationship="description"
-              positioning="after"
-            >
+            <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
               <Checkbox
-                label="Skip Fabric RTI"
-                checked={config.skip_fabric}
-                onChange={(_, d) => update("skip_fabric", d.checked)}
+                label="Fabric RTI (Eventhouse + Eventstream)"
+                checked={!config.skip_fabric}
+                onChange={(_, d) => update("skip_fabric", !d.checked)}
+              />
+            </Tooltip>
+            <div style={{ paddingLeft: 24 }}>
+              <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
+                <Checkbox
+                  label="FHIR $export to ADLS"
+                  checked={!config.skip_fhir_export}
+                  onChange={(_, d) => update("skip_fhir_export", !d.checked)}
+                  disabled={config.skip_fabric || config.skip_fhir}
+                />
+              </Tooltip>
+            </div>
+
+            {/* ── Phase 2: Enrichment & Agents ── */}
+            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
+              Phase 2: Enrichment &amp; Agents
+            </Text>
+            <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
+              <Checkbox
+                label="RTI Phase 2 (Shortcuts + Enrichment)"
+                checked={!config.skip_rti_phase2}
+                onChange={(_, d) => update("skip_rti_phase2", !d.checked)}
+                disabled={config.skip_fabric}
+              />
+            </Tooltip>
+            <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
+              <Checkbox
+                label="DICOM Shortcut + HDS Pipelines"
+                checked={!config.skip_hds_pipelines}
+                onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
+                disabled={config.skip_dicom}
+              />
+            </Tooltip>
+            <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
+              <Checkbox
+                label="Data Agents (Patient 360 + Clinical Triage)"
+                checked={!config.skip_data_agents}
+                onChange={(_, d) => update("skip_data_agents", !d.checked)}
+              />
+            </Tooltip>
+
+            {/* ── Phase 3: Imaging & Reporting ── */}
+            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
+              Phase 3: Imaging &amp; Reporting
+            </Text>
+            <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
+              <Checkbox
+                label="Imaging Toolkit (Cohorting, Viewer, Report)"
+                checked={!config.skip_imaging}
+                onChange={(_, d) => update("skip_imaging", !d.checked)}
+                disabled={config.skip_dicom}
+              />
+            </Tooltip>
+
+            {/* ── Phase 4: Semantic Layer & Alerts ── */}
+            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
+              Phase 4: Semantic Layer &amp; Alerts
+            </Text>
+            <Tooltip content="Skip ClinicalDeviceOntology (9 entities), DeviceAssociation table, agent binding" relationship="description" positioning="after">
+              <Checkbox
+                label="Ontology + Agent Binding"
+                checked={!config.skip_ontology}
+                onChange={(_, d) => update("skip_ontology", !d.checked)}
+              />
+            </Tooltip>
+            <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
+              <Checkbox
+                label="Data Activator (Email Alerts)"
+                checked={!config.skip_activator}
+                onChange={(_, d) => update("skip_activator", !d.checked)}
+                disabled={config.skip_fabric || !config.alert_email}
               />
             </Tooltip>
           </div>

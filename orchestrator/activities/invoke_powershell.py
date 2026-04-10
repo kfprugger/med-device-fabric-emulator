@@ -191,6 +191,24 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipFabric")
         if config.get("reuse_patients"):
             params.append("-ReusePatients")
+        if config.get("skip_synthea"):
+            params.append("-SkipSynthea")
+        if config.get("skip_device_assoc"):
+            params.append("-SkipDeviceAssoc")
+        if config.get("skip_fhir_export"):
+            params.append("-SkipFhirExport")
+        if config.get("skip_rti_phase2"):
+            params.append("-SkipRtiPhase2")
+        if config.get("skip_hds_pipelines"):
+            params.append("-SkipHdsPipelines")
+        if config.get("skip_data_agents"):
+            params.append("-SkipDataAgents")
+        if config.get("skip_imaging"):
+            params.append("-SkipImaging")
+        if config.get("skip_ontology"):
+            params.append("-SkipOntology")
+        if config.get("skip_activator"):
+            params.append("-SkipActivator")
         if config.get("phase2_only"):
             params.append("-Phase2")
         if config.get("phase3_only"):
@@ -229,6 +247,24 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-SkipDicom")
     if config.get("skip_fabric"):
         args.append("-SkipFabric")
+    if config.get("skip_fhir_export"):
+        args.append("-SkipFhirExport")
+    if config.get("skip_synthea"):
+        args.append("-SkipSynthea")
+    if config.get("skip_device_assoc"):
+        args.append("-SkipDeviceAssoc")
+    if config.get("skip_rti_phase2"):
+        args.append("-SkipRtiPhase2")
+    if config.get("skip_hds_pipelines"):
+        args.append("-SkipHdsPipelines")
+    if config.get("skip_data_agents"):
+        args.append("-SkipDataAgents")
+    if config.get("skip_imaging"):
+        args.append("-SkipImaging")
+    if config.get("skip_ontology"):
+        args.append("-SkipOntology")
+    if config.get("skip_activator"):
+        args.append("-SkipActivator")
 
     if config.get("phase2_only"):
         args.append("-Phase2")

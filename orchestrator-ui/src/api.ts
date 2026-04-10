@@ -21,6 +21,16 @@ export interface DeploymentConfig {
   capacity_name: string;
   pause_capacity_after_deploy: boolean;
   reuse_patients: boolean;
+  // ── Granular component toggles ──
+  skip_synthea: boolean;
+  skip_device_assoc: boolean;
+  skip_fhir_export: boolean;
+  skip_rti_phase2: boolean;
+  skip_hds_pipelines: boolean;
+  skip_data_agents: boolean;
+  skip_imaging: boolean;
+  skip_ontology: boolean;
+  skip_activator: boolean;
 }
 
 export interface DeploymentStatus {

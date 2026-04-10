@@ -219,7 +219,17 @@ class DeployRequest(BaseModel):
     capacity_resource_group: str = ""
     capacity_name: str = ""
     pause_capacity_after_deploy: bool = False
-    reuse_patients: bool = False  # If True, skip Synthea/Loader and reuse existing patients
+    reuse_patients: bool = False
+    # Granular component toggles
+    skip_synthea: bool = False
+    skip_device_assoc: bool = False
+    skip_fhir_export: bool = False
+    skip_rti_phase2: bool = False
+    skip_hds_pipelines: bool = False
+    skip_data_agents: bool = False
+    skip_imaging: bool = False
+    skip_ontology: bool = False
+    skip_activator: bool = False
 
 
 def now_iso():
