@@ -296,9 +296,13 @@ if (-not $Teardown) {
 
 # ============================================================================
 # DEPLOYMENT STATE FILE — shared context across phases
+# Stored in state-tracking/ subfolder (fallback for standalone runs;
+# the orchestrator persists resources to SQLite as primary store).
 # ============================================================================
 
-$stateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+$stateDir = Join-Path $ScriptDir "state-tracking"
+if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+$stateFile = Join-Path $stateDir ".deployment-state-$FabricWorkspaceName.json"
 
 function Read-DeploymentState {
     if (Test-Path $stateFile) {
@@ -333,6 +337,11 @@ function Save-PhaseResult {
     }
     $phases += $phaseEntry
     Write-DeploymentState @{ phases = $phases }
+
+    # Emit resource markers for orchestrator SQLite capture
+    foreach ($k in $Resources.Keys) {
+        Write-Host "##ORCH_RESOURCE:$k=$($Resources[$k])"
+    }
 }
 
 function Get-PhaseResources {
@@ -493,7 +502,7 @@ function Write-Summary {
             }
         }
         if ($allResources.Count -gt 0) {
-            Write-Host "  Resources (from .deployment-state-$FabricWorkspaceName.json):" -ForegroundColor DarkGray
+            Write-Host "  Resources (from state-tracking/.deployment-state-$FabricWorkspaceName.json):" -ForegroundColor DarkGray
             foreach ($k in $allResources.Keys | Sort-Object) {
                 Write-Host "    $($k): $($allResources[$k])" -ForegroundColor DarkGray
             }

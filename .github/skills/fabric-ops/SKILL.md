@@ -221,4 +221,4 @@ The teardown script validates both workspace and RG before deleting. If either i
 | `deploy-data-agents.ps1` | Data Agents (Patient 360 + Clinical Triage) |
 | `deploy-ontology.ps1` | Fabric IQ Ontology |
 | `storage-access-trusted-workspace.ps1` | DICOM shortcut + HDS pipeline orchestration |
-| `.deployment-state.json` | Deployment state tracking (gitignored) |
+| `state-tracking/` | Deployment state tracking (gitignored) |

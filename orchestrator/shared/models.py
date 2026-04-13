@@ -86,7 +86,7 @@ class PhaseResult(BaseModel):
 
 
 class DeploymentState(BaseModel):
-    """Full deployment state — replaces .deployment-state-*.json files."""
+    """Full deployment state — stored in SQLite DB (JSON fallback in state-tracking/)."""
 
     instance_id: str = ""
     config: DeploymentConfig | None = None

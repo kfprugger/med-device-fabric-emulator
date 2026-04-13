@@ -1,4 +1,5 @@
 # Deployment state (user-specific)
+state-tracking/
 .deployment-state*.json
 .orchestrator-state.json
 .orchestrator-state.json.bak
