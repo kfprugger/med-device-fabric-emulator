@@ -20,9 +20,6 @@ import {
   DismissRegular,
   ArrowDownRegular,
   PauseRegular,
-  ChevronDownRegular,
-  ChevronUpRegular,
-  OpenRegular,
   ArrowRepeatAllRegular,
   TextBulletListRegular,
   ArrowLeftRegular,
@@ -436,10 +433,6 @@ export function PhaseMonitor() {
       // Priority 1: sum of phase durations (excludes HDS manual wait)
       const phaseDurationSum = phases.reduce((sum, p) => {
         if (typeof p.duration === "number") return sum + p.duration;
-        if (typeof p.duration === "string") {
-          const m = p.duration.match(/([\d.]+)\s*min/i);
-          if (m) return sum + parseFloat(m[1]) * 60;
-        }
         return sum;
       }, 0);
       if (phaseDurationSum > 0) {
