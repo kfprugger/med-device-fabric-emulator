@@ -8,6 +8,9 @@ state-tracking/
 deploy-log*.txt
 schema-dump.txt
 _dicom_logs.txt
+
+# AI planning / private content
+.ai/youtube-script.md
 eh-test.json
 orchestrator/orchestrator.log
 orchestrator/logs/
