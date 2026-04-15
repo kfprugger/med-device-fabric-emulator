@@ -296,9 +296,13 @@ if (-not $Teardown) {
 
 # ============================================================================
 # DEPLOYMENT STATE FILE — shared context across phases
+# Stored in state-tracking/ subfolder (fallback for standalone runs;
+# the orchestrator persists resources to SQLite as primary store).
 # ============================================================================
 
-$stateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+$stateDir = Join-Path $ScriptDir "state-tracking"
+if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+$stateFile = Join-Path $stateDir ".deployment-state-$FabricWorkspaceName.json"
 
 function Read-DeploymentState {
     if (Test-Path $stateFile) {
@@ -333,6 +337,11 @@ function Save-PhaseResult {
     }
     $phases += $phaseEntry
     Write-DeploymentState @{ phases = $phases }
+
+    # Emit resource markers for orchestrator SQLite capture
+    foreach ($k in $Resources.Keys) {
+        Write-Host "##ORCH_RESOURCE:$k=$($Resources[$k])"
+    }
 }
 
 function Get-PhaseResources {
@@ -493,7 +502,7 @@ function Write-Summary {
             }
         }
         if ($allResources.Count -gt 0) {
-            Write-Host "  Resources (from .deployment-state-$FabricWorkspaceName.json):" -ForegroundColor DarkGray
+            Write-Host "  Resources (from state-tracking/.deployment-state-$FabricWorkspaceName.json):" -ForegroundColor DarkGray
             foreach ($k in $allResources.Keys | Sort-Object) {
                 Write-Host "    $($k): $($allResources[$k])" -ForegroundColor DarkGray
             }
@@ -757,7 +766,7 @@ if ($Phase2) {
     if (-not $SkipDicom -and -not $SkipHdsPipelines) {
         Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines" `
             -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-            & "$ScriptDir\storage-access-trusted-workspace.ps1" `
+            & "$ScriptDir\phase-2\storage-access-trusted-workspace.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName `
                 -ResourceGroupName $ResourceGroupName
         }
@@ -773,7 +782,7 @@ if ($Phase2) {
         Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
         Write-Host ""
 
-        & "$ScriptDir\deploy-data-agents.ps1" `
+        & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
             -FabricWorkspaceName $FabricWorkspaceName
     }
     } # end if (-not $SkipDataAgents)
@@ -960,7 +969,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
             }
         } else {
             Write-Host "    ⚠ Emulator ACI not found — running deploy.ps1 to create it..." -ForegroundColor Yellow
-            & "$ScriptDir\deploy.ps1" `
+            & "$ScriptDir\phase-1\deploy.ps1" `
                 -ResourceGroupName $ResourceGroupName `
                 -Location $Location `
                 -AdminSecurityGroup $AdminSecurityGroup `
@@ -982,7 +991,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
             Write-Host "  [3/4] Building emulator container image in ACR..." -ForegroundColor White
             Write-Host "  [4/4] Deploying emulator ACI container (bicep/emulator.bicep)..." -ForegroundColor White
             Write-Host ""
-            & "$ScriptDir\deploy.ps1" `
+            & "$ScriptDir\phase-1\deploy.ps1" `
                 -ResourceGroupName $ResourceGroupName `
                 -Location $Location `
                 -AdminSecurityGroup $AdminSecurityGroup `
@@ -1025,7 +1034,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir) {
         if ($RebuildContainers) { $fhirArgs['RebuildContainers'] = $true }
         if ($Tags.Count -gt 0) { $fhirArgs['Tags'] = $Tags }
 
-        & "$ScriptDir\deploy-fhir.ps1" @fhirArgs
+        & "$ScriptDir\phase-1\deploy-fhir.ps1" @fhirArgs
     }
     }
 } else {
@@ -1058,7 +1067,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom -and -not $SkipFhir) {
         if ($RebuildContainers) { $dicomArgs['RebuildContainers'] = $true }
         if ($Tags.Count -gt 0) { $dicomArgs['Tags'] = $Tags }
 
-        & "$ScriptDir\deploy-fhir.ps1" @dicomArgs
+        & "$ScriptDir\phase-1\deploy-fhir.ps1" @dicomArgs
     }
     }
 } elseif ($SkipDicom) {
@@ -1089,7 +1098,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir -and $ReusePatients) {
         # InfraOnly will verify infra then exit, but deploy-fhir.ps1 now has
         # the Step 8 catch-up $export that fires regardless of mode.
         # Instead, invoke deploy-fhir.ps1 in a minimal mode that only triggers export.
-        & "$ScriptDir\deploy-fhir.ps1" @exportArgs
+        & "$ScriptDir\phase-1\deploy-fhir.ps1" @exportArgs
 
         # The InfraOnly mode exits before Step 8. Call $export directly.
         # Find FHIR URL from existing deployment
@@ -1310,7 +1319,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                 if (-not $SkipDicom -and -not $SkipHdsPipelines) {
                     Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
                         -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-                        & "$ScriptDir\storage-access-trusted-workspace.ps1" `
+                        & "$ScriptDir\phase-2\storage-access-trusted-workspace.ps1" `
                             -FabricWorkspaceName $FabricWorkspaceName `
                             -ResourceGroupName $ResourceGroupName
                     }
@@ -1337,7 +1346,7 @@ if ($Phase2 -and -not $SkipDataAgents) {
         Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
         Write-Host ""
 
-        & "$ScriptDir\deploy-data-agents.ps1" `
+        & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
             -FabricWorkspaceName $FabricWorkspaceName
     }
 }
@@ -1430,6 +1439,18 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 
             Write-Host ""
 
+            # Resolve OHIF SWA URL once and pass it downstream to notebook + report deploy.
+            $ohifViewerBaseUrl = ""
+            try {
+                $swaHost = az staticwebapp list -g $viewerRg --query "[0].defaultHostname" -o tsv 2>$null
+                if ($swaHost) {
+                    $ohifViewerBaseUrl = "https://$swaHost/viewer?StudyInstanceUIDs="
+                    Write-Host "  ✓ OHIF Viewer URL: $ohifViewerBaseUrl" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  ⚠ Could not resolve OHIF SWA URL from Azure CLI" -ForegroundColor Yellow
+            }
+
             # Step 3c: Create Reporting Lakehouse + Materialize Notebook
             Write-Host "  --- Step 7c: Reporting Tables ---" -ForegroundColor Cyan
             Write-Host "  Creating reporting lakehouse and running materialization notebook..." -ForegroundColor White
@@ -1448,10 +1469,13 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                 Write-Host "  ✓ Reporting lakehouse already exists" -ForegroundColor Green
             }
 
-            # Deploy + run notebook (auto-discovers OHIF URL from Azure)
-            & "$DicomToolkitPath\deploy-notebook.ps1" `
-                -FabricWorkspaceName $FabricWorkspaceName `
-                -DicomViewerResourceGroup $viewerRg
+            # Deploy + run notebook (pass explicit OHIF URL when available)
+            $nbArgs = @{
+                FabricWorkspaceName      = $FabricWorkspaceName
+                DicomViewerResourceGroup = $viewerRg
+            }
+            if ($ohifViewerBaseUrl) { $nbArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
+            & "$DicomToolkitPath\deploy-notebook.ps1" @nbArgs
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After notebook materialization ──
@@ -1459,8 +1483,9 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 
             # Step 3d: Deploy Power BI Direct Lake Report
             Write-Host "  --- Step 7d: Power BI Imaging Report (Direct Lake) ---" -ForegroundColor Cyan
-            & "$DicomToolkitPath\Deploy-ImagingReport.ps1" `
-                -FabricWorkspaceName $FabricWorkspaceName
+            $reportArgs = @{ FabricWorkspaceName = $FabricWorkspaceName }
+            if ($ohifViewerBaseUrl) { $reportArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
+            & "$DicomToolkitPath\Deploy-ImagingReport.ps1" @reportArgs
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After PBI report, before final checks ──
@@ -1812,7 +1837,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
         Write-Host "  --- Step 8c: Ontology Deployment ---" -ForegroundColor Cyan
         Write-Host "  Deploying ClinicalDeviceOntology..." -ForegroundColor White
 
-        & "$ScriptDir\deploy-ontology.ps1" `
+        & "$ScriptDir\phase-4\deploy-ontology.ps1" `
             -FabricWorkspaceName $FabricWorkspaceName
 
         Write-Host ""

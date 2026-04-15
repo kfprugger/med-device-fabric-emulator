@@ -164,7 +164,7 @@ These capture the clinical graph connections. Each relationship needs a source d
 Run the deployment script:
 
 ```powershell
-.\deploy-ontology.ps1
+.\phase-4\deploy-ontology.ps1
 ```
 
 This creates the ontology with all 9 entity types, data bindings, and 8 relationship types in a single API call. Alternatively, follow the manual portal steps in [ONTOLOGY-SETUP-GUIDE.md](ONTOLOGY-SETUP-GUIDE.md).
@@ -222,12 +222,12 @@ Create relationships using the table in the **Relationship Types** section above
 
 | File | Change |
 |------|--------|
-| `deploy-ontology.ps1` | **New file** — Automated ontology deployment via REST API |
+| `phase-4/deploy-ontology.ps1` | **New file** — Automated ontology deployment via REST API |
 | `README.md` | Add Fabric IQ / Ontology section to architecture overview |
 | `TODO-ITEMS.MD` | Add ontology TODO items under a new priority section |
 | `docs/ONTOLOGY-SETUP-GUIDE.md` | **New file** — Step-by-step portal setup guide |
 | `deploy-fabric-rti.ps1` | Future: Add Phase 3 for ontology deployment via REST API (when available) |
-| `deploy-data-agents.ps1` | Future: Add ontology as agent datasource |
+| `phase-2/deploy-data-agents.ps1` | Future: Add ontology as agent datasource |
 
 ---
 

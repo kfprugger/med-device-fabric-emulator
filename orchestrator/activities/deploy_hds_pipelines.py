@@ -1,6 +1,6 @@
 """Phase 4b: DICOM shortcut + HDS pipeline triggers.
 
-Ports logic from storage-access-trusted-workspace.ps1:
+Ports logic from phase-2/storage-access-trusted-workspace.ps1:
 - Create Bronze Lakehouse shortcuts (FHIR + DICOM → ADLS Gen2)
 - Trigger HDS clinical, imaging, and OMOP pipelines
 """

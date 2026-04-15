@@ -22,6 +22,7 @@ import {
 import type { PhaseInfo } from "../api";
 import { getPhaseLogs } from "../api";
 import type { PhaseLog } from "../mockDeployment";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 const useStyles = makeStyles({
   card: {
@@ -31,6 +32,10 @@ const useStyles = makeStyles({
     ":hover": {
       boxShadow: tokens.shadow4,
       transform: "translateY(-1px)",
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorBrandStroke1}`,
+      outlineOffset: "2px",
     },
   },
   cardActive: {
@@ -182,6 +187,7 @@ function formatLogTime(iso: string): string {
 
 export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true, instanceId }: PhaseCardProps) {
   const styles = useStyles();
+  const reducedMotion = useReducedMotion();
   const tooltip = PHASE_TOOLTIPS[phase.phase] || phase.phase;
   const isActive = phase.status === "running" || phase.status === "waiting_for_input";
   const hasWarnings = (phase.warnings?.length ?? 0) > 0;
@@ -225,9 +231,9 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   // Auto-scroll logs to bottom (respects autoScroll prop)
   useEffect(() => {
     if (autoScroll && expanded && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
+      logEndRef.current.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
     }
-  }, [displayLogs.length, expanded, autoScroll]);
+  }, [displayLogs.length, expanded, autoScroll, reducedMotion]);
 
   const logLevelStyle = (level: PhaseLog["level"]) => {
     switch (level) {
@@ -253,6 +259,15 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
         className={`${styles.card} ${isActive ? styles.cardActive : ""}`}
         size="small"
         onClick={() => setExpanded((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
       >
         <CardHeader
           image={statusIcon(phase.status, hasWarnings)}

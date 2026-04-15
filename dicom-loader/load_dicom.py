@@ -16,6 +16,8 @@ from __future__ import annotations
 import os
 import sys
 import json
+import math
+import hashlib
 import shutil
 import logging
 import tempfile
@@ -146,8 +148,8 @@ def get_patient_info(fhir_url: str, token: str, patient_id: str) -> dict:
     }
 
 
-def get_patient_conditions(fhir_url: str, token: str, patient_id: str) -> list[str]:
-    """Get SNOMED codes for a patient's conditions."""
+def get_patient_conditions(fhir_url: str, token: str, patient_id: str) -> list[dict]:
+    """Get SNOMED condition codings for a patient (code + display)."""
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/fhir+json"}
     resp = httpx.get(
         f"{fhir_url}/Condition",
@@ -158,21 +160,67 @@ def get_patient_conditions(fhir_url: str, token: str, patient_id: str) -> list[s
     resp.raise_for_status()
     bundle = resp.json()
 
-    snomed_codes = []
+    codings: list[dict] = []
     for entry in bundle.get("entry", []):
         condition = entry.get("resource", {})
         for coding in condition.get("code", {}).get("coding", []):
             if "snomed" in coding.get("system", "").lower():
-                snomed_codes.append(coding["code"])
-    return snomed_codes
+                codings.append({
+                    "code": coding.get("code", ""),
+                    "display": coding.get("display", ""),
+                })
+    return codings
 
 
-def determine_collection(snomed_codes: list[str], modality_map: dict) -> tuple[str, str]:
+def determine_collection(condition_codings: list[dict], modality_map: dict) -> tuple[str, str]:
     """Match patient conditions to a TCIA collection. Returns (collection, modality)."""
+    snomed_codes = {c.get("code", "") for c in condition_codings}
     for mapping in modality_map["mappings"]:
         if mapping["snomed"] in snomed_codes:
             return mapping["collection"], mapping["modality"]
     return modality_map["default"]["collection"], modality_map["default"]["modality"]
+
+
+def infer_body_site(condition_codings: list[dict]) -> dict:
+    """
+    Infer ImagingStudy bodySite from diagnoses.
+    Returns {code, display, text, dicom_body_part}.
+    """
+    display_text = " ".join((c.get("display") or "") for c in condition_codings).lower()
+
+    # Respiratory and cardiopulmonary diagnoses map to chest imaging.
+    if any(k in display_text for k in ["copd", "asthma", "pneumonia", "respiratory", "covid", "lung", "heart", "coronary", "myocardial", "hypertension"]):
+        return {
+            "code": "39607008",
+            "display": "Chest",
+            "text": "Chest",
+            "dicom_body_part": "CHEST",
+        }
+
+    # Sleep/neurologic diagnoses map to head imaging.
+    if any(k in display_text for k in ["sleep", "insomnia", "migraine", "headache", "stroke", "neuro", "seizure", "head"]):
+        return {
+            "code": "69536005",
+            "display": "Head structure",
+            "text": "Head",
+            "dicom_body_part": "HEAD",
+        }
+
+    if any(k in display_text for k in ["diabetes", "obesity", "abdominal", "gastro", "liver", "kidney", "renal", "pancrea"]):
+        return {
+            "code": "113345001",
+            "display": "Abdominal structure",
+            "text": "Abdomen",
+            "dicom_body_part": "ABDOMEN",
+        }
+
+    # Fallback to chest for broad clinical usefulness.
+    return {
+        "code": "39607008",
+        "display": "Chest",
+        "text": "Chest",
+        "dicom_body_part": "CHEST",
+    }
 
 
 # ── FHIR ImagingStudy Creation ───────────────────────────────────────────
@@ -184,6 +232,7 @@ def create_imaging_study(
     study_uid: str,
     series_uid: str,
     modality: str,
+    body_site: dict,
     instance_count: int,
     blob_base_path: str,
 ) -> str:
@@ -196,6 +245,16 @@ def create_imaging_study(
         "numberOfSeries": 1,
         "numberOfInstances": instance_count,
         "description": f"TCIA re-tagged study — {instance_count} instances stored in ADLS Gen2",
+        "bodySite": {
+            "coding": [
+                {
+                    "system": "http://snomed.info/sct",
+                    "code": body_site["code"],
+                    "display": body_site["display"],
+                }
+            ],
+            "text": body_site["text"],
+        },
         "series": [
             {
                 "uid": series_uid,
@@ -305,13 +364,30 @@ def main():
 
     # Step 2: Get available TCIA studies
     tcia = TCIAClient()
-    logger.info("Fetching TCIA studies for collection '%s'...", collection)
-    all_studies = tcia.get_studies(collection)
-    logger.info("  %d studies available in %s", len(all_studies), collection)
+    studies_by_collection: dict[str, list[dict]] = {}
 
-    if not all_studies:
+    def get_studies_for_collection(coll_name: str) -> list[dict]:
+        if coll_name not in studies_by_collection:
+            logger.info("Fetching TCIA studies for collection '%s'...", coll_name)
+            studies_by_collection[coll_name] = tcia.get_studies(coll_name)
+            logger.info("  %d studies available in %s", len(studies_by_collection[coll_name]), coll_name)
+        return studies_by_collection[coll_name]
+
+    default_studies = get_studies_for_collection(collection)
+    if not default_studies:
         logger.error("No studies found in TCIA collection '%s'", collection)
         sys.exit(1)
+
+    # Ensure at least 10%% of assigned studies are chest X-rays.
+    chest_target_count = max(1, math.ceil(len(associations) * 0.10))
+    sorted_assoc = sorted(
+        associations,
+        key=lambda a: hashlib.sha256(f"{a.get('patientId','')}|{a.get('deviceId','')}".encode("utf-8")).hexdigest(),
+    )
+    forced_chest_patient_ids = {a["patientId"] for a in sorted_assoc[:chest_target_count]}
+    logger.info("Forcing chest X-ray assignment for %d/%d patients (>=10%%)", chest_target_count, len(associations))
+
+    fhir_token = azure.fhir_token
 
     # Step 3: Process each patient
     stats = {"uploaded": 0, "failed": 0, "imaging_studies_created": 0, "blobs_written": 0}
@@ -333,11 +409,26 @@ def main():
 
                 # Get patient info and conditions
                 patient_info = get_patient_info(fhir_url, fhir_token, patient_id)
-                snomed_codes = get_patient_conditions(fhir_url, fhir_token, patient_id)
-                target_collection, modality = determine_collection(snomed_codes, modality_map)
+                condition_codings = get_patient_conditions(fhir_url, fhir_token, patient_id)
+                target_collection, modality = determine_collection(condition_codings, modality_map)
+                body_site = infer_body_site(condition_codings)
+
+                if patient_id in forced_chest_patient_ids:
+                    target_collection = "RSNA Pneumonia"
+                    modality = "CR"
+                    body_site = {
+                        "code": "39607008",
+                        "display": "Chest",
+                        "text": "Chest",
+                        "dicom_body_part": "CHEST",
+                    }
 
                 # Pick a TCIA study (cycle through available studies)
-                tcia_study = all_studies[idx % len(all_studies)]
+                candidate_studies = get_studies_for_collection(target_collection)
+                if not candidate_studies:
+                    logger.warning("  No studies found in %s; falling back to %s", target_collection, collection)
+                    candidate_studies = default_studies
+                tcia_study = candidate_studies[idx % len(candidate_studies)]
                 study_uid_tcia = tcia_study["StudyInstanceUID"]
 
                 # Get series for the study (pick first series)
@@ -367,6 +458,7 @@ def main():
                     patient_info=patient_info,
                     device_id=device_id,
                     hospital_name=hospital,
+                    body_part_examined=body_site["dicom_body_part"],
                     output_dir=retag_dir,
                 )
 
@@ -388,6 +480,7 @@ def main():
                 img_study_id = create_imaging_study(
                     fhir_url, fhir_token, patient_id,
                     study_uid, series_uid, modality,
+                    body_site,
                     len(retagged_files), blob_base,
                 )
                 stats["imaging_studies_created"] += 1

@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -11,6 +11,7 @@ import {
   Text,
   Title2,
   tokens,
+  Checkbox,
 } from "@fluentui/react-components";
 import {
   EyeRegular,
@@ -123,14 +124,23 @@ function statusColor(
 export function DeploymentHistory() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const signatureRef = useRef("");
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [usingMock, setUsingMock] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [runFilter, setRunFilter] = useState<"all" | "deployment" | "teardown">("all");
-  const [nameFilter, setNameFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    const raw = searchParams.get("expanded") ?? "";
+    return new Set(raw ? raw.split(",").filter(Boolean) : []);
+  });
+  const [runFilter, setRunFilter] = useState<"all" | "deployment" | "teardown">(
+    () => (searchParams.get("type") as "all" | "deployment" | "teardown") || "all"
+  );
+  const [nameFilter, setNameFilter] = useState(() => searchParams.get("q") ?? "");
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get("from") ?? "");
+  const [dateTo, setDateTo] = useState(() => searchParams.get("to") ?? "");
+  const [liveUpdates, setLiveUpdates] = useState(() => searchParams.get("live") !== "0");
+  const [error, setError] = useState("");
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -142,14 +152,31 @@ export function DeploymentHistory() {
   };
 
   const refresh = useCallback(() => {
+    setError("");
     const mockDeps = listMockDeployments();
     listDeployments()
       .then((real) => {
-        setDeployments([...mockDeps, ...real]);
+        const merged = [...mockDeps, ...real];
+        const nextSignature = merged
+          .map((d) => `${d.instanceId}|${d.runtimeStatus}|${d.lastUpdatedTime ?? ""}`)
+          .sort()
+          .join(";");
+        if (nextSignature !== signatureRef.current) {
+          signatureRef.current = nextSignature;
+          setDeployments(merged);
+        }
         setUsingMock(mockDeps.length > 0 && real.length === 0);
       })
       .catch(() => {
-        setDeployments(mockDeps);
+        setError("Unable to refresh deployment history from backend.");
+        const fallbackSignature = mockDeps
+          .map((d) => `${d.instanceId}|${d.runtimeStatus}|${d.lastUpdatedTime ?? ""}`)
+          .sort()
+          .join(";");
+        if (fallbackSignature !== signatureRef.current) {
+          signatureRef.current = fallbackSignature;
+          setDeployments(mockDeps);
+        }
         setUsingMock(mockDeps.length > 0);
       })
       .finally(() => setLoading(false));
@@ -157,19 +184,34 @@ export function DeploymentHistory() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!liveUpdates) return;
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
-  }, [refresh]);
+  }, [refresh, liveUpdates]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    next.set("type", runFilter);
+    if (nameFilter) next.set("q", nameFilter); else next.delete("q");
+    if (dateFrom) next.set("from", dateFrom); else next.delete("from");
+    if (dateTo) next.set("to", dateTo); else next.delete("to");
+    if (expandedIds.size > 0) next.set("expanded", Array.from(expandedIds).join(",")); else next.delete("expanded");
+    next.set("live", liveUpdates ? "1" : "0");
+    setSearchParams(next, { replace: true });
+  }, [runFilter, nameFilter, dateFrom, dateTo, expandedIds, liveUpdates, setSearchParams]);
 
   const handleClearAll = async () => {
     if (!window.confirm(`Delete ALL ${deployments.length} deployment records? This cannot be undone.`)) return;
-    try { await clearAllDeployments(); } catch { /* ignore */ }
+    try { await clearAllDeployments(); } catch { setError("Failed to clear deployment history."); }
     refresh();
   };
 
   const handleDelete = async (instanceId: string) => {
     if (!window.confirm(`Delete deployment record "${instanceId}"?`)) return;
-    try { await deleteDeployment(instanceId); } catch { /* ignore */ }
+    try { await deleteDeployment(instanceId); } catch { setError(`Failed to delete deployment ${instanceId}.`); }
     refresh();
   };
 
@@ -218,6 +260,11 @@ export function DeploymentHistory() {
         {usingMock && <MockDataBanner />}
         <Title2>Run History</Title2>
         <div style={{ display: "flex", gap: tokens.spacingHorizontalS }}>
+          <Checkbox
+            checked={liveUpdates}
+            onChange={(_, d) => setLiveUpdates(!!d.checked)}
+            label="Live"
+          />
           <Button appearance="subtle" icon={<ArrowSyncRegular />} onClick={refresh}>
             Refresh
           </Button>
@@ -228,6 +275,12 @@ export function DeploymentHistory() {
           )}
         </div>
       </div>
+
+      {error && (
+        <Text size={200} style={{ color: tokens.colorStatusDangerForeground1, marginBottom: tokens.spacingVerticalS, display: "block" }}>
+          {error}
+        </Text>
+      )}
 
       <div className={styles.filterRow}>
         <Field label="Type" style={{ minWidth: 160 }}>
@@ -270,9 +323,11 @@ export function DeploymentHistory() {
 
       <div className={styles.list}>
         {loading && (
-          <Text style={{ textAlign: "center", padding: tokens.spacingVerticalXL, color: tokens.colorNeutralForeground3 }}>
-            Loading deployment history...
-          </Text>
+          <>
+            <div className={styles.card}><div className={styles.cardRow}><Text>Loading deployment history...</Text></div></div>
+            <div className={styles.card}><div className={styles.cardRow}><Text>Loading deployment history...</Text></div></div>
+            <div className={styles.card}><div className={styles.cardRow}><Text>Loading deployment history...</Text></div></div>
+          </>
         )}
         {!loading && filteredDeployments.map((d) => {
           const cs = d.customStatus as Record<string, unknown> | null;

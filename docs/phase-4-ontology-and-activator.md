@@ -75,7 +75,7 @@ flowchart TB
 
 ## Step 8 — Ontology Deployment
 
-**Script:** `deploy-ontology.ps1`
+**Script:** `phase-4/deploy-ontology.ps1`
 
 ### 8a — DeviceAssociation Table
 
@@ -161,7 +161,7 @@ The binding adds two files to each agent's definition:
 
 ```powershell
 # Standalone ontology deployment
-.\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds"
+.\phase-4\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds"
 ```
 
 ---
@@ -246,7 +246,7 @@ The Reflex is created in two API calls due to a Fabric limitation:
     -Location "eastus"
 
 # Ontology only (standalone script)
-.\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds"
+.\phase-4\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds"
 ```
 
 ### Parameters

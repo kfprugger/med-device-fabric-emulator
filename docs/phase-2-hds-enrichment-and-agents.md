@@ -122,7 +122,7 @@ Creates 6 KQL external tables via OneLake shortcuts, connecting the Eventhouse t
 
 ### 5e — DICOM Shortcut + HDS Pipelines
 
-**Script:** `storage-access-trusted-workspace.ps1`
+**Script:** `phase-2/storage-access-trusted-workspace.ps1`
 
 Creates the DICOM OneLake shortcut and triggers HDS pipelines:
 1. **DICOM shortcut** — ADLS Gen2 `dicom-output` → Bronze Lakehouse `/Files/Ingest/Imaging/DICOM/DICOM-HDS/`
@@ -144,7 +144,7 @@ Creates the DICOM OneLake shortcut and triggers HDS pipelines:
 
 ## Step 6 — Data Agents
 
-**Script:** `deploy-data-agents.ps1`
+**Script:** `phase-2/deploy-data-agents.ps1`
 
 Deploys two AI-powered Data Agents with **dual-datasource architecture**:
 
@@ -249,14 +249,14 @@ Rapid triage decisions with alert prioritization:
 
 ```powershell
 # Deploy both agents
-.\deploy-data-agents.ps1 -FabricWorkspaceName "med-device-rti-hds"
+.\phase-2\deploy-data-agents.ps1 -FabricWorkspaceName "med-device-rti-hds"
 
 # Deploy individually
-.\deploy-data-agents.ps1 -Patient360Only
-.\deploy-data-agents.ps1 -TriageOnly
+.\phase-2\deploy-data-agents.ps1 -Patient360Only
+.\phase-2\deploy-data-agents.ps1 -TriageOnly
 
 # Quick-update existing agent definitions
-.\update-agents-inline.ps1
+.\utilities\update-agents-inline.ps1
 ```
 
 ---

@@ -70,7 +70,7 @@ flowchart TB
 
 ## Step 1 — Base Azure Infrastructure
 
-**Script:** `deploy.ps1`
+**Script:** `phase-1/deploy.ps1`
 
 Deploys the foundational Azure resources into a single resource group:
 
@@ -85,7 +85,7 @@ The emulator uses a **managed identity** with `Azure Event Hubs Data Sender` RBA
 
 ```powershell
 # Standalone
-.\deploy.ps1 -ResourceGroupName "rg-medtech-rti-fhir" -Location "eastus" `
+.\phase-1\deploy.ps1 -ResourceGroupName "rg-medtech-rti-fhir" -Location "eastus" `
     -AdminSecurityGroup "sg-azure-admins" -Tags @{SecurityControl='Ignore'}
 ```
 
@@ -94,7 +94,7 @@ The emulator uses a **managed identity** with `Azure Event Hubs Data Sender` RBA
 Deploy-All.ps1 checks for existing infrastructure before re-deploying:
 - Queries the `infra` deployment in the resource group
 - Validates ACR health via `az acr show`
-- If the emulator ACI is missing, re-runs `deploy.ps1`
+- If the emulator ACI is missing, re-runs `phase-1/deploy.ps1`
 - Verifies emulator managed identity has `Event Hubs Data Sender` RBAC; assigns + restarts if missing
 
 ---
@@ -117,7 +117,7 @@ The workspace is reused if it already exists.
 
 ## Step 2 — FHIR Service + Synthea + Loader
 
-**Script:** `deploy-fhir.ps1 -SkipDicom`
+**Script:** `phase-1/deploy-fhir.ps1 -SkipDicom`
 
 ### Infrastructure
 
@@ -155,7 +155,7 @@ After loading patient data, `create-device-associations.py` runs:
 
 ```powershell
 # Standalone — infrastructure + data
-.\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-rti-fhir" -Location "eastus" `
+.\phase-1\deploy-fhir.ps1 -ResourceGroupName "rg-medtech-rti-fhir" -Location "eastus" `
     -AdminSecurityGroup "sg-azure-admins" -PatientCount 100 -SkipDicom
 ```
 
@@ -163,7 +163,7 @@ After loading patient data, `create-device-associations.py` runs:
 
 ## Step 2b — DICOM Service + Loader
 
-**Script:** `deploy-fhir.ps1 -RunDicom`
+**Script:** `phase-1/deploy-fhir.ps1 -RunDicom`
 
 Adds real medical imaging from [The Cancer Imaging Archive (TCIA)](https://www.cancerimagingarchive.net/):
 

@@ -6,6 +6,7 @@
 
 import { makeStyles } from "@fluentui/react-components";
 import { useMemo } from "react";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 const PARTICLE_COUNT = 40;
 
@@ -67,7 +68,12 @@ function generateParticles(): Particle[] {
 
 export function AnimatedBackground() {
   const styles = useStyles();
+  const reducedMotion = useReducedMotion();
   const particles = useMemo(generateParticles, []);
+
+  if (reducedMotion) {
+    return null;
+  }
 
   return (
     <div className={styles.container}>

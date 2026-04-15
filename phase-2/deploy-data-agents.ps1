@@ -793,35 +793,33 @@ ALERT TIER THRESHOLDS:
 - Pulse Rate: CRITICAL >150 or <40 bpm, URGENT 120-150 or 40-50, WARNING mildly abnormal
 - MULTI_METRIC: Both SpO2 and PR abnormal simultaneously (highest priority)
 
-COMMON QUERY PATTERNS — USE THESE INLINE:
+COMMON QUERY PATTERNS — GUIDANCE FOR TRIAGE:
 
-1) COMBINED CLINICAL ALERTS:
-   let spo2_alerts = TelemetryRaw
-       | where todatetime(timestamp) > ago(Xm)
-       | summarize min_spo2 = min(todouble(telemetry.spo2)), last_time = max(todatetime(timestamp)) by device_id
-       | where min_spo2 < 94
-       | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
-       | project device_id, spo2_tier, spo2_value = min_spo2, spo2_time = last_time;
-   let pr_alerts = TelemetryRaw
-       | where todatetime(timestamp) > ago(Xm)
-       | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), last_time = max(todatetime(timestamp)) by device_id
-       | where max_pr > 110 or min_pr < 50
-       | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL", max_pr > 130 or min_pr < 45, "URGENT", "WARNING"),
-                pr_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr))
-       | project device_id, pr_tier, pr_value, pr_time = last_time;
-   let vitals = TelemetryRaw
-       | where todatetime(timestamp) > ago(Xm)
-       | summarize arg_max(todatetime(timestamp), *) by device_id
-       | project device_id, last_reading_est = datetime_add('hour', -5, todatetime(timestamp)), spo2 = todouble(telemetry.spo2), pr = toint(telemetry.pr),
-                 pi = todouble(telemetry.pi), sphb = todouble(telemetry.sphb);
-   vitals
-   | join kind=leftouter spo2_alerts on device_id
-   | join kind=leftouter pr_alerts on device_id
-   | where isnotempty(spo2_tier) or isnotempty(pr_tier)
-   | extend alert_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
-                               spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING"),
-            alert_type = case(isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
-                              isnotempty(spo2_tier), "SPO2_LOW", "PR_ABNORMAL")
+**IMPORTANT: When "Run a clinical triage" is requested, use SEPARATE simple queries
+rather than complex multi-let statements. Run 2-3 separate queries and combine results.**
+
+1) FOR FULL TRIAGE — Run these THREE queries separately:
+   
+   QUERY 1 - SpO2 alerts:
+   TelemetryRaw | where todatetime(timestamp) > ago(Xm)
+   | summarize min_spo2 = round(min(todouble(telemetry.spo2)),1), avg_spo2 = round(avg(todouble(telemetry.spo2)),1), last_reading_est = datetime_add('hour', -5, max(todatetime(timestamp))) by device_id
+   | where min_spo2 < 94
+   | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
+   | project device_id, spo2_tier, min_spo2, avg_spo2, last_reading_est
+
+   QUERY 2 - Pulse rate alerts:
+   TelemetryRaw | where todatetime(timestamp) > ago(Xm)
+   | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), last_reading_est = datetime_add('hour', -5, max(todatetime(timestamp))) by device_id
+   | where max_pr > 110 or min_pr < 50
+   | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL", max_pr > 130 or min_pr < 45, "URGENT", "WARNING")
+   | project device_id, pr_tier, min_pr, max_pr, last_reading_est
+
+   QUERY 3 - Latest vitals for alerting devices:
+   TelemetryRaw | where todatetime(timestamp) > ago(Xm)
+   | summarize arg_max(todatetime(timestamp), *) by device_id
+   | project device_id, last_reading_est = datetime_add('hour', -5, todatetime(timestamp)), spo2 = todouble(telemetry.spo2), pr = toint(telemetry.pr), pi = todouble(telemetry.pi), sphb = todouble(telemetry.sphb)
+
+   Then COMBINE the results programmatically to identify MULTI_METRIC alerts and prioritize by tier.
 
 2) SPO2 ALERTS ONLY:
    TelemetryRaw | where todatetime(timestamp) > ago(Xm)
@@ -846,6 +844,7 @@ COMMON QUERY PATTERNS — USE THESE INLINE:
    | extend status = case(datetime_diff('second', now(), last_seen) < 30, "ONLINE", datetime_diff('second', now(), last_seen) < 120, "STALE", "OFFLINE")
 
 TRIAGE GUIDANCE:
+- **FOR "Run a clinical triage" OR "triage summary"**: Execute SEPARATE simple queries for SpO2 and PR alerts (see patterns above), then combine results in your response. DO NOT use complex multi-let queries with joins.
 - Always present CRITICAL alerts first, then URGENT, then WARNING
 - Highlight MULTI_METRIC alerts (both SpO2 + PR abnormal) as highest priority
 - For "triage summary", show counts by tier, then list CRITICAL devices, then URGENT
@@ -899,65 +898,26 @@ Example: | project device_id, spo2, pr, last_reading_est = datetime_add('hour', 
     $triageFewShots = @(
         @{
             id       = "b1b2c3d4-1111-4000-b000-000000000001"
-            question = "Show me all active critical alerts"
+            question = "Show me all critical SpO2 alerts in the last 10 minutes"
             query    = @"
-let spo2_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_spo2 = min(todouble(telemetry.spo2)), last_time = max(todatetime(timestamp)) by device_id
-    | where min_spo2 < 94
-    | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
-    | project device_id, spo2_tier, spo2_value = min_spo2, spo2_time = last_time;
-let pr_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), last_time = max(todatetime(timestamp)) by device_id
-    | where max_pr > 110 or min_pr < 50
-    | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL", max_pr > 130 or min_pr < 45, "URGENT", "WARNING"),
-             pr_value = iff(max_pr > 110, todouble(max_pr), todouble(min_pr))
-    | project device_id, pr_tier, pr_value, pr_time = last_time;
-let vitals = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize arg_max(todatetime(timestamp), *) by device_id
-    | project device_id, last_reading_est = datetime_add('hour', -5, todatetime(timestamp)), spo2 = todouble(telemetry.spo2), pr = toint(telemetry.pr),
-              pi = todouble(telemetry.pi), sphb = todouble(telemetry.sphb);
-vitals
-| join kind=leftouter spo2_alerts on device_id
-| join kind=leftouter pr_alerts on device_id
-| where isnotempty(spo2_tier) or isnotempty(pr_tier)
-| extend alert_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
-                            spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING"),
-         alert_type = case(isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC",
-                           isnotempty(spo2_tier), "SPO2_LOW", "PR_ABNORMAL")
-| where alert_tier == "CRITICAL"
-| project device_id, alert_tier, alert_type, spo2, pr, pi, sphb, last_reading_est
-| order by device_id asc
+TelemetryRaw
+| where todatetime(timestamp) > ago(10m)
+| summarize min_spo2 = round(min(todouble(telemetry.spo2)), 1), avg_spo2 = round(avg(todouble(telemetry.spo2)), 1), readings = count(), last_reading_est = datetime_add('hour', -5, max(todatetime(timestamp))) by device_id
+| where min_spo2 < 85
+| extend alert_tier = "CRITICAL"
+| project device_id, alert_tier, min_spo2, avg_spo2, readings, last_reading_est
+| order by min_spo2 asc
 "@
         },
         @{
             id       = "b1b2c3d4-2222-4000-b000-000000000002"
-            question = "Give me a triage summary"
+            question = "How many SpO2 alerts are there by severity level?"
             query    = @"
-let spo2_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_spo2 = min(todouble(telemetry.spo2)), last_time = max(todatetime(timestamp)) by device_id
-    | where min_spo2 < 94
-    | extend spo2_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
-    | project device_id, spo2_tier, spo2_value = min_spo2;
-let pr_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), last_time = max(todatetime(timestamp)) by device_id
-    | where max_pr > 110 or min_pr < 50
-    | extend pr_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL", max_pr > 130 or min_pr < 45, "URGENT", "WARNING")
-    | project device_id, pr_tier;
-let vitals = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize arg_max(todatetime(timestamp), *) by device_id
-    | project device_id, spo2 = todouble(telemetry.spo2), pr = toint(telemetry.pr);
-vitals
-| join kind=leftouter spo2_alerts on device_id
-| join kind=leftouter pr_alerts on device_id
-| where isnotempty(spo2_tier) or isnotempty(pr_tier)
-| extend alert_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL",
-                            spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING")
+TelemetryRaw
+| where todatetime(timestamp) > ago(10m)
+| summarize min_spo2 = min(todouble(telemetry.spo2)) by device_id
+| where min_spo2 < 94
+| extend alert_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
 | summarize alert_count = count() by alert_tier
 | order by alert_tier asc
 "@
@@ -982,21 +942,17 @@ TelemetryRaw
         },
         @{
             id       = "b1b2c3d4-4444-4000-b000-000000000004"
-            question = "How many alerts are there by severity?"
+            question = "Show me the alert summary for the last 5 minutes"
             query    = @"
-let spo2_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_spo2 = min(todouble(telemetry.spo2)) by device_id
-    | where min_spo2 < 94
-    | extend alert_tier = case(min_spo2 < 85, "CRITICAL", min_spo2 < 90, "URGENT", "WARNING")
-    | project device_id, alert_tier, alert_type = "SPO2_LOW";
-let pr_alerts = TelemetryRaw
-    | where todatetime(timestamp) > ago(10m)
-    | summarize min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)) by device_id
-    | where max_pr > 110 or min_pr < 50
-    | extend alert_tier = case(max_pr > 150 or min_pr < 40, "CRITICAL", max_pr > 130 or min_pr < 45, "URGENT", "WARNING")
-    | project device_id, alert_tier, alert_type = "PR_ABNORMAL";
-union spo2_alerts, pr_alerts
+TelemetryRaw
+| where todatetime(timestamp) > ago(5m)
+| summarize min_spo2 = min(todouble(telemetry.spo2)), min_pr = min(toint(telemetry.pr)), max_pr = max(toint(telemetry.pr)), last_reading_est = datetime_add('hour', -5, max(todatetime(timestamp))) by device_id
+| extend has_spo2_alert = min_spo2 < 94, has_pr_alert = (max_pr > 110 or min_pr < 50)
+| where has_spo2_alert or has_pr_alert
+| extend alert_tier = case(min_spo2 < 85 or max_pr > 150 or min_pr < 40, "CRITICAL",
+                            min_spo2 < 90 or max_pr > 130 or min_pr < 45, "URGENT", "WARNING"),
+         alert_type = case(has_spo2_alert and has_pr_alert, "MULTI_METRIC",
+                           has_spo2_alert, "SPO2_LOW", "PR_ABNORMAL")
 | summarize count() by alert_tier, alert_type
 | order by alert_tier asc, alert_type asc
 "@

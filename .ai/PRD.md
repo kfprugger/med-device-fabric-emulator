@@ -110,16 +110,16 @@ The deployment is orchestrated by `Deploy-All.ps1` and follows this sequence:
 
 | Step | Script | What It Does | Duration |
 |------|--------|-------------|----------|
-| 1 | `deploy.ps1` | Creates RG, Event Hub, ACR, Key Vault, builds emulator container, deploys emulator ACI | ~4 min |
+| 1 | `phase-1/deploy.ps1` | Creates RG, Event Hub, ACR, Key Vault, builds emulator container, deploys emulator ACI | ~4 min |
 | 1b | Fabric API (inline) | Creates Fabric workspace, assigns capacity, provisions managed identity | ~1 min |
-| 2 | `deploy-fhir.ps1 -SkipDicom` | Creates HDS workspace, FHIR service, storage, managed identity, builds Synthea + Loader containers, generates patients, uploads to FHIR | ~35 min |
-| 2b | `deploy-fhir.ps1 -RunDicom` | Builds DICOM loader container, downloads TCIA studies, re-tags, uploads .dcm to ADLS Gen2, creates ImagingStudy FHIR resources | ~18 min |
+| 2 | `phase-1/deploy-fhir.ps1 -SkipDicom` | Creates HDS workspace, FHIR service, storage, managed identity, builds Synthea + Loader containers, generates patients, uploads to FHIR | ~35 min |
+| 2b | `phase-1/deploy-fhir.ps1 -RunDicom` | Builds DICOM loader container, downloads TCIA studies, re-tags, uploads .dcm to ADLS Gen2, creates ImagingStudy FHIR resources | ~18 min |
 | 3 | `deploy-fabric-rti.ps1` | Creates Eventhouse, KQL DB, Eventstream, cloud connection, KQL tables/functions, FHIR $export, real-time dashboard | ~2 min |
 | — | *Manual* | Deploy HDS in Fabric portal with Healthcare Data Foundations + DICOM modality | ~15 min |
 | 4 | `deploy-fabric-rti.ps1 -Phase2` | Creates Bronze shortcut, scipy, KQL shortcuts to Silver tables, enriched alert functions, Clinical Alerts Map dashboard | ~10 min |
-| 4b | `storage-access-trusted-workspace.ps1` | Grants workspace identity RBAC + ACLs on storage, creates OneLake shortcut, invokes HDS imaging (incl. clinical) and OMOP pipelines | ~5 min |
-| 5 | `deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents with instructions + few-shots | ~5 min |
-| 6 | `deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) | ~5 min |
+| 4b | `phase-2/storage-access-trusted-workspace.ps1` | Grants workspace identity RBAC + ACLs on storage, creates OneLake shortcut, invokes HDS imaging (incl. clinical) and OMOP pipelines | ~5 min |
+| 5 | `phase-2/deploy-data-agents.ps1` | Creates Patient 360 + Clinical Triage Data Agents with instructions + few-shots | ~5 min |
+| 6 | `phase-4/deploy-ontology.ps1` | Creates ClinicalDeviceOntology (9 entity types, 8 relationships) | ~5 min |
 
 **Total automated time:** ~2 hours (excluding manual HDS step)
 
@@ -163,15 +163,15 @@ The deployment is orchestrated by `Deploy-All.ps1` and follows this sequence:
 | File | Lines | Purpose |
 |------|-------|---------|
 | `Deploy-All.ps1` | 396 | Full orchestrator with `Invoke-Step` pattern, step timing, summary |
-| `deploy-fhir.ps1` | 584 | FHIR infra + Synthea + Loader + DICOM loader pipeline |
+| `phase-1/deploy-fhir.ps1` | 584 | FHIR infra + Synthea + Loader + DICOM loader pipeline |
 | `deploy-fabric-rti.ps1` | 2279 | Fabric workspace, Eventhouse, Eventstream, KQL, dashboards, FHIR $export |
-| `deploy-data-agents.ps1` | 1003 | Patient 360 + Clinical Triage Data Agent creation/update |
-| `deploy-ontology.ps1` | 402 | Fabric IQ Ontology REST API deployment |
-| `deploy-operations-agent.ps1` | 312 | Operations agent (standalone) |
-| `deploy.ps1` | 203 | Legacy emulator-only deployment (Event Hub, ACR, emulator ACI) |
-| `storage-access-trusted-workspace.ps1` | 630 | DICOM OneLake shortcut + RBAC/ACL + HDS pipeline trigger (imaging, OMOP) |
-| `update-agents-inline.ps1` | 791 | Quick-update agent definitions (hardcoded workspace/item IDs) |
-| `run-kql-scripts.ps1` | 101 | Standalone KQL script runner |
+| `phase-2/deploy-data-agents.ps1` | 1003 | Patient 360 + Clinical Triage Data Agent creation/update |
+| `phase-4/deploy-ontology.ps1` | 402 | Fabric IQ Ontology REST API deployment |
+| `utilities/deploy-operations-agent.ps1` | 312 | Operations agent (standalone) |
+| `phase-1/deploy.ps1` | 203 | Legacy emulator-only deployment (Event Hub, ACR, emulator ACI) |
+| `phase-2/storage-access-trusted-workspace.ps1` | 630 | DICOM OneLake shortcut + RBAC/ACL + HDS pipeline trigger (imaging, OMOP) |
+| `utilities/update-agents-inline.ps1` | 791 | Quick-update agent definitions (hardcoded workspace/item IDs) |
+| `utilities/run-kql-scripts.ps1` | 101 | Standalone KQL script runner |
 
 ### 6.2 Cleanup Scripts
 
@@ -218,10 +218,10 @@ The deployment is orchestrated by `Deploy-All.ps1` and follows this sequence:
 | File | Purpose |
 |------|---------|
 | `README.md` | Project overview, architecture diagrams, deployment guide |
-| `PRD.md` | This document |
-| `TODO-ITEMS.MD` | Prioritized backlog |
+| `.ai/PRD.md` | This document |
+| `.ai/TODO-ITEMS.MD` | Prioritized backlog |
 | `fabric-rti/HDS-SETUP-GUIDE.md` | Healthcare Data Solutions manual setup walkthrough |
-| `docs/FABRIC-IQ-ONTOLOGY-PLAN.md` | Ontology design plan |
+| `.ai/FABRIC-IQ-ONTOLOGY-PLAN.md` | Ontology design plan |
 | `docs/ONTOLOGY-SETUP-GUIDE.md` | Ontology manual setup guide |
 | `fabric-rti/dashboard/DASHBOARD-GUIDE.md` | Real-time dashboard setup |
 

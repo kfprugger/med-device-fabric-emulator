@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -19,13 +19,14 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular } from "@fluentui/react-icons";
+import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular, ChevronDownRegular, ChevronUpRegular, CheckmarkCircleRegular, CircleRegular, SettingsRegular } from "@fluentui/react-icons";
 import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions, getMockCapacities } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
 import { HistoryInput } from "../components/HistoryInput";
 import { getTagHistory, addTagToHistory } from "../formHistory";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 const useStyles = makeStyles({
   form: {
@@ -93,6 +94,31 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalXS,
     padding: `0 ${tokens.spacingHorizontalL} ${tokens.spacingVerticalM}`,
   },
+  stickyHeader: {
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    backgroundColor: tokens.colorNeutralBackground1,
+    paddingBottom: tokens.spacingVerticalXS,
+  },
+  summarySidebar: {
+    position: "sticky",
+    top: tokens.spacingVerticalXXL,
+    height: "fit-content",
+    maxHeight: "calc(100vh - 100px)",
+    overflowY: "auto",
+  },
+  compactField: {
+    "@media (min-width: 1200px)": {
+      padding: `0 ${tokens.spacingHorizontalM} ${tokens.spacingVerticalS}`,
+    },
+  },
+  cardRequired: {
+    borderLeft: `3px solid ${tokens.colorBrandStroke1}`,
+  },
+  cardOptional: {
+    borderLeft: `3px solid ${tokens.colorNeutralStroke2}`,
+  },
 });
 
 function TagHistoryPanel({ onSelect }: { onSelect: (tags: Record<string, string>) => void }) {
@@ -148,6 +174,7 @@ function TagHistoryPanel({ onSelect }: { onSelect: (tags: Record<string, string>
 
 export function DeployWizard() {
   const styles = useStyles();
+  const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const { selectedSubscription, setSelectedSubscription } = useAppState();
   const [subscriptions, setSubscriptions] = useState(getMockSubscriptions());
@@ -159,6 +186,11 @@ export function DeployWizard() {
   const [pauseAfterDeploy, setPauseAfterDeploy] = useState(false);
   const [capacityRefreshing, setCapacityRefreshing] = useState(false);
   const [resumingCapacity, setResumingCapacity] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [existingDeployCollapsed, setExistingDeployCollapsed] = useState(false);
+  const [showSummary, setShowSummary] = useState(true);
+  const [initializing, setInitializing] = useState(true);
+  const [loadWarning, setLoadWarning] = useState("");
 
   const refreshCapacities = () => {
     if (subscriptions.length === 0) return;
@@ -180,7 +212,9 @@ export function DeployWizard() {
           if (!updated) setSelectedCapacity("");
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setError("Failed to refresh capacity state. Try again.");
+      })
       .finally(() => setCapacityRefreshing(false));
   };
 
@@ -197,7 +231,10 @@ export function DeployWizard() {
           }
         }
       })
-      .catch(() => { setUsingMock(true); });
+      .catch(() => {
+        setUsingMock(true);
+        setLoadWarning("Live Azure subscription scan unavailable. Using mock data.");
+      });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch Fabric capacities across all subscriptions
@@ -209,6 +246,7 @@ export function DeployWizard() {
       setCapacities(mockCaps);
       const active = mockCaps.find((c) => c.state === "Active");
       if (active && !selectedCapacity) setSelectedCapacity(active.name);
+      setInitializing(false);
       return;
     }
     setCapacityRefreshing(true);
@@ -223,8 +261,14 @@ export function DeployWizard() {
           else if (allCaps.length > 0) setSelectedCapacity(allCaps[0].name);
         }
       })
-      .catch(() => setCapacities([]))
-      .finally(() => setCapacityRefreshing(false));
+      .catch(() => {
+        setCapacities([]);
+        setLoadWarning("Unable to load Fabric capacities right now.");
+      })
+      .finally(() => {
+        setCapacityRefreshing(false);
+        setInitializing(false);
+      });
   }, [subscriptions, usingMock]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [config, setConfig] = useState<DeploymentConfig>({
@@ -272,6 +316,36 @@ export function DeployWizard() {
     : !selectedCapacity || !config.admin_security_group ? 1
     : !config.fabric_workspace_name && !useNamingConvention ? 2
     : -1; // all filled — no glow
+
+  // Calculate completion status for cards
+  const getCardCompletion = (cardIndex: number): { complete: number; total: number } => {
+    switch (cardIndex) {
+      case 0: // Naming
+        return { complete: (!useNamingConvention || !!namingPrefix) ? 1 : 0, total: 1 };
+      case 1: // Azure Config
+        const azureFields = [selectedSubscription, selectedCapacity, config.admin_security_group];
+        if (!useNamingConvention) azureFields.push(config.resource_group_name);
+        return { complete: azureFields.filter(Boolean).length, total: azureFields.length };
+      case 2: // Fabric Config
+        return { complete: config.fabric_workspace_name ? 1 : 0, total: 1 };
+      case 3: // Data Config
+        return { complete: [config.patient_count, config.alert_email?.trim()].filter(Boolean).length, total: 2 };
+      default:
+        return { complete: 0, total: 0 };
+    }
+  };
+
+  // Calculate estimated duration
+  const getEstimatedDuration = (): string => {
+    let minutes = 5; // Base infrastructure
+    if (!config.skip_fhir && !config.skip_synthea) minutes += Math.ceil(config.patient_count / 10);
+    if (!config.skip_dicom) minutes += 20;
+    if (!config.skip_fabric) minutes += 15;
+    if (!config.skip_hds_pipelines) minutes += 10;
+    if (!config.skip_data_agents) minutes += 5;
+    if (!config.skip_imaging) minutes += 5;
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+  };
 
   const update = (field: keyof DeploymentConfig, value: unknown) => {
     setConfig((prev) => {
@@ -353,10 +427,12 @@ export function DeployWizard() {
       setExistingDeploy(null);
       return;
     }
+    const abortController = new AbortController();
     const timer = setTimeout(() => {
       setCheckingExisting(true);
-      checkExistingDeployment(ws, rg)
+      checkExistingDeployment(ws, rg, abortController.signal)
         .then((info) => {
+          if (abortController.signal.aborted) return;
           setExistingDeploy(info);
           if (info) {
             update("reuse_patients", true);
@@ -386,10 +462,17 @@ export function DeployWizard() {
             }
           }
         })
-        .catch(() => setExistingDeploy(null))
-        .finally(() => setCheckingExisting(false));
+        .catch((err) => {
+          if (!abortController.signal.aborted) setExistingDeploy(null);
+        })
+        .finally(() => {
+          if (!abortController.signal.aborted) setCheckingExisting(false);
+        });
     }, 500); // debounce
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
   }, [config.fabric_workspace_name, config.resource_group_name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When naming prefix changes, auto-derive RG and workspace names
@@ -451,8 +534,8 @@ export function DeployWizard() {
   };
 
   const handleSubmit = async () => {
-    if (!config.fabric_workspace_name) {
-      setError("Fabric workspace name is required.");
+    if (validationErrors.length > 0) {
+      setError(validationErrors[0]);
       return;
     }
     setLoading(true);
@@ -491,19 +574,58 @@ export function DeployWizard() {
     navigate(`/monitor/${instanceId}`);
   };
 
-  return (
-    <div>
-      {usingMock && <MockDataBanner />}
-      <Title2>Deployment Settings</Title2>
+  const validationErrors = useMemo(() => {
+    const issues: string[] = [];
+    if (!selectedSubscription) issues.push("Select an Azure subscription.");
+    if (!selectedCapacity) issues.push("Select a Fabric capacity.");
+    if (!config.admin_security_group?.trim()) issues.push("Admin Security Group is required.");
+    if (useNamingConvention && !namingPrefix.trim()) issues.push("Deployment Name is required when naming convention is enabled.");
+    if (!useNamingConvention && !config.resource_group_name?.trim()) issues.push("Resource Group Name is required.");
+    if (!config.fabric_workspace_name?.trim()) issues.push("Fabric workspace name is required.");
+    if (!config.alert_email?.trim()) issues.push("Alert email is required.");
+    if (!config.patient_count || config.patient_count < 1) issues.push("Patient count must be at least 1.");
+    return issues;
+  }, [
+    selectedSubscription,
+    selectedCapacity,
+    config.admin_security_group,
+    config.resource_group_name,
+    config.fabric_workspace_name,
+    config.alert_email,
+    config.patient_count,
+    useNamingConvention,
+    namingPrefix,
+  ]);
 
-      {/* Responsive grid: 2 columns on wide screens, 1 column on narrow */}
-      <style>{`
+  const canStartDeployment = validationErrors.length === 0 && !loading;
+
+  return (
+    <div style={{ display: "flex", gap: "24px", position: "relative" }}>
+      {/* Main content area */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {usingMock && <MockDataBanner />}
+        {loadWarning && (
+          <div style={{
+            marginBottom: tokens.spacingVerticalS,
+            padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+            backgroundColor: tokens.colorStatusWarningBackground1,
+            borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
+            borderRadius: tokens.borderRadiusMedium,
+          }}>
+            <Text size={200}>{loadWarning}</Text>
+          </div>
+        )}
+        <div className={styles.stickyHeader}>
+          <Title2>Deployment Settings</Title2>
+        </div>
+
+        {/* Responsive grid: auto-flow dense packing eliminates wasted space */}
+        <style>{`
         .deploy-form-grid {
           display: grid;
           grid-template-columns: 1fr;
           gap: 16px;
           margin-top: 16px;
-          transition: grid-template-columns 0.35s ease;
         }
         .deploy-form-grid > * {
           animation: deploy-card-in 0.5s ease both;
@@ -519,9 +641,6 @@ export function DeployWizard() {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        .deploy-form-grid .deploy-full-width {
-          grid-column: 1 / -1;
-        }
         .deploy-card-active {
           outline: 3px solid #0f6cbd !important;
           outline-offset: 4px;
@@ -531,26 +650,123 @@ export function DeployWizard() {
           0%, 100% { box-shadow: 0 0 16px rgba(15, 108, 189, 0.3); outline-color: #0f6cbd; }
           50%      { box-shadow: 0 0 36px rgba(15, 108, 189, 0.6); outline-color: #78b9eb; }
         }
+        /* Masonry layout on wide screens to avoid empty holes between variable-height cards */
         @media (min-width: 1200px) {
           .deploy-form-grid {
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            display: block;
+            column-count: 2;
+            column-gap: 20px;
+          }
+          .deploy-form-grid > * {
+            display: inline-block;
+            width: 100%;
+            margin-bottom: 20px;
+            break-inside: avoid;
+            -webkit-column-break-inside: avoid;
           }
         }
+        /* 3-column layout for extra-wide screens to maximize space usage */
+        @media (min-width: 1800px) {
+          .deploy-form-grid {
+            column-count: 3;
+          }
+        }
+        /* Compact padding on wide screens */
+        @media (min-width: 1400px) {
+          .deploy-compact-padding .fui-CardHeader {
+            padding: 12px 16px;
+          }
+          .deploy-compact-padding .deploy-field-group {
+            padding: 0 16px 12px;
+          }
+        }
+        /* Tall cards span 2 rows for better visual hierarchy */
+        .deploy-card-tall {
+          grid-row: span 2;
+        }
+        /* Sticky card headers */
+        .deploy-card-sticky-header .fui-CardHeader {
+          position: sticky;
+          top: 0;
+          z-index: 5;
+          background-color: inherit;
+          border-bottom: 1px solid #e0e0e0;
+        }
+        /* Collapsible section animation */
+        .deploy-collapsible-content {
+          overflow: hidden;
+          transition: max-height 0.3s ease, opacity 0.3s ease;
+        }
+        .deploy-collapsible-collapsed {
+          max-height: 0 !important;
+          opacity: 0;
+        }
+        /* Advanced options toggle */
+        .deploy-advanced-toggle {
+          margin: 12px 0;
+          padding: 10px 16px;
+          background: ${tokens.colorNeutralBackground3};
+          border: 1px solid ${tokens.colorNeutralStroke2};
+          border-radius: 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          transition: all 0.2s;
+          color: ${tokens.colorNeutralForeground1};
+        }
+        .deploy-advanced-toggle:hover {
+          background: ${tokens.colorNeutralBackground4};
+          border-color: ${tokens.colorBrandStroke1};
+        }
+        .deploy-advanced-toggle svg {
+          color: ${tokens.colorNeutralForeground2};
+        }
+        ${reducedMotion ? `
+        .deploy-form-grid > *,
+        .deploy-card-active,
+        .deploy-collapsible-content,
+        .deploy-advanced-toggle {
+          animation: none !important;
+          transition: none !important;
+        }
+        ` : ""}
         @media (prefers-reduced-motion: reduce) {
           .deploy-form-grid > *,
-          .deploy-card-active {
+          .deploy-card-active,
+          .deploy-collapsible-content {
             animation: none !important;
+            transition: none !important;
           }
         }
       `}</style>
 
-      <div className={`${styles.form} deploy-form-grid`}>
+      {initializing ? (
+        <div className={`${styles.form} deploy-form-grid`}>
+          <Card className={styles.section}><CardHeader header={<Subtitle1>Loading deployment configuration...</Subtitle1>} /></Card>
+          <Card className={styles.section}><CardHeader header={<Subtitle1>Loading capacities and subscriptions...</Subtitle1>} /></Card>
+          <Card className={styles.section}><CardHeader header={<Subtitle1>Preparing defaults...</Subtitle1>} /></Card>
+        </div>
+      ) : (
+
+      <div className={`${styles.form} deploy-form-grid deploy-compact-padding`}>
         {/* Naming Convention */}
-        <Card className={`${styles.section}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Naming Convention</Subtitle1>}
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Naming Convention</Subtitle1>
+                {(() => {
+                  const { complete, total } = getCardCompletion(0);
+                  return complete === total ? (
+                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                  ) : (
+                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                  );
+                })()}
+              </div>
+            }
             description="Auto-generate consistent names for Azure and Fabric resources"
           />
           <div className={styles.fieldGroup}>
@@ -604,10 +820,22 @@ export function DeployWizard() {
         </Card>
 
         {/* Azure Configuration */}
-        <Card className={`${styles.section}${activeCardIndex === 1 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 1 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Azure Configuration</Subtitle1>}
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Azure Configuration</Subtitle1>
+                {(() => {
+                  const { complete, total } = getCardCompletion(1);
+                  return complete === total ? (
+                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                  ) : (
+                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                  );
+                })()}
+              </div>
+            }
             description="Target Azure subscription and resource group settings"
           />
           <div className={styles.fieldGroup}>
@@ -620,20 +848,32 @@ export function DeployWizard() {
                 borderRadius: tokens.borderRadiusMedium,
                 marginBottom: tokens.spacingVerticalS,
               }}>
-                <Text size={200} block>
-                  <Badge color="informative" size="small" style={{ marginRight: 6 }}>Auto-populated</Badge>
-                  Settings restored from prior deployment <strong>{existingDeploy.instanceId}</strong>
-                </Text>
-                <Checkbox
-                  checked={overridePriorSettings}
-                  onChange={(_, d) => setOverridePriorSettings(!!d.checked)}
-                  label="Override previous settings"
-                  style={{ marginTop: tokens.spacingVerticalXS }}
-                />
+                <div
+                  onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                >
+                  <Text size={200} weight="semibold">
+                    <Badge color="informative" size="small" style={{ marginRight: 6 }}>Auto-populated</Badge>
+                    Settings from prior deployment
+                  </Text>
+                  {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                </div>
+                <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
+                  style={{ maxHeight: existingDeployCollapsed ? "0" : "200px" }}
+                >
+                  <Text size={200} block style={{ marginTop: 8 }}>
+                    Restored from deployment <strong>{existingDeploy.instanceId}</strong>
+                  </Text>
+                  <Checkbox
+                    checked={overridePriorSettings}
+                    onChange={(_, d) => setOverridePriorSettings(!!d.checked)}
+                    label="Override previous settings"
+                    style={{ marginTop: tokens.spacingVerticalXS }}
+                  />
+                </div>
               </div>
             )}
-            <div className={styles.subscriptionRow}>
-              <Field
+            <Field
                 label={
                   <InfoLabel info="Azure subscription where infrastructure resources will be deployed. This selection also applies to the Teardown tab." infoButton={{ popover: { positioning: "after" } }}>
                     <span className={styles.fieldLabelWithIcon}>
@@ -782,7 +1022,6 @@ export function DeployWizard() {
                   })()}
                 </div>
               </Field>
-            </div>
             <Field
               label={
                 <InfoLabel info="Azure resource group where Event Hub, ACR, FHIR Service, and ACI containers are deployed." infoButton={{ popover: { positioning: "after" } }}>
@@ -838,6 +1077,17 @@ export function DeployWizard() {
                 disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
               />
             </Field>
+            {/* Advanced Options Toggle */}
+            <div className="deploy-advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <SettingsRegular style={{ fontSize: 16, color: tokens.colorBrandForeground1 }} />
+                <Text weight="semibold" size={300}>Advanced Options</Text>
+              </div>
+              {showAdvanced ? <ChevronUpRegular /> : <ChevronDownRegular />}
+            </div>
+            <div className={`deploy-collapsible-content${!showAdvanced ? " deploy-collapsible-collapsed" : ""}`}
+              style={{ maxHeight: showAdvanced ? "800px" : "0" }}
+            >
             <Checkbox
               checked={useTags}
               onChange={(_, d) => {
@@ -915,14 +1165,27 @@ export function DeployWizard() {
                 </Button>
               </div>
             )}
+            </div>
           </div>
         </Card>
 
         {/* Fabric Configuration */}
-        <Card className={`${styles.section}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
+        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Fabric Configuration</Subtitle1>}
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Fabric Configuration</Subtitle1>
+                {(() => {
+                  const { complete, total } = getCardCompletion(2);
+                  return complete === total ? (
+                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                  ) : (
+                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                  );
+                })()}
+              </div>
+            }
             description="Microsoft Fabric workspace where RTI, Lakehouses, and Data Agents are deployed"
           />
           <div className={styles.fieldGroup}>
@@ -946,7 +1209,7 @@ export function DeployWizard() {
                 placeholder={useNamingConvention ? "Set via naming convention above" : "e.g. med-device-rti-hds"}
               />
             </Field>
-            {selectedCapacity && (
+            {selectedCapacity && showAdvanced && (
               <Checkbox
                 checked={pauseAfterDeploy}
                 onChange={(_, d) => setPauseAfterDeploy(!!d.checked)}
@@ -957,10 +1220,22 @@ export function DeployWizard() {
         </Card>
 
         {/* Data Configuration */}
-        <Card className={`${styles.section} deploy-full-width${activeCardIndex === 3 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 3 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Data Configuration</Subtitle1>}
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Data Configuration</Subtitle1>
+                {(() => {
+                  const { complete, total } = getCardCompletion(3);
+                  return complete === total ? (
+                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                  ) : (
+                    <Badge color="error" size="small">Required</Badge>
+                  );
+                })()}
+              </div>
+            }
             description="Synthetic patient data generation and alerting"
           />
           <div className={styles.fieldGroup}>
@@ -968,17 +1243,17 @@ export function DeployWizard() {
             {/* Existing deployment detection banner */}
             {checkingExisting && (
               <div style={{
-                padding: tokens.spacingHorizontalM,
+                padding: tokens.spacingHorizontalS,
                 backgroundColor: tokens.colorNeutralBackground4,
                 borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
                 borderRadius: tokens.borderRadiusMedium,
-                marginBottom: tokens.spacingVerticalM,
+                marginBottom: tokens.spacingVerticalS,
                 display: "flex",
                 alignItems: "center",
                 gap: tokens.spacingHorizontalS,
               }}>
                 <Badge color="informative" size="small">Checking</Badge>
-                <Text size={200}>Querying Azure for existing deployment resources...</Text>
+                <Text size={200}>Querying Azure...</Text>
               </div>
             )}
 
@@ -988,11 +1263,20 @@ export function DeployWizard() {
                 backgroundColor: tokens.colorStatusWarningBackground1,
                 borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
                 borderRadius: tokens.borderRadiusMedium,
-                marginBottom: tokens.spacingVerticalM,
+                marginBottom: tokens.spacingVerticalS,
               }}>
-                <Text weight="semibold" block>
-                  Previous deployment detected
-                </Text>
+                <div
+                  onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                >
+                  <Text weight="semibold">
+                    Previous deployment detected
+                  </Text>
+                  {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                </div>
+                <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
+                  style={{ maxHeight: existingDeployCollapsed ? "0" : "400px" }}
+                >
                 <Text size={200} block style={{ marginTop: 4, color: tokens.colorNeutralForeground2 }}>
                   Workspace <strong>{existingDeploy.workspaceName}</strong> was deployed on{" "}
                   {new Date(existingDeploy.createdTime).toLocaleString()}
@@ -1050,6 +1334,7 @@ export function DeployWizard() {
                       : `New batch of ${config.patient_count} patients will be generated with ${config.patient_count} new device associations. Existing data will be cleared and replaced.`}
                   </Text>
                 </div>
+                </div>
               </div>
             )}
 
@@ -1075,10 +1360,11 @@ export function DeployWizard() {
             </Field>
             <Field
               label={
-                <InfoLabel info="Email address for clinical alert notifications via Data Activator (Reflex). Leave blank to skip." infoButton={{ popover: { positioning: "after" } }}>
-                  Alert Email (optional)
+                <InfoLabel info="Email address for clinical alert notifications via Data Activator (Reflex)." infoButton={{ popover: { positioning: "after" } }}>
+                  Alert Email
                 </InfoLabel>
               }
+              required
             >
               <HistoryInput
                 field="alert-email"
@@ -1092,10 +1378,15 @@ export function DeployWizard() {
         </Card>
 
         {/* Phase & Component Control */}
-        <Card className={`${styles.section} deploy-full-width`}>
+        <Card className={`${styles.section} ${styles.cardOptional}`}>
           <CardHeader
             className={styles.sectionHeader}
-            header={<Subtitle1>Phase &amp; Component Control</Subtitle1>}
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Phase &amp; Component Control</Subtitle1>
+                <Badge color="informative" size="small">Optional</Badge>
+              </div>
+            }
             description={
               <span className={styles.fieldLabelWithIcon}>
                 <img src="/icon-phases.svg" alt="" width={14} height={14} />
@@ -1231,32 +1522,131 @@ export function DeployWizard() {
           </div>
         </Card>
 
-        {/* Actions */}
-        <div className={`${styles.actions} deploy-full-width`}>
-          <Tooltip content="Launch the full deployment pipeline" relationship="description">
-            <Button
-              appearance="primary"
-              icon={<RocketRegular />}
-              onClick={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? "Starting…" : "Start Deployment"}
-            </Button>
-          </Tooltip>
-          <Tooltip content="Run a simulated deployment to preview the UI (no Azure/Fabric resources created)" relationship="description">
-            <Button
-              appearance="outline"
-              icon={<BeakerRegular />}
-              onClick={handleMockDeploy}
-              size="small"
-            >
-              Mock Deploy
-            </Button>
-          </Tooltip>
-        </div>
-
         {error && <div className={styles.error} ref={(el) => el?.scrollIntoView({ behavior: "smooth" })}>{error}</div>}
       </div>
+      )}
+
+      {/* Actions */}
+      {validationErrors.length > 0 && !initializing && (
+        <div style={{
+          marginTop: tokens.spacingVerticalL,
+          padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+          backgroundColor: tokens.colorStatusWarningBackground1,
+          borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
+          borderRadius: tokens.borderRadiusMedium,
+        }}>
+          <Text weight="semibold" size={200} block>Complete these required fields before deployment:</Text>
+          {validationErrors.map((issue) => (
+            <Text key={issue} size={200} block style={{ color: tokens.colorNeutralForeground2 }}>• {issue}</Text>
+          ))}
+        </div>
+      )}
+      <div className={styles.actions}>
+        <Tooltip content="Launch the full deployment pipeline" relationship="description">
+          <Button
+            appearance="primary"
+            icon={<RocketRegular />}
+            onClick={handleSubmit}
+            disabled={!canStartDeployment}
+          >
+            {loading ? "Starting…" : "Start Deployment"}
+          </Button>
+        </Tooltip>
+        <Tooltip content="Run a simulated deployment to preview the UI (no Azure/Fabric resources created)" relationship="description">
+          <Button
+            appearance="outline"
+            icon={<BeakerRegular />}
+            onClick={handleMockDeploy}
+            size="small"
+          >
+            Mock Deploy
+          </Button>
+        </Tooltip>
+      </div>
+      </div>
+
+      {/* Summary Sidebar (wide screens only) */}
+      {showSummary && (
+        <div
+          className={styles.summarySidebar}
+          style={{
+            width: "280px",
+            display: "none",
+          }}
+        >
+          <style>{`
+            @media (min-width: 1800px) {
+              .${styles.summarySidebar} {
+                display: block !important;
+              }
+            }
+          `}</style>
+          <Card>
+            <CardHeader
+              header={<Subtitle1>Deployment Summary</Subtitle1>}
+            />
+            <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <Text size={200} weight="semibold" block>Deployment Name</Text>
+                <Text size={200} block style={{ color: tokens.colorNeutralForeground2 }}>
+                  {namingPrefix || config.fabric_workspace_name || "<not set>"}
+                </Text>
+              </div>
+              <div>
+                <Text size={200} weight="semibold" block>Subscription</Text>
+                <Text size={200} block style={{ color: tokens.colorNeutralForeground2 }}>
+                  {subscriptions.find(s => s.id === selectedSubscription)?.name?.substring(0, 25) || "<not selected>"}
+                </Text>
+              </div>
+              <div>
+                <Text size={200} weight="semibold" block>Capacity</Text>
+                <Text size={200} block style={{ color: tokens.colorNeutralForeground2 }}>
+                  {selectedCapacity || "<not selected>"}
+                </Text>
+              </div>
+              <div>
+                <Text size={200} weight="semibold" block>Patient Count</Text>
+                <Text size={200} block style={{ color: tokens.colorNeutralForeground2 }}>
+                  {config.reuse_patients ? `${config.patient_count} (reusing)` : config.patient_count}
+                </Text>
+              </div>
+              <div style={{ borderTop: `1px solid ${tokens.colorNeutralStroke2}`, paddingTop: 12, marginTop: 4 }}>
+                <Text size={200} weight="semibold" block>Estimated Duration</Text>
+                <Text size={300} weight="bold" block style={{ color: tokens.colorBrandForeground1, marginTop: 4 }}>
+                  {getEstimatedDuration()}
+                </Text>
+              </div>
+              <div>
+                <Text size={200} weight="semibold" block style={{ marginBottom: 4 }}>Components</Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {!config.skip_base_infra && <Text size={100}>✓ Infrastructure</Text>}
+                  {!config.skip_fhir && <Text size={100}>✓ FHIR Service</Text>}
+                  {!config.skip_dicom && <Text size={100}>✓ DICOM Service</Text>}
+                  {!config.skip_fabric && <Text size={100}>✓ Fabric RTI</Text>}
+                  {!config.skip_hds_pipelines && <Text size={100}>✓ HDS Pipelines</Text>}
+                  {!config.skip_data_agents && <Text size={100}>✓ Data Agents</Text>}
+                  {!config.skip_imaging && <Text size={100}>✓ Imaging Toolkit</Text>}
+                  {!config.skip_ontology && <Text size={100}>✓ Ontology</Text>}
+                  {!config.skip_activator && config.alert_email && <Text size={100}>✓ Alerts</Text>}
+                </div>
+              </div>
+              {Object.keys(config.tags).length > 0 && (
+                <div>
+                  <Text size={200} weight="semibold" block>Tags</Text>
+                  {Object.entries(config.tags).slice(0, 3).map(([k, v]) => (
+                    <Text key={k} size={100} block style={{ color: tokens.colorNeutralForeground3 }}>
+                      {k}: {v}
+                    </Text>
+                  ))}
+                  {Object.keys(config.tags).length > 3 && (
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>+{Object.keys(config.tags).length - 3} more</Text>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

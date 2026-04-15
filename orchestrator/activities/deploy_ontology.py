@@ -1,6 +1,6 @@
 """Phase 6: Deploy ClinicalDeviceOntology.
 
-Ports logic from deploy-ontology.ps1:
+Ports logic from phase-4/deploy-ontology.ps1:
 - Create ontology with 9 entity types
 - Configure data bindings and relationships
 - Poll until provisioned

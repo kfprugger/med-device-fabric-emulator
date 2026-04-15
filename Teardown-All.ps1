@@ -54,13 +54,18 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
 # Read deployment state for defaults if parameters not provided
+$stateDir = Join-Path $ScriptDir "state-tracking"
 $stateFile = $null
-# Try workspace-specific state file first, fall back to legacy
+# Try workspace-specific state file first, fall back to legacy locations
 if ($FabricWorkspaceName) {
-    $stateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+    $stateFile = Join-Path $stateDir ".deployment-state-$FabricWorkspaceName.json"
 }
 if (-not $stateFile -or -not (Test-Path $stateFile)) {
-    # Fall back to legacy state file
+    # Fall back to legacy state file (old root-level location)
+    $legacyStateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+    if ($FabricWorkspaceName -and (Test-Path $legacyStateFile)) { $stateFile = $legacyStateFile }
+}
+if (-not $stateFile -or -not (Test-Path $stateFile)) {
     $legacyStateFile = Join-Path $ScriptDir ".deployment-state.json"
     if (Test-Path $legacyStateFile) { $stateFile = $legacyStateFile }
 }
@@ -70,11 +75,11 @@ if ($stateFile -and (Test-Path $stateFile)) {
     if ($lastPhase.resources) {
         if (-not $FabricWorkspaceName -and $lastPhase.resources.FabricWorkspaceName) {
             $FabricWorkspaceName = $lastPhase.resources.FabricWorkspaceName
-            Write-Host "  (Using workspace from .deployment-state.json: $FabricWorkspaceName)" -ForegroundColor DarkGray
+            Write-Host "  (Using workspace from deployment state: $FabricWorkspaceName)" -ForegroundColor DarkGray
         }
         if (-not $ResourceGroupName -and $lastPhase.resources.ResourceGroupName) {
             $ResourceGroupName = $lastPhase.resources.ResourceGroupName
-            Write-Host "  (Using RG from .deployment-state.json: $ResourceGroupName)" -ForegroundColor DarkGray
+            Write-Host "  (Using RG from deployment state: $ResourceGroupName)" -ForegroundColor DarkGray
         }
     }
 }
@@ -288,11 +293,16 @@ if (-not $SkipAzure -and $DicomViewerResourceGroup -ne $ResourceGroupName) {
 $timer.Stop()
 $totalMin = [math]::Round($timer.Elapsed.TotalMinutes, 1)
 
-# Clean up state file (workspace-specific)
-$wsStateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+# Clean up state files (new location + legacy root-level)
+$wsStateFile = Join-Path $stateDir ".deployment-state-$FabricWorkspaceName.json"
 if (Test-Path $wsStateFile) {
     Remove-Item $wsStateFile -Force
-    Write-Host "  Deployment state file removed (.deployment-state-$FabricWorkspaceName.json)" -ForegroundColor DarkGray
+    Write-Host "  Deployment state file removed (state-tracking/.deployment-state-$FabricWorkspaceName.json)" -ForegroundColor DarkGray
+}
+$legacyWsStateFile = Join-Path $ScriptDir ".deployment-state-$FabricWorkspaceName.json"
+if (Test-Path $legacyWsStateFile) {
+    Remove-Item $legacyWsStateFile -Force
+    Write-Host "  Legacy state file removed (.deployment-state-$FabricWorkspaceName.json)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

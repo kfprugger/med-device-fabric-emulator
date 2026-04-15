@@ -60,7 +60,7 @@ Omit `-Wait` to teardown async (non-blocking). AHDS RG deletion takes 5-15 min.
 
 ### Ontology Deploy
 ```powershell
-.\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds-MMDD"
+.\phase-4\deploy-ontology.ps1 -FabricWorkspaceName "med-device-rti-hds-MMDD"
 ```
 
 ## Deployment Step Sequence
@@ -215,10 +215,10 @@ The teardown script validates both workspace and RG before deleting. If either i
 |------|---------|
 | `Deploy-All.ps1` | Main orchestrator (all phases) |
 | `Teardown-All.ps1` | Cleanup orchestrator |
-| `deploy.ps1` | Phase 1 Azure infra |
-| `deploy-fhir.ps1` | FHIR + DICOM data pipeline |
+| `phase-1/deploy.ps1` | Phase 1 Azure infra |
+| `phase-1/deploy-fhir.ps1` | FHIR + DICOM data pipeline |
 | `deploy-fabric-rti.ps1` | Fabric RTI Phase 1 + 2 |
-| `deploy-data-agents.ps1` | Data Agents (Patient 360 + Clinical Triage) |
-| `deploy-ontology.ps1` | Fabric IQ Ontology |
-| `storage-access-trusted-workspace.ps1` | DICOM shortcut + HDS pipeline orchestration |
-| `.deployment-state.json` | Deployment state tracking (gitignored) |
+| `phase-2/deploy-data-agents.ps1` | Data Agents (Patient 360 + Clinical Triage) |
+| `phase-4/deploy-ontology.ps1` | Fabric IQ Ontology |
+| `phase-2/storage-access-trusted-workspace.ps1` | DICOM shortcut + HDS pipeline orchestration |
+| `state-tracking/` | Deployment state tracking (gitignored) |

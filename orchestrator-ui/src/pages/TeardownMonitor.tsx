@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardHeader,
+  Checkbox,
   makeStyles,
   Text,
   Title2,
@@ -168,7 +169,7 @@ function dotContent(status: TeardownStep["status"]) {
   }
 }
 
-function TeardownInstanceCard({ instance, onDismiss }: { instance: TeardownInstance; onDismiss?: () => void }) {
+function TeardownInstanceCard({ instance, onDismiss, compact }: { instance: TeardownInstance; onDismiss?: () => void; compact?: boolean }) {
   const styles = useStyles();
 
   const deletedCount = instance.steps.filter((s) => s.status === "deleted").length;
@@ -215,7 +216,7 @@ function TeardownInstanceCard({ instance, onDismiss }: { instance: TeardownInsta
       />
 
       {/* Reverse milestone track */}
-      <div className={styles.milestoneTrack}>
+      <div className={styles.milestoneTrack} style={compact ? { height: "72px", marginTop: tokens.spacingVerticalS } : undefined}>
         <div className={styles.trackLine} />
         <div
           className={styles.trackFill}
@@ -268,14 +269,14 @@ function TeardownInstanceCard({ instance, onDismiss }: { instance: TeardownInsta
 
       {/* Log stream */}
       {allLogs.length > 0 && (
-        <div className={styles.logPanel}>
+        <div className={styles.logPanel} style={compact ? { maxHeight: "140px", fontSize: tokens.fontSizeBase100 } : undefined}>
           {allLogs.map((log, i) => (
             <div key={i}>
               <span style={{ color: tokens.colorNeutralForeground4, marginRight: 8 }}>
                 {new Date(log.timestamp).toLocaleTimeString("en-US", { hour12: false })}
               </span>
               <span className={log.level === "success" ? styles.logSuccess : styles.logInfo}>
-                {log.level === "success" ? "✗" : "›"} {log.message}
+                {log.level === "success" ? "✓" : "›"} {log.message}
               </span>
             </div>
           ))}
@@ -289,6 +290,7 @@ export function TeardownMonitor() {
   const styles = useStyles();
   const [instances, setInstances] = useState<TeardownInstance[]>([]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [operatorMode, setOperatorMode] = useState(false);
 
   // Load dismissed from backend on mount
   useEffect(() => {
@@ -335,7 +337,10 @@ export function TeardownMonitor() {
   return (
     <div className={styles.container}>
       <div>
-        <Title2>Teardown Monitor</Title2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: tokens.spacingHorizontalM }}>
+          <Title2>Teardown Monitor</Title2>
+          <Checkbox checked={operatorMode} onChange={(_, d) => setOperatorMode(!!d.checked)} label="Operator mode" />
+        </div>
         <Text size={200} block style={{ marginTop: tokens.spacingVerticalXS }}>
           {visible.length === 0
             ? "No teardowns in progress. Start one from the Teardown tab."
@@ -353,6 +358,7 @@ export function TeardownMonitor() {
         <TeardownInstanceCard
           key={inst.instanceId}
           instance={inst}
+          compact={operatorMode}
           onDismiss={() => dismiss(inst.instanceId)}
         />
       ))}

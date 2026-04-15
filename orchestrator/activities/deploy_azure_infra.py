@@ -1,6 +1,6 @@
 """Phase 1: Deploy base Azure infrastructure.
 
-Ports logic from deploy.ps1:
+Ports logic from phase-1/deploy.ps1:
 - Ensure resource group
 - Deploy infra.bicep (Event Hub, ACR, Storage, Key Vault, Managed Identity)
 - Build emulator container image in ACR

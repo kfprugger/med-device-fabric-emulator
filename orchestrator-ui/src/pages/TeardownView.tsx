@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -171,6 +171,7 @@ function statusBadge(status: string) {
 export function TeardownView() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const scanPollRef = useRef<number | null>(null);
   const activeScanIdRef = useRef<string | null>(null);
   const hasInitializedRef = useRef(false);
@@ -186,7 +187,7 @@ export function TeardownView() {
   const [lockedIds, setLockedIds] = useState<Set<string>>(new Set());
   const [scanned, setScanned] = useState(false);
   const [usingMock, setUsingMock] = useState(false);
-  const [showAllHDS, setShowAllHDS] = useState(false);
+  const [showAllHDS, setShowAllHDS] = useState(() => searchParams.get("allHds") === "1");
   const [capacityMappings, setCapacityMappings] = useState<Map<string, DeploymentCapacityMapping>>(new Map());
   const capacityFetchedRef = useRef<Set<string>>(new Set());
   const [scanPhase, setScanPhase] = useState("");
@@ -208,6 +209,19 @@ export function TeardownView() {
         } catch { /* ignore */ }
       });
   }, [normalizeResourceId]);
+
+  useEffect(() => {
+    const initialExpanded = searchParams.get("expanded") ?? "";
+    if (initialExpanded) {
+      setExpandedIds(new Set(initialExpanded.split(",").filter(Boolean)));
+    }
+    const sub = searchParams.get("subscription") ?? "";
+    if (sub && !selectedSubscription) {
+      setSelectedSubscription(sub);
+    }
+  // Read initial URL state once on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist locks to backend (and localStorage fallback) whenever they change
   const persistLocks = useCallback((ids: Set<string>, prevIds: Set<string>) => {
@@ -279,6 +293,14 @@ export function TeardownView() {
         .catch(() => {});
     }
   }, [candidates]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (selectedSubscription) next.set("subscription", selectedSubscription);
+    if (showAllHDS) next.set("allHds", "1");
+    if (expandedIds.size > 0) next.set("expanded", Array.from(expandedIds).join(","));
+    setSearchParams(next, { replace: true });
+  }, [selectedSubscription, showAllHDS, expandedIds, setSearchParams]);
 
   const handleScan = () => {
     if (scanPollRef.current) {
@@ -361,6 +383,7 @@ export function TeardownView() {
       })
       .catch(() => {
         // Fall back to mock data if backend unavailable
+        setError("Live scanner unavailable. Showing mock teardown candidates.");
         setCandidates(scanForTeardownCandidates(selectedSubscription));
         setScanned(true);
         setScanning(false);
@@ -500,6 +523,7 @@ export function TeardownView() {
       return;
     } catch {
       // Backend unavailable — fall back to mock teardown
+      setError("Backend teardown API unavailable. Running mock teardown monitor.");
       for (const candidate of selected) {
         startMockTeardown(candidate);
       }
@@ -530,6 +554,15 @@ export function TeardownView() {
         key={c.id}
         className={`${styles.candidateCard} ${isSelected ? styles.candidateCardSelected : ""} ${isPaired && !isSelected ? styles.candidateCardPaired : ""}`}
         size="small"
+        role="button"
+        tabIndex={0}
+        onClick={() => toggleSelected(c.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleSelected(c.id);
+          }
+        }}
         style={{
           ...(isLocked ? { opacity: 0.6 } : {}),
           ...(isPaired && !isSelected
@@ -545,7 +578,10 @@ export function TeardownView() {
             <div className={styles.candidateRow}>
               <Checkbox
                 checked={isSelected}
-                onChange={() => toggleSelected(c.id)}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  toggleSelected(c.id);
+                }}
                 disabled={isLocked}
               />
               <div className={styles.candidateInfo}>
@@ -754,6 +790,13 @@ export function TeardownView() {
                   : `Select all (${candidates.length} resources)`
             }
           />
+        </div>
+      )}
+
+      {!scanned && !scanning && !error && (
+        <div className={styles.candidateList}>
+          <Card size="small"><CardHeader header={<Text>Ready to scan resources...</Text>} /></Card>
+          <Card size="small"><CardHeader header={<Text>Scanning discovers Fabric, Azure, and identity artifacts.</Text>} /></Card>
         </div>
       )}
 

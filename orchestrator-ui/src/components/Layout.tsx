@@ -1,5 +1,11 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Tab,
   TabList,
   Text,
@@ -7,6 +13,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  MoreHorizontalRegular,
   RocketRegular,
   HistoryRegular,
   DeleteRegular,
@@ -32,6 +39,9 @@ const useStyles = makeStyles({
     backgroundRepeat: "no-repeat",
     backgroundAttachment: "fixed",
     backgroundColor: tokens.colorNeutralBackground2,
+    "@media (max-width: 900px)": {
+      backgroundAttachment: "scroll",
+    },
   },
   header: {
     display: "flex",
@@ -43,6 +53,14 @@ const useStyles = makeStyles({
     paddingRight: spacing.xxl,
     backgroundColor: tokens.colorNeutralBackground1,
     borderBottom: `2px solid ${tokens.colorBrandForeground1}`,
+    "@media (max-width: 1200px)": {
+      paddingLeft: spacing.l,
+      paddingRight: spacing.l,
+      gap: spacing.s,
+    },
+    "@media (max-width: 760px)": {
+      flexWrap: "wrap",
+    },
   },
   headerLeft: {
     display: "flex",
@@ -61,6 +79,9 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     fontSize: tokens.fontSizeBase500,
     lineHeight: tokens.lineHeightBase500,
+    "@media (max-width: 980px)": {
+      display: "none",
+    },
   },
   brandAccent: {
     color: tokens.colorBrandForeground1,
@@ -72,6 +93,16 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: spacing.s,
+    "@media (max-width: 1200px)": {
+      display: "none",
+    },
+  },
+  headerQuickMenu: {
+    display: "none",
+    "@media (max-width: 1200px)": {
+      display: "inline-flex",
+      marginLeft: "auto",
+    },
   },
   iconPill: {
     display: "inline-flex",
@@ -107,6 +138,11 @@ const useStyles = makeStyles({
     paddingRight: spacing.xxl,
     backgroundColor: tokens.colorNeutralBackground1,
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    overflowX: "auto",
+    "@media (max-width: 1200px)": {
+      paddingLeft: spacing.l,
+      paddingRight: spacing.l,
+    },
   },
   content: {
     flex: 1,
@@ -114,6 +150,9 @@ const useStyles = makeStyles({
     maxWidth: "1200px",
     margin: "0 auto",
     width: "100%",
+    "@media (max-width: 1200px)": {
+      padding: spacing.l,
+    },
   },
   footer: {
     display: "flex",
@@ -219,6 +258,22 @@ export function Layout() {
           >
             <YouTubeIcon size={16} /> Demo
           </a>
+        </div>
+        <div className={styles.headerQuickMenu}>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <Button appearance="subtle" icon={<MoreHorizontalRegular />} aria-label="Open quick links" />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem onClick={() => window.open("https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview", "_blank", "noopener,noreferrer")}>Healthcare Data Solutions</MenuItem>
+                <MenuItem onClick={() => window.open("https://portal.azure.com", "_blank", "noopener,noreferrer")}>Azure Portal</MenuItem>
+                <MenuItem onClick={() => window.open("https://app.fabric.microsoft.com/home?experience=fabric-developer", "_blank", "noopener,noreferrer")}>Microsoft Fabric</MenuItem>
+                <MenuItem onClick={() => window.open("https://github.com/kfprugger/med-device-fabric-emulator", "_blank", "noopener,noreferrer")}>GitHub</MenuItem>
+                <MenuItem onClick={() => window.open("https://aka.ms/fabrichlsrti", "_blank", "noopener,noreferrer")}>Demo Video</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </div>
       </div>
 

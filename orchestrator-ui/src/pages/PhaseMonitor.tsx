@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardHeader,
+  Checkbox,
   MessageBar,
   MessageBarBody,
   Subtitle1,
@@ -48,6 +49,7 @@ import {
   cancelMockDeployment,
   type PhaseLog,
 } from "../mockDeployment";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 const TRACK_HEIGHT = 6;
 const DOT_SIZE = 22; // CSS width/height (excluding border)
@@ -323,6 +325,7 @@ const ALL_PHASES: PhaseInfo[] = [
 
 export function PhaseMonitor() {
   const styles = useStyles();
+  const reducedMotion = useReducedMotion();
   const { instanceId } = useParams<{ instanceId: string }>();
   const navigate = useNavigate();
   const [status, setStatus] = useState<DeploymentStatus | null>(null);
@@ -338,6 +341,8 @@ export function PhaseMonitor() {
   const [lastResourceFetch, setLastResourceFetch] = useState(0);
   const [frozenElapsed, setFrozenElapsed] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  const [operatorMode, setOperatorMode] = useState(false);
+  const [resourceErrorNotified, setResourceErrorNotified] = useState(false);
 
   const isMock = instanceId ? isMockInstance(instanceId) : false;
 
@@ -475,10 +480,15 @@ export function PhaseMonitor() {
         setDeployedResources(res);
         setLastResourceFetch(key);
       })
-      .catch(() => {}) // Silently ignore — non-critical
+      .catch(() => {
+        if (!resourceErrorNotified) {
+          setError("Unable to refresh deployed resources right now.");
+          setResourceErrorNotified(true);
+        }
+      })
       .finally(() => setResourcesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceId, isMock, phases.length, isCancelled, isFailed, isRunning]);
+  }, [instanceId, isMock, phases.length, isCancelled, isFailed, isRunning, resourceErrorNotified]);
 
   const elapsedSeconds = frozenElapsed !== null
     ? frozenElapsed
@@ -833,6 +843,11 @@ export function PhaseMonitor() {
         </div>
 
         <div className={styles.actions}>
+          <Checkbox
+            checked={operatorMode}
+            onChange={(_, data) => setOperatorMode(!!data.checked)}
+            label="Operator mode"
+          />
           <Badge
             color={isCancelled ? "warning" : isFailed ? "danger" : isComplete ? (isTeardown ? "warning" : "success") : isRunning ? "informative" : "subtle"}
             size="large"
@@ -873,7 +888,10 @@ export function PhaseMonitor() {
       </div>
 
       {/* Milestone progress track */}
-      <div className={styles.progressSection} style={isTeardown ? { boxShadow: `${tokens.shadow8}, 0 0 12px rgba(255, 185, 0, 0.25)` } : undefined}>
+      <div className={styles.progressSection} style={{
+        ...(isTeardown ? { boxShadow: `${tokens.shadow8}, 0 0 12px rgba(255, 185, 0, 0.25)` } : {}),
+        ...(operatorMode ? { padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalL}` } : {}),
+      }}>
         <div className={styles.milestoneTrack}>
           {/* Background track line */}
           <div className={styles.trackLine} />
@@ -883,6 +901,7 @@ export function PhaseMonitor() {
             style={{
               transform: `scaleX(${Math.max(0, Math.min(progressPct, 100)) / 100})`,
               backgroundColor: progressColor,
+              transition: reducedMotion ? "none" : undefined,
             }}
           />
           {/* Milestone nodes */}
@@ -1063,7 +1082,7 @@ export function PhaseMonitor() {
 
       {/* Phase Cards with logs */}
       {!showAllLogs && (
-      <div className={styles.phases}>
+      <div className={styles.phases} style={operatorMode ? { gap: tokens.spacingVerticalXXS } : undefined}>
         {(() => {
           // Build log-to-phase mapping by scanning for step transition markers.
           // Logs are a rolling buffer — we find phase boundaries by matching

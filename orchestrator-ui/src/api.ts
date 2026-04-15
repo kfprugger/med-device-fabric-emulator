@@ -203,11 +203,12 @@ export interface ExistingDeploymentInfo {
 export async function checkExistingDeployment(
   workspaceName: string,
   resourceGroup: string,
+  signal?: AbortSignal,
 ): Promise<ExistingDeploymentInfo | null> {
   const params = new URLSearchParams();
   if (workspaceName) params.set("workspace_name", workspaceName);
   if (resourceGroup) params.set("resource_group", resourceGroup);
-  const resp = await fetch(`${API_BASE}/deploy/check-existing?${params}`);
+  const resp = await fetch(`${API_BASE}/deploy/check-existing?${params}`, { signal });
   if (!resp.ok) return null;
   const data = await resp.json();
   return data?.found ? data : null;

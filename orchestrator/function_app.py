@@ -215,16 +215,16 @@ def deploy_all_orchestrator(context):
     """Main deployment orchestrator — maps to Deploy-All.ps1.
 
     Phase sequence:
-      1. Base Azure Infrastructure (deploy.ps1)
+      1. Base Azure Infrastructure (phase-1/deploy.ps1)
       1b. Fabric Workspace (inline in Deploy-All.ps1)
-      2. FHIR Service + Synthea + FHIR Loader (deploy-fhir.ps1)
-      2b. DICOM Infrastructure + Loader (deploy-fhir.ps1 -RunDicom)
+      2. FHIR Service + Synthea + FHIR Loader (phase-1/deploy-fhir.ps1)
+      2b. DICOM Infrastructure + Loader (phase-1/deploy-fhir.ps1 -RunDicom)
       3. Fabric RTI Phase 1 (deploy-fabric-rti.ps1)
       -- Human interaction gate: wait for HDS manual deployment --
       4. Fabric RTI Phase 2 (deploy-fabric-rti.ps1 -Phase2)
-      4b. HDS Pipeline Triggers (storage-access-trusted-workspace.ps1)
-      5. Data Agents (deploy-data-agents.ps1)
-      6. Ontology (deploy-ontology.ps1)
+      4b. HDS Pipeline Triggers (phase-2/storage-access-trusted-workspace.ps1)
+      5. Data Agents (phase-2/deploy-data-agents.ps1)
+      6. Ontology (phase-4/deploy-ontology.ps1)
     """
     config: dict = context.get_input()
     resources: dict = {}

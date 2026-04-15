@@ -41,7 +41,14 @@ The entire solution deploys in under 2 hours via the **Orchestrator UI** (browse
 - [HDS Setup Guide](fabric-rti/HDS-SETUP-GUIDE.md) — Manual HDS deployment walkthrough
 - [Dashboard Guide](fabric-rti/dashboard/DASHBOARD-GUIDE.md) — Real-time dashboard details
 - [Ontology Setup Guide](docs/ONTOLOGY-SETUP-GUIDE.md) — Fabric IQ Ontology configuration
-- [Ontology Design Plan](docs/FABRIC-IQ-ONTOLOGY-PLAN.md) — Data model and entity relationships
+- [Ontology Design Plan](.ai/FABRIC-IQ-ONTOLOGY-PLAN.md) — Data model and entity relationships
+
+**AI/planning artifacts** (in [`.ai/`](.ai/)):
+- [OpenSpec](.ai/OPENSPEC.md) — Full project specification
+- [PRD](.ai/PRD.md) — Product Requirements Document
+- [TODO Items](.ai/TODO-ITEMS.MD) — Prioritized backlog
+- [Ontology Design Plan](.ai/FABRIC-IQ-ONTOLOGY-PLAN.md) — Entity model design
+- [Theming](.ai/themeing.md) — Fabric UI color/theme reference
 
 ---
 
@@ -133,17 +140,17 @@ flowchart TB
 
 | Step | Script | Phase | What It Does |
 |------|--------|-------|--------------|
-| 1 | `deploy.ps1` | 1 | Event Hub, ACR, Key Vault, emulator ACI |
+| 1 | `phase-1/deploy.ps1` | 1 | Event Hub, ACR, Key Vault, emulator ACI |
 | 1b | Fabric API (inline) | 1 | Fabric workspace, capacity, managed identity |
-| 2 | `deploy-fhir.ps1 -SkipDicom` | 1 | FHIR Service, Synthea, FHIR Loader, Device Associations |
-| 2b | `deploy-fhir.ps1 -RunDicom` | 1 | DICOM loader, TCIA download, re-tag, ADLS upload |
+| 2 | `phase-1/deploy-fhir.ps1 -SkipDicom` | 1 | FHIR Service, Synthea, FHIR Loader, Device Associations |
+| 2b | `phase-1/deploy-fhir.ps1 -RunDicom` | 1 | DICOM loader, TCIA download, re-tag, ADLS upload |
 | 3 | `deploy-fabric-rti.ps1` | 1 | Eventhouse, Eventstream, KQL, dashboard, FHIR $export |
 | 4 | **Manual** (Fabric portal) | — | Deploy HDS + add scipy + run pipelines |
 | 5 | `deploy-fabric-rti.ps1 -Phase2` | 2 | Silver shortcuts, enriched alerts, alerts map |
-| 5b | `storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines |
-| 6 | `deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents |
+| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines |
+| 6 | `phase-2/deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents |
 | 7 | FabricDicomCohortingToolkit | 3 | Cohorting Agent, DICOM Viewer, reporting notebook, PBI report |
-| 8 | `deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entity types, 5 relationships) |
+| 8 | `phase-4/deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entity types, 5 relationships) |
 | 9 | `Deploy-All.ps1 -Phase4` | 4 | Ontology binding to agents, Data Activator (Reflex) with email rule |
 
 ### FHIR Resource Relationships
@@ -338,17 +345,22 @@ If you prefer to deploy without the UI, use `Deploy-All.ps1` directly from Power
 med-device-fabric-emulator/
 ├── setup-prereqs.ps1           # Cross-platform prerequisite installer
 ├── Deploy-All.ps1              # Full orchestrator (all phases)
-├── deploy.ps1                  # Phase 1: Emulator infrastructure
-├── deploy-fhir.ps1             # Phase 1: FHIR + DICOM pipeline
 ├── deploy-fabric-rti.ps1       # Phase 1 + 2: Fabric RTI
-├── deploy-data-agents.ps1      # Phase 2: Data Agents
-├── deploy-ontology.ps1         # Phase 4: Fabric IQ Ontology
-├── storage-access-trusted-workspace.ps1  # Phase 2: HDS pipeline triggers
-├── update-agents-inline.ps1    # Quick-update agent definitions
+├── Teardown-All.ps1            # Cleanup orchestrator
+├── phase-1/
+│   ├── deploy.ps1              # Azure infra (Event Hub, ACR, emulator ACI)
+│   └── deploy-fhir.ps1         # FHIR + DICOM pipeline
+├── phase-2/
+│   ├── deploy-data-agents.ps1  # Data Agents (Patient 360 + Clinical Triage)
+│   └── storage-access-trusted-workspace.ps1  # HDS pipeline triggers
+├── phase-4/
+│   └── deploy-ontology.ps1     # Fabric IQ Ontology
+├── utilities/
+│   ├── update-agents-inline.ps1  # Quick-update agent definitions
+│   └── run-kql-scripts.ps1     # Manual KQL script runner
 ├── create-device-associations.py  # Link devices to patients
 ├── emulator.py                 # Masimo device emulator
 ├── Dockerfile                  # Emulator container
-├── Teardown-All.ps1            # Cleanup orchestrator
 ├── orchestrator/               # Deployment backend (FastAPI + Python)
 │   ├── local_server.py         # Backend API server (port 7071)
 │   ├── requirements.txt        # Python dependencies
@@ -362,12 +374,12 @@ med-device-fabric-emulator/
 ├── bicep/                      # ARM/Bicep templates
 ├── cleanup/                    # Teardown scripts
 ├── dicom-loader/               # TCIA download + DICOM re-tagging
+├── .ai/                        # AI/planning artifacts (specs, PRD, TODOs)
 ├── docs/
 │   ├── phase-1-infrastructure-and-ingestion.md
 │   ├── phase-2-hds-enrichment-and-agents.md
 │   ├── phase-3-imaging-and-cohorting.md
 │   ├── phase-4-ontology-and-activator.md
-│   ├── FABRIC-IQ-ONTOLOGY-PLAN.md
 │   ├── ONTOLOGY-SETUP-GUIDE.md
 │   └── images/
 ├── fabric-rti/                 # KQL scripts, dashboards, HDS guide

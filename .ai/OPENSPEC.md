@@ -355,11 +355,11 @@ Phase 2 (After HDS):
 | File | Purpose |
 |------|---------|
 | `Deploy-All.ps1` | Full orchestrator (Phase 1 + Phase 2 + Teardown) |
-| `deploy.ps1` | Azure infrastructure (Event Hub, ACR, emulator) |
-| `deploy-fhir.ps1` | FHIR infrastructure + Synthea + FHIR Loader + DICOM Loader |
+| `phase-1/deploy.ps1` | Azure infrastructure (Event Hub, ACR, emulator) |
+| `phase-1/deploy-fhir.ps1` | FHIR infrastructure + Synthea + FHIR Loader + DICOM Loader |
 | `deploy-fabric-rti.ps1` | Fabric RTI (workspace, Eventhouse, KQL, Eventstream, Phase 2) |
-| `deploy-data-agents.ps1` | Patient 360 + Clinical Triage Data Agents |
-| `storage-access-trusted-workspace.ps1` | DICOM shortcut + HDS pipeline orchestration (imaging, OMOP) |
+| `phase-2/deploy-data-agents.ps1` | Patient 360 + Clinical Triage Data Agents |
+| `phase-2/storage-access-trusted-workspace.ps1` | DICOM shortcut + HDS pipeline orchestration (imaging, OMOP) |
 | `cleanup/Remove-AllResources.ps1` | Full teardown (Azure + Fabric + Entra) |
 
 ### Applications

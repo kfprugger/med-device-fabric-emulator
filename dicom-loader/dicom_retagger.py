@@ -18,6 +18,7 @@ def retag_dicom_file(
     patient_info: dict,
     device_id: str,
     hospital_name: str,
+    body_part_examined: str,
     output_path: str,
     study_uid: str | None = None,
     series_uid: str | None = None,
@@ -56,6 +57,9 @@ def retag_dicom_file(
     ds.InstitutionName = hospital_name
     ds.StudyDate = datetime.now().strftime("%Y%m%d")
 
+    # Body part context aligns DICOM metadata with ImagingStudy.bodySite.
+    ds.BodyPartExamined = body_part_examined
+
     # DO NOT modify: Modality, SOPClassUID, TransferSyntaxUID, PixelData,
     # Rows, Columns, BitsAllocated, WindowCenter, WindowWidth, etc.
 
@@ -70,6 +74,7 @@ def retag_series(
     patient_info: dict,
     device_id: str,
     hospital_name: str,
+    body_part_examined: str,
     output_dir: str,
 ) -> tuple[str, str, list[str]]:
     """
@@ -89,6 +94,7 @@ def retag_series(
             patient_info=patient_info,
             device_id=device_id,
             hospital_name=hospital_name,
+            body_part_examined=body_part_examined,
             output_path=dst,
             study_uid=study_uid,
             series_uid=series_uid,

@@ -1,6 +1,6 @@
 """Phase 5: Deploy Data Agents (Patient 360 + Clinical Triage).
 
-Ports logic from deploy-data-agents.ps1:
+Ports logic from phase-2/deploy-data-agents.ps1:
 - Discover KQL Database and Silver Lakehouse
 - Build datasource configurations with table/schema elements
 - Create Patient 360 Data Agent

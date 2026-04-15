@@ -13,7 +13,7 @@
 # Prerequisites:
 #   - Azure CLI authenticated (az login)
 #   - Az PowerShell module installed (Install-Module Az)
-#   - Existing Azure deployment from deploy.ps1 (Event Hub, FHIR Service)
+#   - Existing Azure deployment from phase-1/deploy.ps1 (Event Hub, FHIR Service)
 #   - Microsoft Fabric capacity (paid F-SKU, e.g. F2+ — trial capacities cannot deploy HDS)
 #
 # Usage:
@@ -1224,7 +1224,7 @@ Write-Host "--- STEP 0.5: DETECTING AZURE RESOURCES ---" -ForegroundColor Cyan
 $rgExists = az group show --name $ResourceGroupName 2>$null
 if (-not $rgExists) {
     Write-Host "ERROR: Resource group '$ResourceGroupName' not found." -ForegroundColor Red
-    Write-Host "  Run deploy.ps1 first to deploy the base infrastructure." -ForegroundColor Yellow
+    Write-Host "  Run phase-1/deploy.ps1 first to deploy the base infrastructure." -ForegroundColor Yellow
     exit 1
 }
 Write-Host "  ✓ Resource group: $ResourceGroupName" -ForegroundColor Green
@@ -1998,7 +1998,7 @@ $kqlDbInfo = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items?type=KQL
 $kqlDbObj = $kqlDbInfo.value | Where-Object { $_.displayName -eq $kqlDbName }
 if (-not $kqlDbObj) {
     Write-Host "  ⚠ KQL Database '$kqlDbName' not found — skipping KQL deployment." -ForegroundColor Yellow
-    Write-Host "    Run the KQL scripts manually: .\run-kql-scripts.ps1" -ForegroundColor Yellow
+    Write-Host "    Run the KQL scripts manually: .\utilities\run-kql-scripts.ps1" -ForegroundColor Yellow
 } else {
     $kqlDbId = $kqlDbObj.id
     # Try kqlDatabases/{id} detail first, fall back to items/{id}
@@ -2031,7 +2031,7 @@ if (-not $kqlDbObj) {
     if (-not $kustoUri) {
         Write-Host "  ⚠ Could not determine Kusto Query URI automatically." -ForegroundColor Yellow
         Write-Host "    Provide it: -KustoUri 'https://...kusto.fabric.microsoft.com'" -ForegroundColor Yellow
-        Write-Host "    Or run KQL scripts manually: .\run-kql-scripts.ps1" -ForegroundColor Yellow
+        Write-Host "    Or run KQL scripts manually: .\utilities\run-kql-scripts.ps1" -ForegroundColor Yellow
     } else {
         Write-Host "  ✓ Kusto URI: $kustoUri" -ForegroundColor Green
         Write-Host "  ✓ KQL DB:    $kqlDbName (ID: $kqlDbId)" -ForegroundColor Green
@@ -2192,7 +2192,7 @@ if (-not $kqlDbObj) {
         Write-Host "  ║  • Clinical alert functions (3)                   ║" -ForegroundColor Gray
         Write-Host "  ╚════════════════════════════════════════════════════╝" -ForegroundColor $(if ($kqlFail -eq 0) { "Green" } else { "Yellow" })
         if ($kqlFail -gt 0) {
-            Write-Host "  ⚠ Some KQL commands failed. Retry with: .\run-kql-scripts.ps1" -ForegroundColor Yellow
+            Write-Host "  ⚠ Some KQL commands failed. Retry with: .\utilities\run-kql-scripts.ps1" -ForegroundColor Yellow
         }
         # Track for final summary
         $kqlDeployed = ($kqlFail -eq 0)
@@ -2727,7 +2727,7 @@ if ($kqlDeployed) {
 Write-Host "║   ✓ AlertHistory table + policies                           ║" -ForegroundColor Green
 Write-Host "║   ✓ 7 KQL alert & telemetry functions                       ║" -ForegroundColor Green
 } else {
-Write-Host "║   → Run KQL scripts: .\run-kql-scripts.ps1                  ║" -ForegroundColor Yellow
+Write-Host "║   → Run KQL scripts: .\utilities\run-kql-scripts.ps1                  ║" -ForegroundColor Yellow
 }
 if ($fhirExportDone) {
 Write-Host "║   ✓ FHIR `$export → ADLS Gen2 ($exportStorageAccountName)    ║" -ForegroundColor Green

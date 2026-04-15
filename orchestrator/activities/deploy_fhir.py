@@ -1,6 +1,6 @@
 """Phase 2: Deploy FHIR Service + Synthea patient generation + FHIR data load.
 
-Ports logic from deploy-fhir.ps1:
+Ports logic from phase-1/deploy-fhir.ps1:
 - Deploy fhir-infra.bicep (FHIR workspace, FHIR service, storage, MI)
 - Build and run Synthea container (synthetic patient generation)
 - Build and run FHIR Loader container (upload to FHIR Service)

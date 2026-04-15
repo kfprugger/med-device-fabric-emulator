@@ -245,8 +245,8 @@ $tagsParamContent = @{
 $tagsParamContent | ConvertTo-Json -Depth 5 | Set-Content $tagsParamFile -Encoding utf8
 $tagsParamRef = "@$tagsParamFile"
 
-# Change to script directory so relative paths work
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Change to repo root so relative paths (bicep/, synthea/, etc.) work
+$ScriptDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Push-Location $ScriptDir
 Write-Host "Working directory: $(Get-Location)"
 
@@ -447,7 +447,7 @@ $existingInfra = az deployment group show `
     --query properties.outputs 2>$null
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Existing infrastructure not found. Please run deploy.ps1 first." -ForegroundColor Red
+    Write-Host "ERROR: Existing infrastructure not found. Please run phase-1/deploy.ps1 first." -ForegroundColor Red
     exit 1
 }
 
@@ -532,10 +532,10 @@ if ($emulatorState -and $emulatorState.state -eq "Running") {
     Write-Host "    New patients will be associated with existing device IDs (MASIMO-RADIUS7-0001...$emDevices)" -ForegroundColor DarkGray
 } elseif ($emulatorState) {
     Write-Host "  ⚠ Masimo emulator exists but state=$($emulatorState.state) — telemetry may not be flowing" -ForegroundColor Yellow
-    Write-Host "    Consider re-running deploy.ps1 to restart the emulator after data loading" -ForegroundColor Yellow
+    Write-Host "    Consider re-running phase-1/deploy.ps1 to restart the emulator after data loading" -ForegroundColor Yellow
 } else {
     Write-Host "  ⚠ Masimo emulator not found in $ResourceGroupName" -ForegroundColor Yellow
-    Write-Host "    Run deploy.ps1 first to create the emulator container" -ForegroundColor Yellow
+    Write-Host "    Run phase-1/deploy.ps1 first to create the emulator container" -ForegroundColor Yellow
 }
 Write-Host ""
 

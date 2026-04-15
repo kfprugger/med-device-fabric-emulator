@@ -8,6 +8,10 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+# Resolve repo root (one level up from phase-1/) so relative paths work
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Push-Location $RepoRoot
+
 # Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -315,5 +319,7 @@ az deployment group create `
 
 Write-Host "--- SUCCESS ---" -ForegroundColor Green
 Write-Host "Emulator running with System-Assigned Identity (using Entra ID for Event Hub)."
+
+Pop-Location
 
 

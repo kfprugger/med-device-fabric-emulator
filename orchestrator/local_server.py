@@ -253,6 +253,35 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_url(raw: str) -> str:
+    """Trim common trailing punctuation from captured URLs."""
+    return raw.strip().rstrip(",.;)\"]'")
+
+
+def _extract_deployment_links(message: str) -> dict[str, str]:
+    """Extract well-known deployment URLs from log lines."""
+    links: dict[str, str] = {}
+
+    report_match = _re.search(r"Report URL:\s*(https?://\S+)", message, flags=_re.IGNORECASE)
+    if report_match:
+        links["imagingReport"] = _normalize_url(report_match.group(1))
+
+    settings_match = _re.search(r"Settings:\s*(https?://\S+)", message, flags=_re.IGNORECASE)
+    if settings_match:
+        links["imagingReportSettings"] = _normalize_url(settings_match.group(1))
+
+    viewer_match = _re.search(r"OHIF Viewer(?: \(from Azure\))?\s*:\s*(https?://\S+)", message, flags=_re.IGNORECASE)
+    if viewer_match:
+        links["ohifViewer"] = _normalize_url(viewer_match.group(1))
+
+    if "azurestaticapps.net" in message.lower() and "ohifViewer" not in links:
+        swa_match = _re.search(r"(https?://[^\s]*azurestaticapps\.net\S*)", message, flags=_re.IGNORECASE)
+        if swa_match:
+            links["ohifViewer"] = _normalize_url(swa_match.group(1))
+
+    return links
+
+
 @app.post("/api/teardown/start")
 async def start_teardown(req: TeardownRequest):
     now_local = datetime.now()
@@ -564,6 +593,9 @@ async def start_deploy(req: DeployRequest):
             "links": {
                 "azurePortal": f"https://portal.azure.com/#@/resource/subscriptions//resourceGroups/{req.resource_group_name}" if req.resource_group_name else "",
                 "fabricWorkspace": f"https://app.fabric.microsoft.com/groups?experience=fabric-developer&name={req.fabric_workspace_name}" if req.fabric_workspace_name else "",
+                "imagingReport": "",
+                "imagingReportSettings": "",
+                "ohifViewer": "",
             },
             "deployConfig": req.model_dump(),
         },
@@ -609,6 +641,16 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             deploy_logs.append(entry)
             deployment["customStatus"]["logs"] = deploy_logs[-100:]
             deployment["customStatus"]["detail"] = msg
+            parsed_links = _extract_deployment_links(msg)
+            if parsed_links:
+                link_map = deployment["customStatus"].setdefault("links", {})
+                for key, value in parsed_links.items():
+                    link_map[key] = value
+                resource_map = deployment["customStatus"].setdefault("resources", {})
+                if parsed_links.get("imagingReport"):
+                    resource_map["imaging_report_url"] = parsed_links["imagingReport"]
+                if parsed_links.get("ohifViewer"):
+                    resource_map["ohif_viewer_url"] = parsed_links["ohifViewer"]
             deployment["lastUpdatedTime"] = now_iso()
             # Debounce save_state: only persist every 50th log or on level changes
             if len(deploy_logs) % 50 == 0 or record.levelno >= _logging.WARNING:
@@ -726,6 +768,12 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             "phases": phases,
             "resources": result.get("resources", {}),
         }
+        final_links = deployment.get("customStatus", {}).get("links", {})
+        if isinstance(final_links, dict):
+            if final_links.get("imagingReport"):
+                deployment["output"]["resources"]["imaging_report_url"] = final_links["imagingReport"]
+            if final_links.get("ohifViewer"):
+                deployment["output"]["resources"]["ohif_viewer_url"] = final_links["ohifViewer"]
         logger.info("Deployment %s completed (%.1fs)", instance_id, duration)
 
         # Auto-pause Fabric capacity if requested
@@ -765,6 +813,7 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
 async def get_status(instance_id: str):
     if instance_id not in deployments:
         raise HTTPException(404, "Instance not found")
+    _backfill_links_from_logs(instance_id, deployments[instance_id])
     return deployments[instance_id]
 
 
@@ -793,6 +842,61 @@ async def get_phase_logs(instance_id: str, phase: str = ""):
     except Exception:
         pass
     return logs
+
+
+def _backfill_links_from_logs(instance_id: str, deployment: dict) -> None:
+    """Populate typed links for historical runs by scanning persisted log lines once."""
+    custom_status = deployment.get("customStatus", {})
+    if not isinstance(custom_status, dict):
+        return
+
+    links = custom_status.setdefault("links", {})
+    if not isinstance(links, dict):
+        return
+
+    # Skip if we've already backfilled or links already exist.
+    if custom_status.get("linksBackfilled"):
+        return
+    if links.get("imagingReport") and links.get("ohifViewer"):
+        custom_status["linksBackfilled"] = True
+        return
+
+    log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
+    if not log_file.exists():
+        return
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw)
+                except Exception:
+                    continue
+                msg = entry.get("message", "")
+                if not isinstance(msg, str):
+                    continue
+                parsed = _extract_deployment_links(msg)
+                if not parsed:
+                    continue
+                for key, value in parsed.items():
+                    links[key] = value
+
+        resources = custom_status.setdefault("resources", {})
+        if isinstance(resources, dict):
+            if links.get("imagingReport"):
+                resources["imaging_report_url"] = links["imagingReport"]
+            if links.get("ohifViewer"):
+                resources["ohif_viewer_url"] = links["ohifViewer"]
+
+        custom_status["linksBackfilled"] = True
+        deployment["lastUpdatedTime"] = now_iso()
+        save_state()
+    except Exception:
+        # Non-fatal: status endpoint should still return deployment details.
+        pass
 
 
 @app.get("/api/deploy/{instance_id}/deployed-resources")

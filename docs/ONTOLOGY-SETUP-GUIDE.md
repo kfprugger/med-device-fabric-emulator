@@ -8,7 +8,7 @@ This guide walks through creating a **Fabric IQ Ontology** (`ClinicalDeviceOntol
 |-------------|--------|
 | Phase 1 + Phase 2 deployed (`deploy-fabric-rti.ps1`) | ✅ |
 | Silver Lakehouse populated (HDS pipeline complete) | ✅ |
-| Data Agents deployed (`deploy-data-agents.ps1`) | ✅ |
+| Data Agents deployed (`phase-2/deploy-data-agents.ps1`) | ✅ |
 | Ontology item (preview) enabled on Fabric tenant | ✅ |
 | Graph (preview) enabled on Fabric tenant | ✅ |
 | Silver Lakehouse has OneLake security **disabled** | Required |
@@ -74,7 +74,7 @@ The fastest way to create the ontology is via the REST API:
 
 ```powershell
 # Create the DeviceAssociation table first (Step 0 below), then:
-.\deploy-ontology.ps1
+.\phase-4\deploy-ontology.ps1
 ```
 
 This creates the `ClinicalDeviceOntology` with all 9 entity types, data bindings, and 8 relationship types in a single API call. Skip to **Step 5: Validate** after running.

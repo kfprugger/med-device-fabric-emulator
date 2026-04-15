@@ -1,6 +1,6 @@
 """Phase 2b: Deploy DICOM infrastructure and load imaging studies.
 
-Ports DICOM logic from deploy-fhir.ps1 -RunDicom:
+Ports DICOM logic from phase-1/deploy-fhir.ps1 -RunDicom:
 - Deploy dicom-infra.bicep
 - Build DICOM loader image
 - Deploy and run dicom-loader-job.bicep
