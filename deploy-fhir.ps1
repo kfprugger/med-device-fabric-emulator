@@ -366,6 +366,7 @@ if (-not $infraExists) {
     $fhirInfra = az deployment group create `
         --resource-group $ResourceGroupName `
         --template-file bicep/fhir-infra.bicep `
+        --parameters location="$Location" `
         --parameters adminGroupObjectId="$adminGroupObjectId" `
         --parameters $tagsParamRef `
         --query properties.outputs `
@@ -396,6 +397,7 @@ if (-not $infraExists) {
             $fhirInfra = az deployment group create `
                 --resource-group $ResourceGroupName `
                 --template-file bicep/fhir-infra.bicep `
+                --parameters location="$Location" `
                 --parameters adminGroupObjectId="$adminGroupObjectId" `
                 --parameters $tagsParamRef `
                 --query properties.outputs `
