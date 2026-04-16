@@ -316,6 +316,7 @@ def main():
     # Step 3: Process each patient
     stats = {"uploaded": 0, "failed": 0, "imaging_studies_created": 0, "blobs_written": 0}
     tmp_base = tempfile.mkdtemp(prefix="dicom_loader_")
+    fhir_token = azure.fhir_token
 
     try:
         for idx, assoc in enumerate(associations):
