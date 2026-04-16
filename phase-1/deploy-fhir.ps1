@@ -367,6 +367,7 @@ if (-not $infraExists) {
         --resource-group $ResourceGroupName `
         --template-file bicep/fhir-infra.bicep `
         --parameters adminGroupObjectId="$adminGroupObjectId" `
+        --parameters location="$Location" `
         --parameters $tagsParamRef `
         --query properties.outputs `
         --only-show-errors 2>&1
@@ -397,6 +398,7 @@ if (-not $infraExists) {
                 --resource-group $ResourceGroupName `
                 --template-file bicep/fhir-infra.bicep `
                 --parameters adminGroupObjectId="$adminGroupObjectId" `
+                --parameters location="$Location" `
                 --parameters $tagsParamRef `
                 --query properties.outputs `
                 --only-show-errors 2>&1

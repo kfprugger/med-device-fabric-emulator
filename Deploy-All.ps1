@@ -260,6 +260,36 @@ function Test-Prerequisites {
         }
     }
 
+    # 11. Azure Health Data Services region availability
+    if (-not $SkipFhir) {
+        try {
+            $ahdsLocations = az provider show --namespace Microsoft.HealthcareApis `
+                --query "resourceTypes[?resourceType=='workspaces'].locations[]" -o json 2>$null | ConvertFrom-Json
+
+            if ($ahdsLocations -and $ahdsLocations.Count -gt 0) {
+                # ARM returns display names ("East US"); normalise for comparison
+                $normalised = $ahdsLocations | ForEach-Object { ($_ -replace '\s','').ToLower() }
+                $locationKey = ($Location -replace '\s','').ToLower()
+
+                if ($locationKey -in $normalised) {
+                    Write-Host "  ✓ AHDS available in '$Location'" -ForegroundColor Green
+                } else {
+                    $supported = ($ahdsLocations | Sort-Object) -join ", "
+                    $failures += "Azure Health Data Services is NOT available in '$Location'. Supported regions: $supported"
+                    Write-Host "  ✗ AHDS not available in '$Location'" -ForegroundColor Red
+                    Write-Host "    Supported regions:" -ForegroundColor Yellow
+                    $ahdsLocations | Sort-Object | ForEach-Object { Write-Host "      • $_" -ForegroundColor White }
+                }
+            } else {
+                $warnings += "Could not query AHDS region availability from ARM"
+                Write-Host "  ⚠ Could not verify AHDS region availability" -ForegroundColor Yellow
+            }
+        } catch {
+            $warnings += "Could not query AHDS region availability: $($_.Exception.Message)"
+            Write-Host "  ⚠ Could not verify AHDS region availability" -ForegroundColor Yellow
+        }
+    }
+
     Write-Host ""
 
     # Report warnings

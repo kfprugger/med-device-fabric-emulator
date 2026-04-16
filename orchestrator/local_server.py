@@ -1412,6 +1412,32 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
     return candidates
 
 
+# ── Azure Health Data Services region validation ───────────────────────
+
+@app.get("/api/scan/ahds-regions")
+async def list_ahds_regions():
+    """Return Azure regions where AHDS workspaces are available."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _list_ahds_regions_sync)
+
+
+def _list_ahds_regions_sync() -> list[str]:
+    """Query ARM for AHDS workspace locations."""
+    try:
+        proc = _az_run(
+            ["az", "provider", "show", "--namespace", "Microsoft.HealthcareApis",
+             "--query", "resourceTypes[?resourceType=='workspaces'].locations[]",
+             "-o", "json"],
+            check=True,
+        )
+        regions = json.loads(proc.stdout)
+        # Normalise display names ("East US") → ARM names ("eastus")
+        return sorted(set(r.replace(" ", "").lower() for r in regions))
+    except Exception as e:
+        logger.warning("Failed to query AHDS regions: %s", e)
+        return []
+
+
 # ── Fabric Capacity API ────────────────────────────────────────────────
 
 @app.get("/api/scan/capacities")

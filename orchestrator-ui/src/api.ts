@@ -261,3 +261,13 @@ export async function getDeploymentCapacity(
   const data = await resp.json();
   return data || null;
 }
+
+/**
+ * Fetch Azure regions where Azure Health Data Services (AHDS) is available.
+ * Returns normalised ARM location names (e.g. "eastus", "northcentralus").
+ */
+export async function listAhdsRegions(): Promise<string[]> {
+  const resp = await fetch(`${API_BASE}/scan/ahds-regions`);
+  if (!resp.ok) return [];
+  return resp.json();
+}

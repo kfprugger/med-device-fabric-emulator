@@ -20,7 +20,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular, ChevronDownRegular, ChevronUpRegular, CheckmarkCircleRegular, CircleRegular, SettingsRegular } from "@fluentui/react-icons";
-import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
+import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, listAhdsRegions, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions, getMockCapacities } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -191,6 +191,7 @@ export function DeployWizard() {
   const [showSummary, setShowSummary] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [loadWarning, setLoadWarning] = useState("");
+  const [ahdsRegions, setAhdsRegions] = useState<string[] | null>(null); // null = not loaded yet
 
   const refreshCapacities = () => {
     if (subscriptions.length === 0) return;
@@ -270,6 +271,14 @@ export function DeployWizard() {
         setInitializing(false);
       });
   }, [subscriptions, usingMock]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch AHDS-supported regions once on mount
+  useEffect(() => {
+    if (usingMock) return;
+    listAhdsRegions().then((regions) => {
+      if (regions.length > 0) setAhdsRegions(regions);
+    });
+  }, [usingMock]);
 
   const [config, setConfig] = useState<DeploymentConfig>({
     resource_group_name: "",
@@ -574,6 +583,10 @@ export function DeployWizard() {
     navigate(`/monitor/${instanceId}`);
   };
 
+  const locationUnsupported = ahdsRegions !== null &&
+    !config.skip_fhir &&
+    !ahdsRegions.includes(config.location.replace(/\s/g, "").toLowerCase());
+
   const validationErrors = useMemo(() => {
     const issues: string[] = [];
     if (!selectedSubscription) issues.push("Select an Azure subscription.");
@@ -584,6 +597,7 @@ export function DeployWizard() {
     if (!config.fabric_workspace_name?.trim()) issues.push("Fabric workspace name is required.");
     if (!config.alert_email?.trim()) issues.push("Alert email is required.");
     if (!config.patient_count || config.patient_count < 1) issues.push("Patient count must be at least 1.");
+    if (locationUnsupported) issues.push(`Azure Health Data Services is not available in '${config.location}'. Choose a supported region.`);
     return issues;
   }, [
     selectedSubscription,
@@ -593,8 +607,11 @@ export function DeployWizard() {
     config.fabric_workspace_name,
     config.alert_email,
     config.patient_count,
+    config.location,
+    config.skip_fhir,
     useNamingConvention,
     namingPrefix,
+    locationUnsupported,
   ]);
 
   const canStartDeployment = validationErrors.length === 0 && !loading;
@@ -1051,6 +1068,10 @@ export function DeployWizard() {
                   </span>
                 </InfoLabel>
               }
+              validationState={locationUnsupported ? "error" : undefined}
+              validationMessage={locationUnsupported
+                ? `AHDS is not available in '${config.location}'. Supported: ${ahdsRegions?.join(", ")}`
+                : undefined}
             >
               <HistoryInput
                 field="location"

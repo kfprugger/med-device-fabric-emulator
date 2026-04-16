@@ -68,3 +68,5 @@ Thumbs.db
 # IDE
 .idea/
 *.swp
+.github/skills/.agents/skills
+repo-overview-video/
