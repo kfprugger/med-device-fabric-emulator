@@ -272,13 +272,19 @@ export function DeployWizard() {
       });
   }, [subscriptions, usingMock]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch AHDS-supported regions once on mount
+  // Fetch AHDS-supported regions once on mount (independent of mock mode).
+  // Falls back to a known-good list when the backend is unreachable so that
+  // validation still works in mock / offline mode.
+  const AHDS_FALLBACK_REGIONS = [
+    "australiaeast", "canadacentral", "eastus", "eastus2",
+    "northcentralus", "northeurope", "southcentralus",
+    "southeastasia", "uksouth", "westeurope", "westus2", "westus3",
+  ];
   useEffect(() => {
-    if (usingMock) return;
     listAhdsRegions().then((regions) => {
-      if (regions.length > 0) setAhdsRegions(regions);
+      setAhdsRegions(regions.length > 0 ? regions : AHDS_FALLBACK_REGIONS);
     });
-  }, [usingMock]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [config, setConfig] = useState<DeploymentConfig>({
     resource_group_name: "",
@@ -597,7 +603,7 @@ export function DeployWizard() {
     if (!config.fabric_workspace_name?.trim()) issues.push("Fabric workspace name is required.");
     if (!config.alert_email?.trim()) issues.push("Alert email is required.");
     if (!config.patient_count || config.patient_count < 1) issues.push("Patient count must be at least 1.");
-    if (locationUnsupported) issues.push(`Azure Health Data Services is not available in '${config.location}'. Choose a supported region.`);
+    if (locationUnsupported) issues.push(`Not an acceptable region. Please select a supported AHDS region.`);
     return issues;
   }, [
     selectedSubscription,
@@ -1070,7 +1076,7 @@ export function DeployWizard() {
               }
               validationState={locationUnsupported ? "error" : undefined}
               validationMessage={locationUnsupported
-                ? `AHDS is not available in '${config.location}'. Supported: ${ahdsRegions?.join(", ")}`
+                ? `Not an acceptable region. Please select from the following: ${ahdsRegions?.join(", ")}`
                 : undefined}
             >
               <HistoryInput
@@ -1078,6 +1084,8 @@ export function DeployWizard() {
                 value={config.location}
                 onChange={(v) => update("location", v)}
                 disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
+                suggestions={ahdsRegions ?? undefined}
+                suggestionsLabel="Supported AHDS regions"
               />
             </Field>
             <Field

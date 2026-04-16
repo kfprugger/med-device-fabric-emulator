@@ -55,6 +55,10 @@ interface HistoryInputProps {
   placeholder?: string;
   disabled?: boolean;
   type?: "text" | "email" | "url" | "tel" | "search" | "password";
+  /** Extra suggestions shown below history (e.g. AHDS-supported regions). */
+  suggestions?: string[];
+  /** Label shown above the extra suggestions section. */
+  suggestionsLabel?: string;
 }
 
 export function HistoryInput({
@@ -65,6 +69,8 @@ export function HistoryInput({
   placeholder,
   disabled,
   type,
+  suggestions,
+  suggestionsLabel,
 }: HistoryInputProps) {
   const styles = useStyles();
   const [history, setHistory] = useState<string[]>([]);
@@ -88,12 +94,23 @@ export function HistoryInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Filter suggestions based on current input
+  // Filter history based on current input
   const filtered = value
     ? history.filter(
         (h) => h.toLowerCase().includes(value.toLowerCase()) && h !== value
       )
     : history.filter((h) => h !== value);
+
+  // Filter external suggestions (exclude history items to avoid dupes)
+  const historySet = new Set(history.map((h) => h.toLowerCase()));
+  const filteredSuggestions = (suggestions ?? []).filter(
+    (s) =>
+      s !== value &&
+      !historySet.has(s.toLowerCase()) &&
+      (!value || s.toLowerCase().includes(value.toLowerCase()))
+  );
+
+  const hasDropdownItems = filtered.length > 0 || filteredSuggestions.length > 0;
 
   const handleSelect = (suggestion: string) => {
     onChange(suggestion);
@@ -114,16 +131,18 @@ export function HistoryInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || filtered.length === 0) return;
+    const totalItems = filtered.length + filteredSuggestions.length;
+    if (!showSuggestions || totalItems === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
+      setActiveIndex((i) => Math.min(i + 1, totalItems - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && activeIndex >= 0) {
       e.preventDefault();
-      handleSelect(filtered[activeIndex]);
+      const all = [...filtered, ...filteredSuggestions];
+      handleSelect(all[activeIndex]);
     } else if (e.key === "Escape") {
       setShowSuggestions(false);
     }
@@ -145,7 +164,7 @@ export function HistoryInput({
         disabled={disabled}
         type={type}
       />
-      {showSuggestions && filtered.length > 0 && !disabled && (
+      {showSuggestions && hasDropdownItems && !disabled && (
         <div className={styles.suggestions}>
           {filtered.map((s, i) => (
             <div
@@ -157,6 +176,35 @@ export function HistoryInput({
               {s}
             </div>
           ))}
+          {filteredSuggestions.length > 0 && (
+            <>
+              {(filtered.length > 0 || suggestionsLabel) && (
+                <div
+                  style={{
+                    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
+                    fontSize: tokens.fontSizeBase200,
+                    color: tokens.colorNeutralForeground3,
+                    fontWeight: 600,
+                    borderTop: filtered.length > 0 ? `1px solid ${tokens.colorNeutralStroke2}` : undefined,
+                  }}
+                >
+                  {suggestionsLabel ?? "Suggestions"}
+                </div>
+              )}
+              {filteredSuggestions.map((s, i) => {
+                const idx = filtered.length + i;
+                return (
+                  <div
+                    key={s}
+                    className={`${styles.suggestion} ${idx === activeIndex ? styles.suggestionActive : ""}`}
+                    onMouseDown={() => handleSelect(s)}
+                  >
+                    {s}
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>

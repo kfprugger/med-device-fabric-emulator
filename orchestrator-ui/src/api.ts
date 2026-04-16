@@ -267,7 +267,11 @@ export async function getDeploymentCapacity(
  * Returns normalised ARM location names (e.g. "eastus", "northcentralus").
  */
 export async function listAhdsRegions(): Promise<string[]> {
-  const resp = await fetch(`${API_BASE}/scan/ahds-regions`);
-  if (!resp.ok) return [];
-  return resp.json();
+  try {
+    const resp = await fetch(`${API_BASE}/scan/ahds-regions`);
+    if (!resp.ok) return [];
+    return resp.json();
+  } catch {
+    return [];
+  }
 }
