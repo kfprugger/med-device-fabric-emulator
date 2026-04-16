@@ -330,196 +330,159 @@ async def start_teardown(req: TeardownRequest):
 
 
 async def _run_teardown(instance_id: str, req: TeardownRequest):
-    """Run Remove-AllResources.ps1 via subprocess."""
-    import logging as _logging
+    """Fast-path teardown using direct Fabric/Azure APIs.
 
+    Fabric workspace deletion cascades to all items — no need to iterate them
+    first. Only the workspace managed identity (SPN) needs a separate
+    deprovision call because it survives workspace deletion as an orphaned
+    Entra app registration.
+
+    Each call to this function runs as an independent asyncio task, so
+    multiple concurrent teardowns proceed in parallel.
+    """
     deployment = deployments[instance_id]
     teardown_logs: list[dict] = []
+    start = time.time()
+    teardown_phases: list[dict] = []
 
-    class StatusLogHandler(_logging.Handler):
-        def emit(self, record: _logging.LogRecord):
-            msg = self.format(record)
-            teardown_logs.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "level": "success" if any(w in msg.lower() for w in ["deleted", "verified", "deprovisioned", "removed", "✓"])
-                    else "error" if record.levelno >= _logging.ERROR
-                    else "warn" if record.levelno >= _logging.WARNING
-                    else "info",
-                "message": msg,
-            })
-            deployment["customStatus"]["logs"] = teardown_logs[-100:]
-            deployment["customStatus"]["detail"] = msg
-            deployment["lastUpdatedTime"] = now_iso()
-            save_state()
+    def log(level: str, message: str):
+        teardown_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": level,
+            "message": message,
+        })
+        deployment["customStatus"]["logs"] = teardown_logs[-200:]
+        deployment["customStatus"]["detail"] = message
+        deployment["lastUpdatedTime"] = now_iso()
+        logger.info("[%s] %s", instance_id, message)
 
-    handler = StatusLogHandler()
-    handler.setLevel(_logging.INFO)
-    handler.setFormatter(_logging.Formatter("%(message)s"))
+    def add_phase(name: str):
+        teardown_phases.append({"phase": name, "status": "running"})
+        deployment["customStatus"]["currentPhase"] = name
+        deployment["customStatus"]["totalPhases"] = len(teardown_phases)
+        deployment["output"] = {"status": "running", "phases": teardown_phases, "resources": {}}
+        save_state()
 
-    _logging.getLogger("activities.invoke_powershell").addHandler(handler)
+    def complete_phase(name: str, status: str = "succeeded"):
+        for p in teardown_phases:
+            if p["phase"] == name and p["status"] == "running":
+                p["status"] = status
+        succeeded = sum(1 for p in teardown_phases if p["status"] == "succeeded")
+        deployment["customStatus"]["completedPhases"] = succeeded
+        deployment["output"] = {"status": "running", "phases": teardown_phases, "resources": {}}
+        save_state()
+
+    had_error = False
 
     try:
-        from activities.invoke_powershell import run_teardown
+        log("info", f"Starting teardown (workspace='{req.fabric_workspace_name}', rg='{req.resource_group_name}')")
 
-        config = req.model_dump()
-        logger.info("Starting teardown for workspace='%s', rg='%s'",
-                     req.fabric_workspace_name, req.resource_group_name)
+        # ── Fabric workspace deletion ─────────────────────────────────
+        if req.fabric_workspace_name and req.delete_workspace:
+            add_phase("Workspace Identity")
+            loop = asyncio.get_event_loop()
 
-        # Track teardown phases in reverse deployment order
-        teardown_phases: list[dict] = []
-
-        def add_teardown_phase(name: str, status: str = "running"):
-            teardown_phases.append({"phase": name, "status": status})
-            deployment["customStatus"]["currentPhase"] = name
-            deployment["output"] = {
-                "status": "running",
-                "phases": teardown_phases,
-                "resources": {},
-            }
-            save_state()
-
-        def complete_teardown_phase(name: str, duration: float = 0):
-            for p in teardown_phases:
-                if p["phase"] == name:
-                    p["status"] = "succeeded"
-                    if duration:
-                        p["duration"] = duration
-            succeeded = [p for p in teardown_phases if p["status"] == "succeeded"]
-            deployment["customStatus"]["completedPhases"] = len(succeeded)
-            deployment["output"] = {
-                "status": "running",
-                "phases": teardown_phases,
-                "resources": {},
-            }
-            save_state()
-
-        # Phase labels map to the log output from Remove-AllResources.ps1
-        phase_triggers = {
-            "Fabric Workspace Items": "Step 2:",
-            "Workspace Identity": "Step 2b:",
-            "Delete Workspace": "Step 3:",
-            "Azure Resource Group": "Step 1:",
-        }
-        active_phase: str = ""
-
-        # Override the log handler to detect phase transitions
-        original_emit = handler.emit
-        def phase_tracking_emit(record):
-            nonlocal active_phase
-            msg = handler.format(record)
-
-            # Detect phase starts from Remove-AllResources.ps1 output
-            if "Step 2: Fabric Workspace Items" in msg or "DEL " in msg:
-                if active_phase != "Fabric Workspace Items":
-                    active_phase = "Fabric Workspace Items"
-                    add_teardown_phase("Fabric Workspace Items")
-            elif "Step 2b:" in msg or "deprovision" in msg.lower():
-                if active_phase != "Workspace Identity":
-                    if active_phase == "Fabric Workspace Items":
-                        complete_teardown_phase("Fabric Workspace Items")
-                    active_phase = "Workspace Identity"
-                    add_teardown_phase("Workspace Identity")
-            elif "Step 3:" in msg or "Delete Fabric Workspace" in msg:
-                if active_phase != "Delete Workspace":
-                    if active_phase == "Workspace Identity":
-                        complete_teardown_phase("Workspace Identity")
-                    active_phase = "Delete Workspace"
-                    add_teardown_phase("Delete Workspace")
-            elif "Step 1:" in msg or "Azure Resource Group" in msg:
-                if active_phase != "Azure Resource Group":
-                    if active_phase == "Delete Workspace":
-                        complete_teardown_phase("Delete Workspace")
-                    active_phase = "Azure Resource Group"
-                    add_teardown_phase("Azure Resource Group")
-            elif "Workspace deleted" in msg or "✓ Workspace deleted" in msg:
-                if active_phase == "Delete Workspace":
-                    complete_teardown_phase("Delete Workspace")
-            elif "Azure RG deletion initiated" in msg or "Azure RG deleted" in msg:
-                pass  # We'll handle RG completion by polling
-
-            original_emit(record)
-
-        handler.emit = phase_tracking_emit
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, run_teardown, config)
-
-        exit_code = result.get("exit_code", -1)
-
-        # Mark any remaining running phases as succeeded if script exited cleanly
-        if exit_code == 0:
-            for p in teardown_phases:
-                if p["status"] == "running" and p["phase"] != "Azure Resource Group":
-                    p["status"] = "succeeded"
-
-        # If Azure RG was targeted, ensure it doesn't have a phase yet — add one
-        if req.resource_group_name:
-            rg_phase = next((p for p in teardown_phases if p["phase"] == "Azure Resource Group"), None)
-            if not rg_phase:
-                add_teardown_phase("Azure Resource Group")
-
-            # Poll until Azure RG is actually deleted (async deletion may take minutes)
-            deployment["customStatus"]["detail"] = f"Waiting for Azure RG '{req.resource_group_name}' to be fully deleted..."
-            save_state()
-
-            for poll_attempt in range(60):  # Up to ~5 min (5s intervals)
+            def _fabric_delete():
+                from shared.fabric_client import FabricClient
+                fabric = FabricClient()
+                ws = fabric.find_workspace(req.fabric_workspace_name)
+                if not ws:
+                    return {"found": False}
+                ws_id = ws["id"]
+                # Deprovision managed identity first — cleans up the Entra SPN
+                # that would otherwise be orphaned after workspace deletion.
+                identity_ok = True
+                identity_err = ""
                 try:
+                    fabric.deprovision_workspace_identity(ws_id)
+                except Exception as ex:
+                    identity_ok = False
+                    identity_err = str(ex)
+                # Delete the workspace — this cascades to all items inside.
+                fabric.call("DELETE", f"/workspaces/{ws_id}")
+                return {
+                    "found": True,
+                    "workspace_id": ws_id,
+                    "identity_ok": identity_ok,
+                    "identity_error": identity_err,
+                }
+
+            try:
+                result = await loop.run_in_executor(None, _fabric_delete)
+                if not result.get("found"):
+                    log("warn", f"Workspace '{req.fabric_workspace_name}' not found — skipping Fabric cleanup")
+                    complete_phase("Workspace Identity", "skipped")
+                    add_phase("Delete Workspace")
+                    complete_phase("Delete Workspace", "skipped")
+                else:
+                    if result["identity_ok"]:
+                        log("success", "✓ Workspace managed identity deprovisioned")
+                    else:
+                        log("warn", f"Identity deprovision skipped/failed: {result['identity_error']}")
+                    complete_phase("Workspace Identity")
+
+                    add_phase("Delete Workspace")
+                    log("success", f"✓ Workspace '{req.fabric_workspace_name}' deleted (cascades to all items)")
+                    complete_phase("Delete Workspace")
+            except Exception as e:
+                had_error = True
+                log("error", f"Fabric teardown failed: {e}")
+                complete_phase("Workspace Identity", "failed")
+
+        # ── Azure RG deletion (fire-and-poll) ─────────────────────────
+        if req.resource_group_name and req.delete_azure_rg:
+            add_phase("Azure Resource Group")
+            try:
+                proc = _az_run([
+                    "az", "group", "delete",
+                    "--name", req.resource_group_name,
+                    "--yes", "--no-wait",
+                ])
+                if proc.returncode != 0:
+                    raise RuntimeError(proc.stderr.strip() or "az group delete failed")
+                log("info", f"Azure RG deletion initiated for '{req.resource_group_name}' (async)")
+
+                for poll_attempt in range(120):  # up to ~10 min
                     check = _az_run(["az", "group", "exists", "--name", req.resource_group_name])
                     if check.stdout.strip().lower() == "false":
-                        complete_teardown_phase("Azure Resource Group")
-                        teardown_logs.append({
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "level": "success",
-                            "message": f"✓ Azure RG '{req.resource_group_name}' has been fully deleted.",
-                        })
-                        deployment["customStatus"]["logs"] = teardown_logs[-100:]
-                        deployment["customStatus"]["detail"] = f"Azure RG '{req.resource_group_name}' deleted"
-                        save_state()
+                        log("success", f"✓ Azure RG '{req.resource_group_name}' fully deleted")
+                        complete_phase("Azure Resource Group")
                         break
-                    else:
-                        if poll_attempt % 6 == 0:  # Log every 30s
-                            teardown_logs.append({
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "level": "info",
-                                "message": f"Azure RG '{req.resource_group_name}' still deleting... ({(poll_attempt + 1) * 5}s)",
-                            })
-                            deployment["customStatus"]["logs"] = teardown_logs[-100:]
-                            save_state()
-                except Exception as poll_err:
-                    logger.warning("RG poll error: %s", poll_err)
-                await asyncio.sleep(5)
-            else:
-                # Timed out waiting for RG deletion
-                teardown_logs.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "level": "warn",
-                    "message": f"Timed out waiting for Azure RG '{req.resource_group_name}' deletion after 5 min. It may still be deleting.",
-                })
-                deployment["customStatus"]["logs"] = teardown_logs[-100:]
-                save_state()
+                    if poll_attempt % 6 == 0:
+                        log("info", f"Azure RG still deleting... ({(poll_attempt + 1) * 5}s)")
+                    await asyncio.sleep(5)
+                else:
+                    log("warn", f"Timed out waiting for RG '{req.resource_group_name}' deletion after 10 min — it may still be deleting")
+                    complete_phase("Azure Resource Group", "failed")
+                    had_error = True
+            except Exception as e:
+                had_error = True
+                log("error", f"Azure RG teardown failed: {e}")
+                complete_phase("Azure Resource Group", "failed")
 
-        # Final status
-        all_succeeded = all(p["status"] == "succeeded" for p in teardown_phases) if teardown_phases else exit_code == 0
-        if all_succeeded:
+        duration = time.time() - start
+
+        if not teardown_phases:
+            # Nothing was requested
+            log("warn", "No teardown targets were specified")
+            deployment["runtimeStatus"] = "Completed"
+            deployment["customStatus"]["status"] = "succeeded"
+        elif had_error:
+            deployment["runtimeStatus"] = "Failed"
+            deployment["customStatus"]["status"] = "failed"
+            deployment["customStatus"]["currentPhase"] = "Teardown Failed"
+        else:
             deployment["runtimeStatus"] = "Completed"
             deployment["customStatus"]["status"] = "succeeded"
             deployment["customStatus"]["currentPhase"] = "Teardown Complete"
             deployment["customStatus"]["completedPhases"] = len(teardown_phases)
-        elif exit_code == 0:
-            deployment["runtimeStatus"] = "Completed"
-            deployment["customStatus"]["status"] = "succeeded"
-            deployment["customStatus"]["currentPhase"] = "Teardown Complete"
-            deployment["customStatus"]["completedPhases"] = len([p for p in teardown_phases if p["status"] == "succeeded"])
-        else:
-            deployment["runtimeStatus"] = "Failed"
-            deployment["customStatus"]["status"] = "failed"
 
         deployment["output"] = {
-            "status": "succeeded" if all_succeeded or exit_code == 0 else "failed",
-            "phases": teardown_phases if teardown_phases else [{"phase": "Teardown", "status": "succeeded" if exit_code == 0 else "failed", "duration": result.get("duration_seconds", 0)}],
-            "resources": result.get("results", {}),
+            "status": "succeeded" if not had_error else "failed",
+            "phases": teardown_phases or [{"phase": "Teardown", "status": "succeeded", "duration": duration}],
+            "resources": {},
         }
-        logger.info("Teardown %s (exit=%d, %.1fs)", instance_id, exit_code, result.get("duration_seconds", 0))
+        logger.info("Teardown %s finished (had_error=%s, %.1fs)", instance_id, had_error, duration)
 
     except Exception as e:
         logger.error("Teardown failed: %s", e, exc_info=True)

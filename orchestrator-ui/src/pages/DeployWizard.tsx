@@ -176,7 +176,7 @@ export function DeployWizard() {
   const styles = useStyles();
   const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
-  const { selectedSubscription, setSelectedSubscription } = useAppState();
+  const { selectedSubscription, setSelectedSubscription, subscriptions: ctxSubscriptions, capacities: ctxCapacities } = useAppState();
   const [subscriptions, setSubscriptions] = useState(getMockSubscriptions());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -219,8 +219,14 @@ export function DeployWizard() {
       .finally(() => setCapacityRefreshing(false));
   };
 
-  // Fetch real subscriptions on mount
+  // Fetch real subscriptions on mount — prefer context prefetch if available
   useEffect(() => {
+    if (ctxSubscriptions.length > 0) {
+      setSubscriptions(ctxSubscriptions);
+      setUsingMock(false);
+      if (!selectedSubscription) setSelectedSubscription(ctxSubscriptions[0].id);
+      return;
+    }
     fetch("/api/scan/subscriptions")
       .then((r) => r.json())
       .then((subs: Array<{ id: string; name: string }>) => {
@@ -236,7 +242,7 @@ export function DeployWizard() {
         setUsingMock(true);
         setLoadWarning("Live Azure subscription scan unavailable. Using mock data.");
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ctxSubscriptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch Fabric capacities across all subscriptions
   useEffect(() => {
@@ -249,6 +255,16 @@ export function DeployWizard() {
       if (active && !selectedCapacity) setSelectedCapacity(active.name);
       setInitializing(false);
       return;
+    }
+    // Seed from the app-wide prefetch if available, then refresh in background
+    if (ctxCapacities.length > 0 && capacities.length === 0) {
+      setCapacities(ctxCapacities);
+      if (!selectedCapacity) {
+        const active = ctxCapacities.find((c) => c.state === "Active");
+        if (active) setSelectedCapacity(active.name);
+        else setSelectedCapacity(ctxCapacities[0].name);
+      }
+      setInitializing(false);
     }
     setCapacityRefreshing(true);
     // Scan all subscriptions since capacity may be in a different sub

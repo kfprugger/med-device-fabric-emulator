@@ -176,7 +176,7 @@ export function TeardownView() {
   const activeScanIdRef = useRef<string | null>(null);
   const hasInitializedRef = useRef(false);
   const normalizeResourceId = useCallback((id: string) => id.replace(/^\//, ""), []);
-  const { selectedSubscription, setSelectedSubscription } = useAppState();
+  const { selectedSubscription, setSelectedSubscription, teardownScan, refreshTeardownScan, subscriptions: ctxSubscriptions } = useAppState();
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
@@ -245,23 +245,55 @@ export function TeardownView() {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
-    // Fetch real subscriptions first, then scan with the correct default
-    fetch("/api/scan/subscriptions")
-      .then((r) => r.json())
-      .then((subs: MockSubscription[]) => {
-        if (subs.length > 0) {
-          setSubscriptions(subs);
-          // Set default subscription from API if none selected yet
-          if (!selectedSubscription) {
-            setSelectedSubscription(subs[0].id);
+    // Prefer context subscriptions (fetched at app mount); fall back to /api/scan
+    if (ctxSubscriptions.length > 0) {
+      setSubscriptions(ctxSubscriptions);
+      if (!selectedSubscription) setSelectedSubscription(ctxSubscriptions[0].id);
+    } else {
+      fetch("/api/scan/subscriptions")
+        .then((r) => r.json())
+        .then((subs: MockSubscription[]) => {
+          if (subs.length > 0) {
+            setSubscriptions(subs);
+            if (!selectedSubscription) setSelectedSubscription(subs[0].id);
           }
-        }
-      })
-      .catch(() => {}) // Fall back to mock subscriptions
-      .finally(() => {
-        handleScan();
-      });
+        })
+        .catch(() => {});
+    }
+
+    // If the background scan is already running or completed, seed UI from it.
+    // Otherwise kick a fresh scan.
+    if (teardownScan.status === "completed" || teardownScan.status === "running") {
+      setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
+      setScanCounts(teardownScan.counts);
+      if (teardownScan.status === "completed") {
+        setScanned(true);
+        setScanning(false);
+      } else {
+        setScanning(true);
+      }
+    } else {
+      handleScan();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep candidates in sync with the global background scan
+  useEffect(() => {
+    if (teardownScan.status === "completed") {
+      setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
+      setScanCounts(teardownScan.counts);
+      setScanned(true);
+      setScanning(false);
+    } else if (teardownScan.status === "running") {
+      setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
+      setScanCounts(teardownScan.counts);
+      setScanning(true);
+    } else if (teardownScan.status === "failed") {
+      setScanning(false);
+      if (!candidates.length) setError(teardownScan.error || "Background scan failed");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teardownScan.status, teardownScan.candidates, teardownScan.counts]);
 
   useEffect(() => {
     return () => {
@@ -307,6 +339,8 @@ export function TeardownView() {
       window.clearInterval(scanPollRef.current);
       scanPollRef.current = null;
     }
+    // Keep the global background scan in sync so other pages/tabs see fresh data
+    refreshTeardownScan(selectedSubscription);
     // Generate a nonce for this scan call. If another handleScan fires (e.g. React
     // StrictMode double-mount), the earlier one will see a stale nonce and bail out.
     const scanNonce = Math.random().toString(36).slice(2);
@@ -500,29 +534,64 @@ export function TeardownView() {
 
     const selected = candidates.filter((c) => selectedIds.has(c.id));
     const names = selected.map((c) => `${c.type}: ${c.name}`).join("\n  ");
-    if (!window.confirm(`Permanently delete ${selectedIds.size} resource(s)?\n\n  ${names}\n\nThis action cannot be undone.`)) return;
+    if (!window.confirm(`Permanently delete ${selectedIds.size} resource(s)?\n\n  ${names}\n\nEach will be deleted in parallel in its own teardown job. This action cannot be undone.`)) return;
 
     setLoading(true);
     setError("");
 
-    const fabricWs = selected.find((c) => c.type === "fabric");
-    const azureRg = selected.find((c) => c.type === "azure");
+    // Group selection into independent teardown jobs so multiple workspaces
+    // and multiple Azure RGs each run in their own parallel pipeline rather
+    // than being forced through a single sequential request.
+    //
+    // Pairing rule: a Fabric workspace and an Azure RG that deploy together
+    // (same capacityMapping) are submitted as ONE job so the backend can keep
+    // them logically linked in the history view.
+    type TeardownJob = { fabric_workspace_name: string; resource_group_name: string; delete_workspace: boolean; delete_azure_rg: boolean };
+    const jobs: TeardownJob[] = [];
+    const selectedFabric = selected.filter((c) => c.type === "fabric");
+    const selectedAzure = selected.filter((c) => c.type === "azure");
+    const pairedRgNames = new Set<string>();
 
-    // Try real backend first
-    try {
-      await startTeardown({
-        fabric_workspace_name: fabricWs?.name ?? "",
-        resource_group_name: azureRg?.name ?? "",
-        delete_workspace: !!fabricWs,
-        delete_azure_rg: !!azureRg,
+    for (const ws of selectedFabric) {
+      // Find a paired Azure RG that maps to this workspace AND is also selected
+      const pairedRg = [...capacityMappings.entries()].find(
+        ([rgName, m]) => m.workspaceName === ws.name && selectedAzure.some((a) => a.name === rgName),
+      );
+      const rgName = pairedRg?.[0] ?? "";
+      if (rgName) pairedRgNames.add(rgName);
+      jobs.push({
+        fabric_workspace_name: ws.name,
+        resource_group_name: rgName,
+        delete_workspace: true,
+        delete_azure_rg: !!rgName,
       });
-      // Real backend accepted — navigate to deploy monitor to see real logs
+    }
+
+    // Any Azure RG that wasn't paired becomes its own standalone job
+    for (const rg of selectedAzure) {
+      if (pairedRgNames.has(rg.name)) continue;
+      jobs.push({
+        fabric_workspace_name: "",
+        resource_group_name: rg.name,
+        delete_workspace: false,
+        delete_azure_rg: true,
+      });
+    }
+
+    // Fire all jobs in parallel — backend creates a separate asyncio task per job
+    try {
+      const results = await Promise.allSettled(jobs.map((job) => startTeardown(job)));
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length === jobs.length) {
+        throw new Error("All teardown jobs failed to start");
+      }
+      if (failures.length > 0) {
+        setError(`${failures.length} of ${jobs.length} teardown jobs failed to start. Check history for successful ones.`);
+      }
       setLoading(false);
-      // Use the history tab to track real teardowns (they appear as deployments)
       navigate("/history");
       return;
     } catch {
-      // Backend unavailable — fall back to mock teardown
       setError("Backend teardown API unavailable. Running mock teardown monitor.");
       for (const candidate of selected) {
         startMockTeardown(candidate);
@@ -578,9 +647,32 @@ export function TeardownView() {
             <div className={styles.candidateRow}>
               <Checkbox
                 checked={isSelected}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  toggleSelected(c.id);
+                onClick={(e) => e.stopPropagation()}
+                onChange={(_, data) => {
+                  // Drive selection from the checkbox's own state so a click on
+                  // the box never double-toggles with the Card's onClick handler.
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (data.checked) next.add(c.id);
+                    else next.delete(c.id);
+                    return next;
+                  });
+                  // Still handle paired-SPN auto-(de)select logic
+                  if (c.type === "fabric") {
+                    const matchingSpns = candidates.filter(
+                      (sp) => sp.type === "spn" && sp.name === c.name && !lockedIds.has(normalizeResourceId(sp.id))
+                    );
+                    if (matchingSpns.length) {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        for (const spn of matchingSpns) {
+                          if (data.checked) next.add(spn.id);
+                          else next.delete(spn.id);
+                        }
+                        return next;
+                      });
+                    }
+                  }
                 }}
                 disabled={isLocked}
               />
