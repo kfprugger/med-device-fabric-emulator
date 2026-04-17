@@ -6,6 +6,30 @@ Phase 1 deploys all Azure infrastructure, generates synthetic clinical data, loa
 
 ---
 
+## Prerequisites
+
+> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** The setup script detects your OS and provides platform-specific install commands for anything that's missing.
+
+```powershell
+# Windows (PowerShell)
+.\setup-prereqs.ps1
+
+# macOS / Linux (bash — installs PowerShell Core if missing)
+chmod +x setup-prereqs.sh
+./setup-prereqs.sh
+```
+
+**Local tools:** PowerShell 7+, Azure CLI + Bicep, Az PowerShell module, Python 3.10+, Node.js 18+, Git
+
+**Azure/Fabric:**
+- Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
+- Logged in to Azure (`az login`)
+- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions)
+
+To check without installing anything: `.\setup-prereqs.ps1 -CheckOnly`
+
+---
+
 ## Architecture
 
 ```mermaid
@@ -296,4 +320,4 @@ After Phase 1 completes, HDS must be deployed manually in the Fabric portal:
 
 ---
 
-**Next:** [Phase 2 — HDS Enrichment & Data Agents →](phase-2-hds-enrichment-and-agents.md)
+**Next:** [Phase 2 — HDS Enrichment & Data Agents →](phase-2-hds-enrichment-and-agents.md) · **Overview:** [← README](../README.md)

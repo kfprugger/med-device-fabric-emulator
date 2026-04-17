@@ -8,6 +8,20 @@ Phase 3 deploys the clinical imaging layer: a DICOM Viewer (OHIF), a Cohorting D
 
 ---
 
+## Prerequisites
+
+> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
+
+| Requirement | Detail |
+|-------------|--------|
+| Phase 2 complete | KQL shortcuts, enriched alerts, Data Agents deployed |
+| Gold OMOP pipeline finished | Gold Lakehouse populated with CDM v5.4 tables |
+| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+, Git (`setup-prereqs.ps1`) |
+| Logged in to Azure | `az login` |
+| FabricDicomCohortingToolkit cloned | Companion repo at `-DicomToolkitPath` (default: `C:\git\FabricDicomCohortingToolkit`) |
+
+---
+
 ## Architecture
 
 ```mermaid

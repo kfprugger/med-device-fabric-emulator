@@ -4,8 +4,11 @@ This guide walks through creating a **Fabric IQ Ontology** (`ClinicalDeviceOntol
 
 ## Prerequisites
 
+> **These prerequisites are required for both the Orchestrator UI and command-line deployments.** Run `setup-prereqs.ps1` from the repo root to verify all local tools are installed. The script detects your OS and provides platform-specific install commands.
+
 | Requirement | Status |
 |-------------|--------|
+| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
 | Phase 1 + Phase 2 deployed (`deploy-fabric-rti.ps1`) | ✅ |
 | Silver Lakehouse populated (HDS pipeline complete) | ✅ |
 | Data Agents deployed (`phase-2/deploy-data-agents.ps1`) | ✅ |

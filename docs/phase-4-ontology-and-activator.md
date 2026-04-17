@@ -216,10 +216,14 @@ The Reflex is created in two API calls due to a Fabric limitation:
 
 ## Prerequisites
 
+> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
+
 | Requirement | Detail |
 |-------------|--------|
 | Phase 1 + 2 + 3 deployed | Eventhouse, Silver Lakehouse, Data Agents must exist |
 | Clinical pipeline completed | Silver Lakehouse tables populated (Patient, Device, Condition, etc.) |
+| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
+| Logged in to Azure | `az login` |
 | Ontology item (preview) enabled | Fabric tenant admin setting |
 | Graph (preview) enabled | Fabric tenant admin setting |
 | Data Activator enabled | Fabric tenant admin setting |

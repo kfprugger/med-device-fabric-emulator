@@ -4,6 +4,8 @@ The orchestrator provides a visual deployment experience for the Medical Device 
 
 ## Quick Start
 
+> **Prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** The setup script detects your OS (Windows, macOS, Linux) and provides platform-specific install commands for anything that's missing.
+
 From the repo root, run the setup script to install all prerequisites:
 
 ```bash
@@ -13,6 +15,8 @@ From the repo root, run the setup script to install all prerequisites:
 # macOS / Linux
 chmod +x setup-prereqs.sh && ./setup-prereqs.sh
 ```
+
+To check without installing anything: `.\setup-prereqs.ps1 -CheckOnly`
 
 Then start both services:
 

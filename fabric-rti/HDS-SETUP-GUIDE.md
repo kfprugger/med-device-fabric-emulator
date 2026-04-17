@@ -29,8 +29,11 @@ Phase 1 (Automated)         Manual Steps              Phase 2 (Automated)
 
 ## Prerequisites
 
+> **These prerequisites are required for both the Orchestrator UI and command-line deployments.** Run `setup-prereqs.ps1` from the repo root to verify all local tools are installed. The script detects your OS and provides platform-specific install commands.
+
 | Requirement | Status |
 |-------------|--------|
+| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
 | Azure FHIR Service deployed | ✅ `phase-1/deploy.ps1` / `phase-1/deploy-fhir.ps1` |
 | FHIR data loaded (Synthea patients + devices) | ✅ FHIR Loader job |
 | Fabric workspace created | ✅ `deploy-fabric-rti.ps1` |

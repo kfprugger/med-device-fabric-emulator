@@ -4,12 +4,9 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 
 ![30,000 ft Data Journey — From Source Data to Business Intelligence: Real-Time vs. Batch](docs/images/Simple%20Diagram.png)
 
-<details>
-<summary><strong>🔍 View detailed end-to-end architecture diagram</strong></summary>
+> **Ready to deploy?** [Skip to Quick Start ⬇](#-quick-start)
 
-![Detailed Architecture Diagram](docs/images/architecture-diagram.drawio.png)
 
-</details>
 
 **▶ [Watch the video explainer](https://aka.ms/fabrichlsrti)**
 
@@ -314,6 +311,8 @@ graph LR
 > **The Orchestrator UI is the supported, recommended path for every deployment.** The CLI scripts exist for automation, CI/CD, and advanced scenarios — but interactive deployments, monitoring, and teardown should all go through the browser-based wizard.
 
 ### Prerequisites
+
+> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** The setup script detects your OS and provides platform-specific install commands for anything that's missing.
 
 Run the setup script to check and install all dependencies:
 

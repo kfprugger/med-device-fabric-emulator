@@ -8,6 +8,21 @@ Phase 2 bridges the real-time telemetry pipeline with FHIR clinical data by crea
 
 ---
 
+## Prerequisites
+
+> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
+
+| Requirement | Detail |
+|-------------|--------|
+| Phase 1 complete | Workspace, Eventhouse, Eventstream, FHIR data loaded |
+| HDS deployed (manual) | Bronze & Silver lakehouses exist in the workspace |
+| Clinical pipeline completed | Silver Lakehouse tables populated (Patient, Condition, Device, etc.) |
+| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
+| Logged in to Azure | `az login` |
+| Fabric capacity (paid F-SKU) | Required for HDS |
+
+---
+
 ## Architecture
 
 ```mermaid
@@ -280,4 +295,4 @@ Rapid triage decisions with alert prioritization:
 
 ---
 
-**Previous:** [← Phase 1 — Infrastructure & Ingestion](phase-1-infrastructure-and-ingestion.md) · **Next:** [Phase 3 — Imaging & Cohorting →](phase-3-imaging-and-cohorting.md)
+**Previous:** [← Phase 1 — Infrastructure & Ingestion](phase-1-infrastructure-and-ingestion.md) · **Next:** [Phase 3 — Imaging & Cohorting →](phase-3-imaging-and-cohorting.md) · **Overview:** [← README](../README.md)

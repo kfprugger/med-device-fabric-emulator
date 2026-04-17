@@ -1,5 +1,7 @@
 # Real-Time Dashboard Setup Guide
 
+> **Prerequisites:** All local tools must be installed before deploying. Run `setup-prereqs.ps1` from the repo root to verify — it works for both the Orchestrator UI and command-line deployments and provides OS-specific install commands.
+
 Create a Fabric Real-Time Dashboard using the pre-built queries from `fabric-rti/kql/05-dashboard-queries.kql`.
 
 ## Quick Setup
