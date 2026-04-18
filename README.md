@@ -7,7 +7,7 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 > **Ready to deploy?** [Skip to Quick Start ⬇](#-quick-start)
 
 
-
+#### Video Explainer
 **▶ [Watch the video explainer](https://aka.ms/fabrichlsrti)**
 
 **What this solution demonstrates:**
