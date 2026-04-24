@@ -1,0 +1,15 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/1.0.0/schema.json",
+  "datasetReference": {
+    "byPath": null,
+    "byConnection": null
+  },
+  "reportPages": [
+    "quality_overview_page01",
+    "measure_deepdive_page02",
+    "claims_analytics_page03",
+    "medication_adherence_page04",
+    "care_gap_closure_page05",
+    "payer_performance_page06"
+  ]
+}

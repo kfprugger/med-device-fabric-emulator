@@ -1,0 +1,64 @@
+/// Quality Measures — patient-level CMS eCQM results
+table agg_quality_measures
+	lineageTag: 11111111-aaaa-bbbb-cccc-111111111111
+
+	partition 'agg_quality_measures' = entity
+		mode: directLake
+		source
+			entityName: agg_quality_measures
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111112
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column measure_id
+		dataType: string
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111113
+		sourceColumn: measure_id
+		summarizeBy: none
+
+	column measure_name
+		dataType: string
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111114
+		sourceColumn: measure_name
+		summarizeBy: none
+
+	column in_initial_population
+		dataType: boolean
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111115
+		sourceColumn: in_initial_population
+		summarizeBy: none
+
+	column in_denominator
+		dataType: boolean
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111116
+		sourceColumn: in_denominator
+		summarizeBy: none
+
+	column in_numerator
+		dataType: boolean
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111117
+		sourceColumn: in_numerator
+		summarizeBy: none
+
+	column in_exclusion
+		dataType: boolean
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111118
+		sourceColumn: in_exclusion
+		summarizeBy: none
+
+	column quality_met
+		dataType: boolean
+		lineageTag: 11111111-aaaa-bbbb-cccc-111111111119
+		sourceColumn: quality_met
+		summarizeBy: none
+
+	column measurement_year
+		dataType: int64
+		lineageTag: 11111111-aaaa-bbbb-cccc-11111111111a
+		sourceColumn: measurement_year
+		summarizeBy: none

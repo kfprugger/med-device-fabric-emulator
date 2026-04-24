@@ -1,0 +1,46 @@
+/// Actionable care gaps per patient
+table care_gaps
+	lineageTag: 88888888-aaaa-bbbb-cccc-888888888888
+
+	partition 'care_gaps' = entity
+		mode: directLake
+		source
+			entityName: care_gaps
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888881
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column measure_id
+		dataType: string
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888882
+		sourceColumn: measure_id
+		summarizeBy: none
+
+	column gap_type
+		dataType: string
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888883
+		sourceColumn: gap_type
+		summarizeBy: none
+
+	column gap_status
+		dataType: string
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888884
+		sourceColumn: gap_status
+		summarizeBy: none
+
+	column days_overdue
+		dataType: int64
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888885
+		sourceColumn: days_overdue
+		summarizeBy: average
+
+	column recommended_action
+		dataType: string
+		lineageTag: 88888888-aaaa-bbbb-cccc-888888888886
+		sourceColumn: recommended_action
+		summarizeBy: none

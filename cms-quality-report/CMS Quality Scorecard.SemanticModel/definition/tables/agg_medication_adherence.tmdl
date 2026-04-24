@@ -1,0 +1,47 @@
+/// Medication adherence PDC scores by drug class
+table agg_medication_adherence
+	lineageTag: 77777777-aaaa-bbbb-cccc-777777777777
+
+	partition 'agg_medication_adherence' = entity
+		mode: directLake
+		source
+			entityName: agg_medication_adherence
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777771
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column medication_class
+		dataType: string
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777772
+		sourceColumn: medication_class
+		summarizeBy: none
+
+	column pdc_score
+		dataType: double
+		formatString: 0.0%
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777773
+		sourceColumn: pdc_score
+		summarizeBy: average
+
+	column adherence_category
+		dataType: string
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777774
+		sourceColumn: adherence_category
+		summarizeBy: none
+
+	column gap_days
+		dataType: int64
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777775
+		sourceColumn: gap_days
+		summarizeBy: sum
+
+	column total_fills
+		dataType: int64
+		lineageTag: 77777777-aaaa-bbbb-cccc-777777777776
+		sourceColumn: total_fills
+		summarizeBy: sum

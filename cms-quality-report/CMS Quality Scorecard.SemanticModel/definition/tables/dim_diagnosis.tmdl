@@ -1,0 +1,40 @@
+/// Diagnosis dimension (ICD-10 / SNOMED codes)
+table dim_diagnosis
+	lineageTag: 55555555-aaaa-bbbb-cccc-555555555555
+
+	partition 'dim_diagnosis' = entity
+		mode: directLake
+		source
+			entityName: dim_diagnosis
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column diagnosis_key
+		dataType: int64
+		lineageTag: 55555555-aaaa-bbbb-cccc-555555555551
+		sourceColumn: diagnosis_key
+		summarizeBy: none
+
+	column icd_code
+		dataType: string
+		lineageTag: 55555555-aaaa-bbbb-cccc-555555555552
+		sourceColumn: icd_code
+		summarizeBy: none
+
+	column icd_description
+		dataType: string
+		lineageTag: 55555555-aaaa-bbbb-cccc-555555555553
+		sourceColumn: icd_description
+		summarizeBy: none
+
+	column code_system
+		dataType: string
+		lineageTag: 55555555-aaaa-bbbb-cccc-555555555554
+		sourceColumn: code_system
+		summarizeBy: none
+
+	column is_chronic
+		dataType: int64
+		lineageTag: 55555555-aaaa-bbbb-cccc-555555555555
+		sourceColumn: is_chronic
+		summarizeBy: none

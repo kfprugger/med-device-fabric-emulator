@@ -1,0 +1,64 @@
+/// Quality Summary — aggregated measure rates vs benchmarks
+table agg_quality_summary
+	lineageTag: 22222222-aaaa-bbbb-cccc-222222222222
+
+	partition 'agg_quality_summary' = entity
+		mode: directLake
+		source
+			entityName: agg_quality_summary
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column measure_id
+		dataType: string
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222221
+		sourceColumn: measure_id
+		summarizeBy: none
+
+	column measure_name
+		dataType: string
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222222
+		sourceColumn: measure_name
+		summarizeBy: none
+
+	column measurement_year
+		dataType: int64
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222223
+		sourceColumn: measurement_year
+		summarizeBy: none
+
+	column denominator_count
+		dataType: int64
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222224
+		sourceColumn: denominator_count
+		summarizeBy: sum
+
+	column numerator_count
+		dataType: int64
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222225
+		sourceColumn: numerator_count
+		summarizeBy: sum
+
+	column exclusion_count
+		dataType: int64
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222226
+		sourceColumn: exclusion_count
+		summarizeBy: sum
+
+	column quality_met_count
+		dataType: int64
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222227
+		sourceColumn: quality_met_count
+		summarizeBy: sum
+
+	column quality_rate
+		dataType: double
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222228
+		sourceColumn: quality_rate
+		summarizeBy: average
+
+	column benchmark_rate
+		dataType: double
+		lineageTag: 22222222-aaaa-bbbb-cccc-222222222229
+		sourceColumn: benchmark_rate
+		summarizeBy: average

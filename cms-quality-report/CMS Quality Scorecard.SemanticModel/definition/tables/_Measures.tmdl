@@ -1,0 +1,81 @@
+/// DAX Measures for CMS Quality Scorecard
+table _Measures
+	lineageTag: 99999999-aaaa-bbbb-cccc-999999999999
+
+	measure 'Quality Rate' =
+		DIVIDE(
+			COUNTROWS(FILTER(agg_quality_measures, [quality_met] = TRUE())),
+			COUNTROWS(FILTER(agg_quality_measures, [in_denominator] = TRUE())),
+			0
+		)
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999991
+
+	measure 'Measures Met' =
+		COUNTROWS(
+			FILTER(
+				VALUES(agg_quality_summary[measure_id]),
+				CALCULATE(MAX(agg_quality_summary[quality_rate])) >= CALCULATE(MAX(agg_quality_summary[benchmark_rate]))
+			)
+		)
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999992
+
+	measure 'Total Measures' =
+		DISTINCTCOUNT(agg_quality_summary[measure_id])
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999993
+
+	measure 'Patients Measured' =
+		DISTINCTCOUNT(agg_quality_measures[patient_id])
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999994
+
+	measure 'Open Care Gaps' =
+		COUNTROWS(FILTER(care_gaps, [gap_status] = "open"))
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999995
+
+	measure 'Total Billed' =
+		SUM(fact_claim[billed_amount])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999996
+
+	measure 'Total Paid' =
+		SUM(fact_claim[paid_amount])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999997
+
+	measure 'Collection Rate' =
+		DIVIDE(SUM(fact_claim[paid_amount]), SUM(fact_claim[billed_amount]), 0)
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999998
+
+	measure 'Denial Rate' =
+		DIVIDE(
+			COUNTROWS(FILTER(fact_claim, [denial_flag] = 1)),
+			COUNTROWS(fact_claim),
+			0
+		)
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-999999999999
+
+	measure 'Avg PDC Score' =
+		AVERAGE(agg_medication_adherence[pdc_score])
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999a
+
+	measure 'Non-Adherent Patients' =
+		COUNTROWS(FILTER(agg_medication_adherence, [adherence_category] = "Non-Adherent"))
+		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999b
+
+	measure 'Avg Claim Amount' =
+		AVERAGE(fact_claim[billed_amount])
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999c
+
+	measure 'Revenue Leakage' =
+		SUM(fact_claim[billed_amount]) - SUM(fact_claim[paid_amount])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999d
+
+	measure 'Total Claims' =
+		COUNTROWS(fact_claim)
+		formatString: #,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999e

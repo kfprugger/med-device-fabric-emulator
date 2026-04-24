@@ -1,0 +1,59 @@
+/// Encounter-level diagnoses bridge table
+table fact_diagnosis
+	lineageTag: 66666666-aaaa-bbbb-cccc-666666666666
+
+	partition 'fact_diagnosis' = entity
+		mode: directLake
+		source
+			entityName: fact_diagnosis
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column fact_diagnosis_key
+		dataType: int64
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666661
+		sourceColumn: fact_diagnosis_key
+		summarizeBy: none
+
+	column diagnosis_id
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666662
+		sourceColumn: diagnosis_id
+		summarizeBy: none
+
+	column patient_ref
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666663
+		sourceColumn: patient_ref
+		summarizeBy: none
+
+	column encounter_ref
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666664
+		sourceColumn: encounter_ref
+		summarizeBy: none
+
+	column icd_code
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666665
+		sourceColumn: icd_code
+		summarizeBy: none
+
+	column diagnosis_description
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666666
+		sourceColumn: diagnosis_description
+		summarizeBy: none
+
+	column diagnosis_type
+		dataType: string
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666667
+		sourceColumn: diagnosis_type
+		summarizeBy: none
+
+	column diagnosis_date
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 66666666-aaaa-bbbb-cccc-666666666668
+		sourceColumn: diagnosis_date
+		summarizeBy: none

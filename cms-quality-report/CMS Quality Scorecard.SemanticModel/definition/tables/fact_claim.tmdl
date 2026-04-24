@@ -1,0 +1,93 @@
+/// Claims fact table from ExplanationOfBenefit
+table fact_claim
+	lineageTag: 33333333-aaaa-bbbb-cccc-333333333333
+
+	partition 'fact_claim' = entity
+		mode: directLake
+		source
+			entityName: fact_claim
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column claim_key
+		dataType: int64
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333331
+		sourceColumn: claim_key
+		summarizeBy: none
+
+	column claim_id
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333332
+		sourceColumn: claim_id
+		summarizeBy: none
+
+	column patient_ref
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333333
+		sourceColumn: patient_ref
+		summarizeBy: none
+
+	column provider_ref
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333334
+		sourceColumn: provider_ref
+		summarizeBy: none
+
+	column coverage_ref
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333335
+		sourceColumn: coverage_ref
+		summarizeBy: none
+
+	column claim_type
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333336
+		sourceColumn: claim_type
+		summarizeBy: none
+
+	column claim_status
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333337
+		sourceColumn: claim_status
+		summarizeBy: none
+
+	column service_date
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333338
+		sourceColumn: service_date
+		summarizeBy: none
+
+	column billed_amount
+		dataType: double
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 33333333-aaaa-bbbb-cccc-333333333339
+		sourceColumn: billed_amount
+		summarizeBy: sum
+
+	column paid_amount
+		dataType: double
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333a
+		sourceColumn: paid_amount
+		summarizeBy: sum
+
+	column allowed_amount
+		dataType: double
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333b
+		sourceColumn: allowed_amount
+		summarizeBy: sum
+
+	column patient_responsibility
+		dataType: double
+		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
+		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333c
+		sourceColumn: patient_responsibility
+		summarizeBy: sum
+
+	column denial_flag
+		dataType: int64
+		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333d
+		sourceColumn: denial_flag
+		summarizeBy: sum

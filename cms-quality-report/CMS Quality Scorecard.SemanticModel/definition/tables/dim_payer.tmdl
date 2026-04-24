@@ -1,0 +1,34 @@
+/// Payer dimension (Medicare, Medicaid, Commercial, Uninsured)
+table dim_payer
+	lineageTag: 44444444-aaaa-bbbb-cccc-444444444444
+
+	partition 'dim_payer' = entity
+		mode: directLake
+		source
+			entityName: dim_payer
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column payer_key
+		dataType: int64
+		lineageTag: 44444444-aaaa-bbbb-cccc-444444444441
+		sourceColumn: payer_key
+		summarizeBy: none
+
+	column payer_id
+		dataType: string
+		lineageTag: 44444444-aaaa-bbbb-cccc-444444444442
+		sourceColumn: payer_id
+		summarizeBy: none
+
+	column payer_name
+		dataType: string
+		lineageTag: 44444444-aaaa-bbbb-cccc-444444444443
+		sourceColumn: payer_name
+		summarizeBy: none
+
+	column payer_type
+		dataType: string
+		lineageTag: 44444444-aaaa-bbbb-cccc-444444444444
+		sourceColumn: payer_type
+		summarizeBy: none

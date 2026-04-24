@@ -217,6 +217,21 @@ if (-not $kustoUri) {
 Write-Host "  ✓ KQL Database: $kqlDbName ($kqlDbId)" -ForegroundColor Green
 Write-Host "  ✓ Kusto URI: $kustoUri" -ForegroundColor Green
 
+# --- Gold (Reporting) Lakehouse ---
+$goldLh = $lakehouses.value | Where-Object { $_.displayName -match "[Rr]eporting.*[Gg]old" }
+if (-not $goldLh) {
+    $goldLh = $lakehouses.value | Where-Object { $_.displayName -match "[Gg]old" }
+}
+if ($goldLh) {
+    if ($goldLh -is [array]) { $goldLh = $goldLh[0] }
+    $goldLhId   = $goldLh.id
+    $goldLhName = $goldLh.displayName
+    Write-Host "  ✓ Gold Lakehouse: $goldLhName ($goldLhId)" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ Gold Lakehouse not found — claims/quality entities will be skipped" -ForegroundColor Yellow
+    $goldLhId = $null
+}
+
 # --- Check for existing ontology ---
 Write-Host ""
 Write-Host "  Checking for existing ontology..." -ForegroundColor White
@@ -335,6 +350,81 @@ $ejT = EtJson $eT "DeviceTelemetry" $pTdi $pTdi `
     ((PropJson $pTts "telemetryTimestamp" "DateTime"),(PropJson $pTspo2 "spo2" "Double"),(PropJson $pTpr "pulseRate" "Double"),(PropJson $pTpi "perfusionIndex" "Double"),(PropJson $pTpvi "plethVariability" "Double") -join ',')
 $dbT = EhBind "timestamp" ('{"sourceColumnName":"device_id","targetPropertyId":"'+$pTdi+'"},{"sourceColumnName":"timestamp","targetPropertyId":"'+$pTts+'"},{"sourceColumnName":"telemetry.spo2","targetPropertyId":"'+$pTspo2+'"},{"sourceColumnName":"telemetry.pr","targetPropertyId":"'+$pTpr+'"},{"sourceColumnName":"telemetry.pi","targetPropertyId":"'+$pTpi+'"},{"sourceColumnName":"telemetry.pvi","targetPropertyId":"'+$pTpvi+'"}') "TelemetryRaw"
 
+# ============================================================================
+# CLAIMS & QUALITY ENTITIES (Gold Lakehouse — only if Gold LH exists)
+# ============================================================================
+
+# Helper: Gold Lakehouse data binding
+function GoldLhBind([string]$bindings, [string]$tbl) {
+    if (-not $goldLhId) { return $null }
+    $bid = [guid]::NewGuid().ToString()
+    return @{ id = $bid; json = '{"id":"'+$bid+'","dataBindingConfiguration":{"dataBindingType":"NonTimeSeries","propertyBindings":['+$bindings+'],"sourceTableProperties":{"sourceType":"LakehouseTable","workspaceId":"'+$workspaceId+'","itemId":"'+$goldLhId+'","sourceTableName":"'+$tbl+'","sourceSchema":"dbo"}}}' }
+}
+
+# Helper: Gold Lakehouse contextualization
+function GoldLhCtx([string]$tbl, [string]$sc, [string]$sp, [string]$tc, [string]$tp) {
+    if (-not $goldLhId) { return $null }
+    $cid = [guid]::NewGuid().ToString()
+    return @{ id = $cid; json = '{"id":"'+$cid+'","dataBindingTable":{"sourceType":"LakehouseTable","workspaceId":"'+$workspaceId+'","itemId":"'+$goldLhId+'","sourceTableName":"'+$tbl+'","sourceSchema":"dbo"},"sourceKeyRefBindings":[{"sourceColumnName":"'+$sc+'","targetPropertyId":"'+$sp+'"}],"targetKeyRefBindings":[{"sourceColumnName":"'+$tc+'","targetPropertyId":"'+$tp+'"}]}' }
+}
+
+$claimEntities = @()
+$claimRels = @()
+
+if ($goldLhId) {
+    Write-Host "  Building claims & quality entities (Gold Lakehouse)..." -ForegroundColor White
+
+    # Claim entity (from fact_claim)
+    $eCl = NextId; $pClid = NextId; $pClcid = NextId; $pClty = NextId; $pClst = NextId
+    $pClba = NextId; $pClpa = NextId; $pCldf = NextId; $pClpr = NextId; $pClsd = NextId
+    $ejCl = EtJson $eCl "Claim" $pClid $pClcid `
+        ((PropJson $pClid "claimKey" "BigInt"),(PropJson $pClcid "claimId"),(PropJson $pClty "claimType"),(PropJson $pClst "claimStatus"),(PropJson $pClba "billedAmount" "Double"),(PropJson $pClpa "paidAmount" "Double"),(PropJson $pCldf "denialFlag" "BigInt"),(PropJson $pClpr "claimPatientRef"),(PropJson $pClsd "serviceDate") -join ',')
+    $dbCl = GoldLhBind ('{"sourceColumnName":"claim_key","targetPropertyId":"'+$pClid+'"},{"sourceColumnName":"claim_id","targetPropertyId":"'+$pClcid+'"},{"sourceColumnName":"claim_type","targetPropertyId":"'+$pClty+'"},{"sourceColumnName":"claim_status","targetPropertyId":"'+$pClst+'"},{"sourceColumnName":"billed_amount","targetPropertyId":"'+$pClba+'"},{"sourceColumnName":"paid_amount","targetPropertyId":"'+$pClpa+'"},{"sourceColumnName":"denial_flag","targetPropertyId":"'+$pCldf+'"},{"sourceColumnName":"patient_ref","targetPropertyId":"'+$pClpr+'"},{"sourceColumnName":"service_date","targetPropertyId":"'+$pClsd+'"}') "fact_claim"
+    $claimEntities += @{id=$eCl;j=$ejCl;b=$dbCl}
+
+    # Payer entity (from dim_payer)
+    $ePy = NextId; $pPyid = NextId; $pPynm = NextId; $pPyty = NextId
+    $ejPy = EtJson $ePy "Payer" $pPyid $pPynm `
+        ((PropJson $pPyid "payerKey" "BigInt"),(PropJson $pPynm "payerName"),(PropJson $pPyty "payerType") -join ',')
+    $dbPy = GoldLhBind ('{"sourceColumnName":"payer_key","targetPropertyId":"'+$pPyid+'"},{"sourceColumnName":"payer_name","targetPropertyId":"'+$pPynm+'"},{"sourceColumnName":"payer_type","targetPropertyId":"'+$pPyty+'"}') "dim_payer"
+    $claimEntities += @{id=$ePy;j=$ejPy;b=$dbPy}
+
+    # Diagnosis entity (from dim_diagnosis)
+    $eDx = NextId; $pDxid = NextId; $pDxcd = NextId; $pDxds = NextId; $pDxch = NextId
+    $ejDx = EtJson $eDx "Diagnosis" $pDxid $pDxds `
+        ((PropJson $pDxid "diagnosisKey" "BigInt"),(PropJson $pDxcd "icdCode"),(PropJson $pDxds "icdDescription"),(PropJson $pDxch "isChronic" "BigInt") -join ',')
+    $dbDx = GoldLhBind ('{"sourceColumnName":"diagnosis_key","targetPropertyId":"'+$pDxid+'"},{"sourceColumnName":"icd_code","targetPropertyId":"'+$pDxcd+'"},{"sourceColumnName":"icd_description","targetPropertyId":"'+$pDxds+'"},{"sourceColumnName":"is_chronic","targetPropertyId":"'+$pDxch+'"}') "dim_diagnosis"
+    $claimEntities += @{id=$eDx;j=$ejDx;b=$dbDx}
+
+    # PatientDiagnosis (bridge from fact_diagnosis)
+    $ePD = NextId; $pPDid = NextId; $pPDdid = NextId; $pPDic = NextId; $pPDds = NextId; $pPDtp = NextId; $pPDpr = NextId
+    $ejPD = EtJson $ePD "PatientDiagnosis" $pPDid $pPDds `
+        ((PropJson $pPDid "factDiagnosisKey" "BigInt"),(PropJson $pPDdid "diagnosisId"),(PropJson $pPDic "diagIcdCode"),(PropJson $pPDds "diagDescription"),(PropJson $pPDtp "diagnosisType"),(PropJson $pPDpr "diagPatientRef") -join ',')
+    $dbPD = GoldLhBind ('{"sourceColumnName":"fact_diagnosis_key","targetPropertyId":"'+$pPDid+'"},{"sourceColumnName":"diagnosis_id","targetPropertyId":"'+$pPDdid+'"},{"sourceColumnName":"icd_code","targetPropertyId":"'+$pPDic+'"},{"sourceColumnName":"diagnosis_description","targetPropertyId":"'+$pPDds+'"},{"sourceColumnName":"diagnosis_type","targetPropertyId":"'+$pPDtp+'"},{"sourceColumnName":"patient_ref","targetPropertyId":"'+$pPDpr+'"}') "fact_diagnosis"
+    $claimEntities += @{id=$ePD;j=$ejPD;b=$dbPD}
+
+    # MedicationAdherence (from agg_medication_adherence)
+    $eMA = NextId; $pMApi = NextId; $pMAmc = NextId; $pMApd = NextId; $pMAac = NextId; $pMAgd = NextId; $pMAtf = NextId
+    $ejMA = EtJson $eMA "MedAdherence" $pMApi $pMAmc `
+        ((PropJson $pMApi "adherencePatientId"),(PropJson $pMAmc "medicationClass"),(PropJson $pMApd "pdcScore" "Double"),(PropJson $pMAac "adherenceCategory"),(PropJson $pMAgd "gapDays" "BigInt"),(PropJson $pMAtf "totalFills" "BigInt") -join ',')
+    $dbMA = GoldLhBind ('{"sourceColumnName":"patient_id","targetPropertyId":"'+$pMApi+'"},{"sourceColumnName":"medication_class","targetPropertyId":"'+$pMAmc+'"},{"sourceColumnName":"pdc_score","targetPropertyId":"'+$pMApd+'"},{"sourceColumnName":"adherence_category","targetPropertyId":"'+$pMAac+'"},{"sourceColumnName":"gap_days","targetPropertyId":"'+$pMAgd+'"},{"sourceColumnName":"total_fills","targetPropertyId":"'+$pMAtf+'"}') "agg_medication_adherence"
+    $claimEntities += @{id=$eMA;j=$ejMA;b=$dbMA}
+
+    Write-Host "  ✓ 5 claims/quality entities built" -ForegroundColor Green
+
+    # Relationships for claims entities
+    $claimRels = @(
+        @{id=(NextId);n="hasClaim";s=$eP;t=$eCl;ctx=(GoldLhCtx "fact_claim" "patient_ref" $pPid "claim_key" $pClid)},
+        @{id=(NextId);n="paidBy";s=$eCl;t=$ePy;ctx=(GoldLhCtx "fact_claim" "coverage_ref" $pClid "payer_key" $pPyid)},
+        @{id=(NextId);n="hasDiagnosis";s=$eP;t=$ePD;ctx=(GoldLhCtx "fact_diagnosis" "patient_ref" $pPid "fact_diagnosis_key" $pPDid)},
+        @{id=(NextId);n="hasAdherence";s=$eP;t=$eMA;ctx=(GoldLhCtx "agg_medication_adherence" "patient_id" $pPid "patient_id" $pMApi)}
+    )
+
+    Write-Host "  ✓ 4 claims/quality relationships built" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ Skipping claims/quality entities — Gold Lakehouse not found" -ForegroundColor Yellow
+}
+
 # --- Assemble parts ---
 
 Write-Host "  Assembling definition payload..." -ForegroundColor White
@@ -350,7 +440,7 @@ $ets = @(
     @{id=$eC;j=$ejC;b=$dbC},@{id=$eM;j=$ejM;b=$dbM},@{id=$eO;j=$ejO;b=$dbO},
     @{id=$eA;j=$ejA;b=$dbA},
     @{id=$eAl;j=$ejAl;b=$dbAl},@{id=$eT;j=$ejT;b=$dbT}
-)
+) + $claimEntities
 foreach ($e in $ets) {
     $parts += '{"path":"EntityTypes/'+$e.id+'/definition.json","payload":"'+(ConvertTo-Base64 $e.j)+'","payloadType":"InlineBase64"}'
     if ($e.b) { $parts += '{"path":"EntityTypes/'+$e.id+'/DataBindings/'+$e.b.id+'.json","payload":"'+(ConvertTo-Base64 $e.b.json)+'","payloadType":"InlineBase64"}' }
@@ -363,16 +453,19 @@ $rels = @(
     @{id=(NextId);n="hasObservation";s=$eP;t=$eO;ctx=(LhCtx "Observation" "subject_string" $pPid "idOrig" $pOid)},
     @{id=(NextId);n="hasMedication";s=$eP;t=$eM;ctx=(LhCtx "MedicationRequest" "subject_string" $pPid "idOrig" $pMid)},
     @{id=(NextId);n="linkedToDevice";s=$eP;t=$eD;ctx=(LhCtx "DeviceAssociation" "patient_id" $pPid "device_ref" $pDid)}
-)
+) + $claimRels
 foreach ($r in $rels) {
+    if (-not $r.ctx) { continue }
     $rj = RtJson $r.id $r.n $r.s $r.t
     $parts += '{"path":"RelationshipTypes/'+$r.id+'/definition.json","payload":"'+(ConvertTo-Base64 $rj)+'","payloadType":"InlineBase64"}'
     $parts += '{"path":"RelationshipTypes/'+$r.id+'/Contextualizations/'+$r.ctx.id+'.json","payload":"'+(ConvertTo-Base64 $r.ctx.json)+'","payloadType":"InlineBase64"}'
 }
 
+$totalEntities = $ets.Count
+$totalRels = ($rels | Where-Object { $_.ctx }).Count
 Write-Host "  ✓ Definition assembled: $($parts.Count) parts" -ForegroundColor Green
-Write-Host "    Entity types: 9 (7 Lakehouse + 2 Eventhouse, all with data bindings)" -ForegroundColor DarkGray
-Write-Host "    Relationships: 5 (with contextualizations)" -ForegroundColor DarkGray
+Write-Host ("    Entity types: {0} -- 7 Silver LH + 2 Eventhouse + {1} Gold LH" -f $totalEntities, $claimEntities.Count) -ForegroundColor DarkGray
+Write-Host "    Relationships: $totalRels with contextualizations" -ForegroundColor DarkGray
 
 # ============================================================================
 # DEPLOY ONTOLOGY — single create call with definition inline
@@ -381,7 +474,7 @@ Write-Host "    Relationships: 5 (with contextualizations)" -ForegroundColor Dar
 Write-Host ""
 Write-Host "  Deploying ontology '$OntologyName'..." -ForegroundColor White
 
-$bodyJson = '{"displayName":"'+$OntologyName+'","description":"Clinical semantic layer: 9 entity types, 5 relationships across Lakehouse and Eventhouse.","definition":{"parts":['+($parts -join ',')+']}}' 
+$bodyJson = '{"displayName":"'+$OntologyName+'","description":"Clinical semantic layer: '+$totalEntities+' entity types, '+$totalRels+' relationships across Silver Lakehouse, Gold Lakehouse, and Eventhouse. Includes claims, quality measures, and medication adherence.","definition":{"parts":['+($parts -join ',')+']}}' 
 
 $cToken = Get-FabricAccessToken
 $cHeaders = @{ "Authorization" = "Bearer $cToken"; "Content-Type" = "application/json" }
@@ -453,8 +546,8 @@ Write-Host "  Ontology: $OntologyName" -ForegroundColor White
 Write-Host "  ID:       $ontologyId" -ForegroundColor White
 Write-Host ""
 Write-Host "  Deployed:" -ForegroundColor Cyan
-Write-Host "    9 entity types (7 Lakehouse + 2 Eventhouse data bindings)" -ForegroundColor White
-Write-Host "    5 relationship types with contextualizations" -ForegroundColor White
+Write-Host ("    {0} entity types: 7 Silver LH + 2 Eventhouse + {1} Gold LH" -f $totalEntities, $claimEntities.Count) -ForegroundColor White
+Write-Host "    $totalRels relationship types with contextualizations" -ForegroundColor White
 Write-Host ""
 Write-Host "  Next steps (Fabric portal):" -ForegroundColor Yellow
 Write-Host "    1. Open the ontology → Preview tab → 'Refresh graph model'" -ForegroundColor White

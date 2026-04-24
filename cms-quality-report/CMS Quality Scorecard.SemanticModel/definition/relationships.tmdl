@@ -1,0 +1,13 @@
+/// Relationships for CMS Quality Scorecard model
+
+relationship rel-quality-measures-gaps
+	fromColumn: care_gaps.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship rel-quality-measures-adherence
+	fromColumn: agg_medication_adherence.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship rel-claim-diagnosis
+	fromColumn: fact_diagnosis.icd_code
+	toColumn: dim_diagnosis.icd_code
