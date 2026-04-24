@@ -31,6 +31,7 @@ export interface DeploymentConfig {
   skip_imaging: boolean;
   skip_ontology: boolean;
   skip_activator: boolean;
+  skip_quality_measures: boolean;
 }
 
 export interface DeploymentStatus {

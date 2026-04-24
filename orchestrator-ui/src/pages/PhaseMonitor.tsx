@@ -318,6 +318,8 @@ const ALL_PHASES: PhaseInfo[] = [
   // Phase 4: Semantic Layer & Alerts
   { phase: "Phase 4: Ontology", status: "pending" },
   { phase: "Phase 4: Data Activator", status: "pending" },
+  // Phase 5: CMS Quality & Claims
+  { phase: "Phase 5: CMS Quality & Claims", status: "pending" },
 ];
 
 export function PhaseMonitor() {
@@ -544,6 +546,8 @@ export function PhaseMonitor() {
     // Phase 4 — ~10 min total
     { patterns: ["Ontology"], weight: 5 },
     { patterns: ["Activator", "Reflex"], weight: 5 },
+    // Phase 5 — ~12 min total
+    { patterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC"], weight: 12 },
   ];
 
   function getStepWeight(phaseName: string): number {
@@ -606,7 +610,8 @@ export function PhaseMonitor() {
     { label: "Phase 1: Infrastructure & Data", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection", "HDS Guidance"], position: 8, endWeight: 40, phaseNumber: 1 },
     { label: "Phase 2: Analytics & AI Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent", "Fabric RTI (auto)", "DICOM Shortcut"], position: 36, endWeight: 60, phaseNumber: 2 },
     { label: "Phase 3: Imaging & Reporting", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer", "Reporting"], position: 64, endWeight: 70, phaseNumber: 3 },
-    { label: "Phase 4: Semantic Layer & Alerts", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex", "Data Activator"], position: 90, endWeight: 80, phaseNumber: 4 },
+    { label: "Phase 4: Semantic Layer & Alerts", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex", "Data Activator"], position: 75, endWeight: 70, phaseNumber: 4 },
+    { label: "Phase 5: CMS Quality & Claims", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence"], position: 92, endWeight: 85, phaseNumber: 5 },
   ];
 
   // ── Adaptive milestones: determine active milestones from instance ID ──
@@ -988,6 +993,7 @@ export function PhaseMonitor() {
           { key: "skip_imaging", label: "Imaging Toolkit", phase: 3 },
           { key: "skip_ontology", label: "Ontology", phase: 4 },
           { key: "skip_activator", label: "Data Activator", phase: 4 },
+          { key: "skip_quality_measures", label: "CMS Quality Scorecard", phase: 5 },
         ];
         const enabled = COMPONENTS.filter((c) => !cfg[c.key]);
         const skipped = COMPONENTS.filter((c) => cfg[c.key]);

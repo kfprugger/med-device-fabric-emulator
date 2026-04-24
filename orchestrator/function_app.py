@@ -348,6 +348,15 @@ def deploy_all_orchestrator(context):
     resources.update(result.get("resources", {}))
     phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
 
+    # ── Phase 7: CMS Quality & Claims ─────────────────────────────
+    update_status("Phase 7: CMS Quality & Claims", "running")
+    phase7_input = {"config": config, "resources": resources}
+    result = yield context.call_activity_with_retry(
+        "activity_deploy_quality_measures", RETRY_POLICY, phase7_input
+    )
+    resources.update(result.get("resources", {}))
+    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+
     # ── Complete ──────────────────────────────────────────────────
     update_status("Deployment Complete", "succeeded")
 
@@ -437,6 +446,13 @@ def activity_deploy_data_agents(input_data: dict) -> dict:
 def activity_deploy_ontology(input_data: dict) -> dict:
     """Phase 6: Ontology."""
     from activities.deploy_ontology import run
+    return run(input_data["config"], input_data["resources"])
+
+
+@app.activity_trigger(input_name="input_data")
+def activity_deploy_quality_measures(input_data: dict) -> dict:
+    """Phase 7: CMS Quality & Claims."""
+    from activities.deploy_quality_measures import run
     return run(input_data["config"], input_data["resources"])
 
 

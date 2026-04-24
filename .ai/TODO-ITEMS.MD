@@ -10,6 +10,18 @@
 - [ ] Create **row-level security (RLS)** roles on the semantic model for provider-scoped access
 - [ ] Publish dashboards to a Fabric-managed Power BI workspace and configure scheduled refresh
 
+### 1b. CMS Quality & Claims (Phase 5)
+- [x] Enable `Claim`, `ExplanationOfBenefit`, `Coverage` in Synthea properties
+- [x] Create Gold star schema: `dim_payer`, `dim_diagnosis`, `fact_claim`, `fact_diagnosis`
+- [x] Compute 7 CMS eCQM quality measures (CMS122, CMS165, CMS69, CMS127, CMS147, CMS134, CMS144)
+- [x] Compute 3 HEDIS PDC adherence scores (PDC-DR, PDC-RASA, PDC-STA)
+- [x] Identify care gaps with recommended actions
+- [x] Build CMS Quality Scorecard Power BI report (6 pages, 14 DAX measures, Direct Lake)
+- [x] Extend ontology with 5 claims/quality entities + 4 relationships
+- [x] Add Phase 5 to Orchestrator UI, Deploy-All.ps1, and backend function_app.py
+- [ ] Add payer-specific quality stratification (Medicare vs Medicaid vs Commercial rates)
+- [ ] Add SDOH (Social Determinants of Health) integration from zip-code-level public datasets
+
 ---
 
 ## Priority 2 — Documentation & Communication
@@ -42,7 +54,7 @@
 ### 4. Data Quality & Governance
 - [ ] Enable **Microsoft Purview** integration on the Fabric workspace for data cataloging, lineage tracking, and sensitivity labeling of PHI/PII columns (Patient name, birthDate, address, SSN)
 - [ ] Implement **data quality rules** on the Silver Lakehouse (e.g., null checks on `subject_string`, valid SNOMED-CT / ICD-10 code validation, referential integrity between Patient ↔ Encounter ↔ Condition)
-- [ ] Add a **Bronze → Silver → Gold** medallion layer: create a Gold Lakehouse with pre-aggregated, de-identified, or cohort-level tables optimized for analytics and ML workloads
+- [ ] Add a **Bronze → Silver → Gold** medallion layer: ~~create a Gold Lakehouse with pre-aggregated, de-identified, or cohort-level tables optimized for analytics and ML workloads~~ (Gold Lakehouse exists via Phase 3 + Phase 5; expand with additional cohort-level and de-identified tables)
 - [ ] Set up **OneLake data access roles** to enforce least-privilege access across engineering, clinical, and analytics teams
 
 ### 5. Real-Time Alerting with Data Activator (Reflex)

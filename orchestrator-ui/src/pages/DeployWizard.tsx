@@ -329,6 +329,7 @@ export function DeployWizard() {
     skip_imaging: false,
     skip_ontology: false,
     skip_activator: false,
+    skip_quality_measures: false,
   });
 
   const [useNamingConvention, setUseNamingConvention] = useState(true);
@@ -1562,6 +1563,18 @@ export function DeployWizard() {
                 checked={!config.skip_activator}
                 onChange={(_, d) => update("skip_activator", !d.checked)}
                 disabled={config.skip_fabric || !config.alert_email}
+              />
+            </Tooltip>
+
+            {/* ── Phase 5: CMS Quality & Claims ── */}
+            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
+              Phase 5: CMS Quality &amp; Claims
+            </Text>
+            <Tooltip content="Skip CMS Quality Scorecard — claims materialization, quality measures computation, and Power BI report" relationship="description" positioning="after">
+              <Checkbox
+                label="CMS Quality Scorecard (Claims + Measures + Report)"
+                checked={!config.skip_quality_measures}
+                onChange={(_, d) => update("skip_quality_measures", !d.checked)}
               />
             </Tooltip>
           </div>

@@ -247,6 +247,7 @@ class DeployRequest(BaseModel):
     skip_imaging: bool = False
     skip_ontology: bool = False
     skip_activator: bool = False
+    skip_quality_measures: bool = False
 
 
 def now_iso():
@@ -521,7 +522,8 @@ async def start_deploy(req: DeployRequest):
     # Build descriptive instance ID: P<milestones>-<datetime>
     # Milestone numbers encode which progress-bar milestones are active:
     #   1 = Infra & Ingestion, 2 = Enrichment & Agents,
-    #   3 = Imaging Toolkit,   4 = Ontology & Activator
+    #   3 = Imaging Toolkit,   4 = Ontology & Activator,
+    #   5 = CMS Quality & Claims
     now_local = datetime.now()
     timestamp = now_local.strftime("%Y%m%d-%H%M%S")
 
@@ -529,7 +531,7 @@ async def start_deploy(req: DeployRequest):
     # From the UI, skip_* flags only skip sub-steps — all 4 milestones remain.
     # Phase-only flags (phase2_only, etc.) would restrict to specific milestones,
     # but the UI doesn't expose these currently.
-    milestones = [1, 2, 3, 4]  # Default: all milestones active
+    milestones = [1, 2, 3, 4, 5]  # Default: all milestones active
     phase_label = "P" + "".join(str(m) for m in milestones)
 
     instance_id = f"{phase_label}-{timestamp}"
@@ -544,7 +546,7 @@ async def start_deploy(req: DeployRequest):
             "status": "running",
             "detail": "",
             "completedPhases": 0,
-            "totalPhases": 12,
+            "totalPhases": 13,
             "resources": {},
             "logs": [],
             "workspaceName": req.fabric_workspace_name,

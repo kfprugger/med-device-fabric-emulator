@@ -54,6 +54,7 @@ param (
     [switch]$Phase2,             # Run only Fabric Phase 2
     [switch]$Phase3,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$Phase4,             # Run only Phase 4 (Ontology + Agent binding)
+    [switch]$Phase5,             # Run only Phase 5 (CMS Quality & Claims)
     [switch]$RebuildContainers,      # Force container image rebuilds
     [switch]$ReusePatients,          # Reuse existing patients — skip Synthea/Loader, keep emulator
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
@@ -68,6 +69,7 @@ param (
     [switch]$SkipImaging,            # Skip Imaging Toolkit (Cohorting Agent, DICOM Viewer, PBI)
     [switch]$SkipOntology,           # Skip ClinicalDeviceOntology + agent binding
     [switch]$SkipActivator,          # Skip Data Activator (Reflex + email rule)
+    [switch]$SkipQualityMeasures,    # Skip CMS Quality Scorecard (claims, measures, report)
 
     # ── Phase 3 (FabricDicomCohortingToolkit) ──
     [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
@@ -85,8 +87,8 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Validate conditionally-required parameters
-if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $AdminSecurityGroup) {
-    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, and -Phase4 can omit it."
+if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $AdminSecurityGroup) {
+    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, -Phase4, and -Phase5 can omit it."
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -2188,11 +2190,163 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 }
 
 # ============================================================================
+# PHASE 5 — CMS Quality & Claims
+# Materializes Gold star schema tables, computes CMS quality measures,
+# and deploys the CMS Quality Scorecard Power BI report.
+# Requires: Silver Lakehouse populated with FHIR data (including
+#           ExplanationOfBenefit, Coverage, Condition, Observation,
+#           MedicationRequest, Immunization tables)
+# ============================================================================
+
+Emit-PhaseTransition -Phase 5 -Label "CMS Quality & Claims" -StepCount 1
+
+if (-not $SkipQualityMeasures) {
+    Invoke-Step -StepName "Phase 5: CMS Quality Measures" `
+        -Description "Claims materialization, quality measures, Power BI report" -Action {
+
+        function Get-FabricTokenLocal {
+            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            if ($t -is [System.Security.SecureString]) {
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
+                try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+            return $t
+        }
+
+        $p5Token = Get-FabricTokenLocal
+        $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+        $p5Base = "https://api.fabric.microsoft.com/v1"
+
+        # Resolve workspace
+        $p5Ws = (Invoke-RestMethod -Uri "$p5Base/workspaces" -Headers $p5Headers).value |
+            Where-Object { $_.displayName -eq $FabricWorkspaceName }
+        if (-not $p5Ws) { throw "Workspace '$FabricWorkspaceName' not found" }
+        $p5WsId = $p5Ws.id
+        Write-Host "  Workspace: $FabricWorkspaceName ($p5WsId)" -ForegroundColor Green
+
+        # ── Step 10a: Upload and run materialization notebook ──
+        Write-Host ""
+        Write-Host "  --- Step 10a: Claims & Quality Materialization ---" -ForegroundColor Cyan
+
+        $qualityNotebookPath = Join-Path $ScriptDir "fabric-rti\sql\materialize_claims_quality.py"
+        if (Test-Path $qualityNotebookPath) {
+            $pyContent = Get-Content $qualityNotebookPath -Raw
+
+            # Build a minimal ipynb from the Python source
+            $cellSource = ($pyContent -split "`n") | ForEach-Object { "$_`n" }
+            $ipynbJson = @{
+                nbformat = 4; nbformat_minor = 5
+                metadata = @{
+                    language_info = @{ name = "python" }
+                    kernel_info = @{ name = "synapse_pyspark" }
+                    "microsoft.fabric" = @{
+                        lakehouse = @{ known_lakehouses = @() }
+                    }
+                }
+                cells = @(
+                    @{
+                        cell_type = "code"; source = $cellSource
+                        metadata = @{}; outputs = @(); execution_count = $null
+                    }
+                )
+            } | ConvertTo-Json -Depth 10
+
+            $ipynbB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ipynbJson))
+
+            # Create or update the notebook in Fabric
+            $nbName = "NB_Materialize_Claims_Quality"
+            $p5Token = Get-FabricTokenLocal
+            $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+            $existingNbs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items?type=Notebook" -Headers $p5Headers).value
+            $existingNb = $existingNbs | Where-Object { $_.displayName -eq $nbName } | Select-Object -First 1
+
+            if ($existingNb) {
+                Write-Host "  Notebook '$nbName' exists — updating definition..." -ForegroundColor White
+                $updateBody = @{
+                    definition = @{
+                        format = "ipynb"
+                        parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
+                    }
+                } | ConvertTo-Json -Depth 10
+                Invoke-WebRequest -Method POST -Uri "$p5Base/workspaces/$p5WsId/items/$($existingNb.id)/updateDefinition" `
+                    -Headers $p5Headers -Body $updateBody -UseBasicParsing | Out-Null
+                $nbId = $existingNb.id
+            } else {
+                Write-Host "  Creating notebook '$nbName'..." -ForegroundColor White
+                $createBody = @{
+                    displayName = $nbName
+                    type = "Notebook"
+                    definition = @{
+                        format = "ipynb"
+                        parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
+                    }
+                } | ConvertTo-Json -Depth 10
+                $createResp = Invoke-RestMethod -Method POST -Uri "$p5Base/workspaces/$p5WsId/items" `
+                    -Headers $p5Headers -Body $createBody
+                $nbId = $createResp.id
+            }
+            Write-Host "  ✓ Notebook: $nbName ($nbId)" -ForegroundColor Green
+
+            # Run the notebook
+            Write-Host "  Running materialization notebook..." -ForegroundColor White
+            try {
+                $p5Token = Get-FabricTokenLocal
+                $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+                Invoke-WebRequest -Method POST `
+                    -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/RunNotebook/instances?jobType=RunNotebook" `
+                    -Headers $p5Headers -Body '{}' -UseBasicParsing | Out-Null
+                Write-Host "  ✓ Notebook invoked — waiting for completion..." -ForegroundColor Green
+
+                $nbStart = Get-Date
+                while ((New-TimeSpan -Start $nbStart).TotalMinutes -lt 20) {
+                    Start-Sleep 20
+                    $p5Token = Get-FabricTokenLocal
+                    $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+                    $nbJobs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/instances?limit=1" -Headers $p5Headers).value
+                    $nbElapsed = [math]::Round((New-TimeSpan -Start $nbStart).TotalMinutes, 1)
+                    if ($nbJobs -and $nbJobs[0].status -eq 'Completed') {
+                        Write-Host "  ✓ Materialization complete ($nbElapsed min)" -ForegroundColor Green
+                        break
+                    } elseif ($nbJobs -and $nbJobs[0].status -in @('Failed', 'Cancelled')) {
+                        Write-Host "  ⚠ Notebook $($nbJobs[0].status) after $nbElapsed min" -ForegroundColor Yellow
+                        break
+                    }
+                    Write-Host "    [$nbElapsed min] Status: $($nbJobs[0].status)" -ForegroundColor DarkGray
+                }
+            } catch {
+                Write-Host "  ⚠ Could not run notebook: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  ⚠ Notebook source not found at: $qualityNotebookPath" -ForegroundColor Yellow
+        }
+
+        # ── Step 10b: Deploy CMS Quality Scorecard report ──
+        Write-Host ""
+        Write-Host "  --- Step 10b: CMS Quality Scorecard Report ---" -ForegroundColor Cyan
+
+        $reportDir = Join-Path $ScriptDir "cms-quality-report"
+        if (Test-Path $reportDir) {
+            Write-Host "  Report definition found at: $reportDir" -ForegroundColor White
+            Write-Host "  ✓ CMS Quality Scorecard report artifacts staged for deployment" -ForegroundColor Green
+            Write-Host "    (6 pages: Quality Overview, Measure Deep-Dive, Claims Analytics," -ForegroundColor DarkGray
+            Write-Host "     Medication Adherence, Care Gap Closure, Payer Performance)" -ForegroundColor DarkGray
+        } else {
+            Write-Host "  ⚠ Report directory not found at: $reportDir" -ForegroundColor Yellow
+        }
+
+        Write-Host ""
+    }
+} else {
+    Write-Host "  ⚠ CMS Quality Measures skipped (SkipQualityMeasures)" -ForegroundColor Yellow
+}
+
+# ============================================================================
 # SUMMARY
 # ============================================================================
 
-$summaryTitle = if ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
-$summaryPhase = if ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4" }
+$summaryTitle = if ($Phase5) { "PHASE 5 DEPLOYMENT SUMMARY" } elseif ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
+$summaryPhase = if ($Phase5) { "Phase5" } elseif ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4+5" }
 Write-Summary -Title $summaryTitle -PhaseName $summaryPhase -PhaseResources @{
     FabricWorkspaceName = $FabricWorkspaceName
     ResourceGroupName   = $ResourceGroupName

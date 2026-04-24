@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — April 24, 2026
+
+### Phase 5: CMS Quality & Claims
+- **Added** Claims data generation — enabled `Claim`, `ExplanationOfBenefit`, `Coverage` FHIR resources in Synthea properties (flows through existing FHIR → HDS → Silver pipeline)
+- **Added** Gold materialization notebook (`materialize_claims_quality.py`) — transforms Silver FHIR tables into star schema: `dim_payer`, `dim_diagnosis`, `fact_claim`, `fact_diagnosis`
+- **Added** 7 CMS eCQM quality measures (CMS122 Diabetes HbA1c, CMS165 Blood Pressure, CMS69 BMI Screening, CMS127 Pneumococcal, CMS147 Influenza, CMS134 Diabetes Nephropathy, CMS144 Heart Failure Beta-Blocker)
+- **Added** 3 HEDIS medication adherence PDC classes (PDC-DR Diabetes, PDC-RASA RAS Antagonists, PDC-STA Statins) → `agg_medication_adherence`
+- **Added** Care gap identification → `care_gaps` table with recommended clinical actions
+- **Added** CMS Quality Scorecard Power BI report (Direct Lake, 6 pages, 14 DAX measures)
+- **Added** 5 ontology entities (Claim, Payer, Diagnosis, PatientDiagnosis, MedAdherence) + 4 relationships bound to Gold Lakehouse
+- **Added** Phase 5 checkbox in Orchestrator UI (DeployWizard + mockDeployment)
+- **Added** Phase 5 step in Deploy-All.ps1 (`-Phase5`, `-SkipQualityMeasures`)
+- **Added** Backend orchestrator activity (`deploy_quality_measures.py`) + function_app.py wiring
+
 ## [Unreleased] — March 28, 2026
 
 ### Data Agent Lakehouse Datasource Fix

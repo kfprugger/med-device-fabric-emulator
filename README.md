@@ -18,9 +18,10 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo
 - **Fabric IQ Ontology** — A 9-entity semantic layer (Patient, Device, Encounter, Condition, MedicationRequest, Observation, DeviceAssociation, ClinicalAlert, DeviceTelemetry) with relationships across Lakehouse and Eventhouse, bound to all Data Agents
 - **Data Activator** — A Reflex item with KQL source (`fn_ClinicalAlerts`), Device object, 6 attributes, and an email rule that alerts on CRITICAL/URGENT SpO2 events — deployed fully programmatically via the Fabric REST API
+- **CMS Quality & Claims** — 7 CMS eCQM quality measures (CMS122, CMS165, CMS69, CMS127, CMS147, CMS134, CMS144), 3 HEDIS medication adherence PDC classes (diabetes, RAS antagonists, statins), claims analytics from Synthea-generated ExplanationOfBenefit/Coverage data, and a 6-page CMS Quality Scorecard Power BI report
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
-The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches seven Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, and Power BI.
+The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches eight Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, Power BI, and Healthcare Data Solutions.
 
 ---
 
@@ -32,6 +33,7 @@ The entire solution deploys in under 2 hours via the **Orchestrator UI** (browse
 | **Phase 2** | HDS Silver Lakehouse shortcuts, enriched clinical alerts, HDS pipelines, Data Agents | [Phase 2 — Analytics & AI Agents](docs/phase-2-hds-enrichment-and-agents.md) |
 | **Phase 3** | Cohorting Agent, OHIF DICOM Viewer, materialization notebook, Power BI report | [Phase 3 — Imaging & Reporting](docs/phase-3-imaging-and-cohorting.md) |
 | **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Semantic Layer & Alerts](docs/phase-4-ontology-and-activator.md) |
+| **Phase 5** | Claims materialization, CMS quality measures (7 eCQMs), medication adherence (PDC), Power BI Quality Scorecard | [Phase 5 — CMS Quality & Claims](docs/phase-5-cms-quality-and-claims.md) |
 
 **Additional guides:**
 - [Orchestrator UI](orchestrator/README.md) — Setup and usage for the browser-based deployment dashboard
