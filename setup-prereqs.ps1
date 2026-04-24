@@ -30,19 +30,11 @@ Write-Host "|       PREREQUISITE SETUP — Med Device FHIR Platform        |" -F
 Write-Host "+============================================================+" -ForegroundColor Cyan
 Write-Host ""
 
-# Use PowerShell 7+ built-in automatic variables ($IsWindows, $IsMacOS, $IsLinux)
-# Fallback for PS 5.1 where they don't exist
-if (-not (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue)) {
-    $script:_isWin   = $env:OS -eq "Windows_NT"
-    $script:_isMac   = $false
-    $script:_isLinux  = $false
-} else {
-    $script:_isWin   = $IsWindows
-    $script:_isMac   = $IsMacOS
-    $script:_isLinux  = $IsLinux
-}
+$isWindows = $env:OS -eq "Windows_NT" -or $PSVersionTable.OS -match "Windows"
+$isMac = $PSVersionTable.OS -match "Darwin"
+$isLinux = $PSVersionTable.OS -match "Linux"
 
-$platform = if ($script:_isWin) { "Windows" } elseif ($script:_isMac) { "macOS" } else { "Linux" }
+$platform = if ($isWindows) { "Windows" } elseif ($isMac) { "macOS" } else { "Linux" }
 Write-Host "  Platform: $platform" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -51,17 +43,19 @@ $fail = 0
 $warn = 0
 $installed = 0
 
-function Write-InstallHint {
-    param([string]$WinHint, [string]$MacHint, [string]$LinuxHint, [string]$Url = "")
-    if ($Url) {
-        Write-Host "    Download: $Url" -ForegroundColor DarkCyan
-    }
-    if ($script:_isWin -and $WinHint) {
-        Write-Host "    Install:  $WinHint" -ForegroundColor DarkGray
-    } elseif ($script:_isMac -and $MacHint) {
-        Write-Host "    Install:  $MacHint" -ForegroundColor DarkGray
-    } elseif ($script:_isLinux -and $LinuxHint) {
-        Write-Host "    Install:  $LinuxHint" -ForegroundColor DarkGray
+function Check-Tool {
+    param([string]$Name, [string]$Command, [string]$VersionMatch, [string]$InstallHint)
+    try {
+        $output = Invoke-Expression $Command 2>&1
+        $ver = if ($output -match $VersionMatch) { $Matches[0] } else { "found" }
+        Write-Host "  ✓ $Name ($ver)" -ForegroundColor Green
+        $script:pass++
+        return $true
+    } catch {
+        Write-Host "  ✗ $Name — not found" -ForegroundColor Red
+        Write-Host "    Install: $InstallHint" -ForegroundColor DarkGray
+        $script:fail++
+        return $false
     }
 }
 
@@ -72,34 +66,12 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
     $pass++
 } else {
     Write-Host "  ✗ PowerShell $($PSVersionTable.PSVersion) — 7+ required" -ForegroundColor Red
-    Write-InstallHint `
-        -Url    "https://aka.ms/powershell" `
-        -WinHint   "winget install Microsoft.PowerShell" `
-        -MacHint   "brew install --cask powershell" `
-        -LinuxHint "sudo apt-get install -y powershell  # or: sudo dnf install -y powershell"
+    Write-Host "    Install: https://aka.ms/powershell" -ForegroundColor DarkGray
     $fail++
 }
 
 # ── 2. Azure CLI ──────────────────────────────────────────────────────
-$hasAzCli = $false
-try {
-    $azVerJson = az version --output json 2>$null | ConvertFrom-Json
-    if ($azVerJson.'azure-cli') {
-        Write-Host "  ✓ Azure CLI ($($azVerJson.'azure-cli'))" -ForegroundColor Green
-        $pass++
-        $hasAzCli = $true
-    } else {
-        throw "no version"
-    }
-} catch {
-    Write-Host "  ✗ Azure CLI — not found" -ForegroundColor Red
-    Write-InstallHint `
-        -Url    "https://aka.ms/installazurecli" `
-        -WinHint   "winget install Microsoft.AzureCLI" `
-        -MacHint   "brew install azure-cli" `
-        -LinuxHint "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
-    $fail++
-}
+$hasAzCli = Check-Tool "Azure CLI" "az version --query '""azure-cli""' -o tsv 2>$null" "\d+\.\d+\.\d+" "https://aka.ms/installazurecli"
 
 # ── 3. Bicep ──────────────────────────────────────────────────────────
 if ($hasAzCli) {
@@ -135,10 +107,7 @@ if ($azMod) {
         $pass++
     } else {
         Write-Host "  ✗ Az PowerShell module — not installed" -ForegroundColor Red
-        Write-Host "    Install: Install-Module Az -Scope CurrentUser -Force" -ForegroundColor DarkGray
-        if ($script:_isMac -or $script:_isLinux) {
-            Write-Host "    Note:    Requires pwsh (PowerShell Core) — see PowerShell section above" -ForegroundColor DarkGray
-        }
+        Write-Host "    Install: Install-Module Az -Scope CurrentUser" -ForegroundColor DarkGray
         $fail++
     }
 }
@@ -157,21 +126,13 @@ try {
             $hasPython = $true
         } else {
             Write-Host "  ✗ Python $($Matches[0]) — 3.10+ required" -ForegroundColor Red
-            Write-InstallHint `
-                -Url    "https://python.org/downloads" `
-                -WinHint   "winget install Python.Python.3.12" `
-                -MacHint   "brew install python@3.12" `
-                -LinuxHint "sudo apt-get install -y python3 python3-venv python3-pip"
+            Write-Host "    Install: https://python.org/downloads" -ForegroundColor DarkGray
             $fail++
         }
     }
 } catch {
     Write-Host "  ✗ Python — not found" -ForegroundColor Red
-    Write-InstallHint `
-        -Url    "https://python.org/downloads" `
-        -WinHint   "winget install Python.Python.3.12" `
-        -MacHint   "brew install python@3.12" `
-        -LinuxHint "sudo apt-get install -y python3 python3-venv python3-pip"
+    Write-Host "    Install: https://python.org/downloads" -ForegroundColor DarkGray
     $fail++
 }
 
@@ -187,21 +148,13 @@ try {
             $hasNode = $true
         } else {
             Write-Host "  ✗ Node.js $nodeVer — 18+ required" -ForegroundColor Red
-            Write-InstallHint `
-                -Url    "https://nodejs.org" `
-                -WinHint   "winget install OpenJS.NodeJS.LTS" `
-                -MacHint   "brew install node@20" `
-                -LinuxHint "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+            Write-Host "    Install: https://nodejs.org" -ForegroundColor DarkGray
             $fail++
         }
     }
 } catch {
     Write-Host "  ✗ Node.js — not found (required for Orchestrator UI)" -ForegroundColor Red
-    Write-InstallHint `
-        -Url    "https://nodejs.org" `
-        -WinHint   "winget install OpenJS.NodeJS.LTS" `
-        -MacHint   "brew install node@20" `
-        -LinuxHint "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+    Write-Host "    Install: https://nodejs.org" -ForegroundColor DarkGray
     $fail++
 }
 
@@ -218,21 +171,7 @@ if ($hasNode) {
 }
 
 # ── 8. Git ────────────────────────────────────────────────────────────
-try {
-    $gitOutput = git --version 2>&1
-    if ($gitOutput -match "(\d+\.\d+\.\d+)") {
-        Write-Host "  ✓ Git ($($Matches[0]))" -ForegroundColor Green
-        $pass++
-    } else { throw "no version" }
-} catch {
-    Write-Host "  ✗ Git — not found" -ForegroundColor Red
-    Write-InstallHint `
-        -Url    "https://git-scm.com" `
-        -WinHint   "winget install Git.Git" `
-        -MacHint   "brew install git" `
-        -LinuxHint "sudo apt-get install -y git"
-    $fail++
-}
+Check-Tool "Git" "git --version" "\d+\.\d+\.\d+" "https://git-scm.com" | Out-Null
 
 # ── 9. Azure Login Check ──────────────────────────────────────────────
 Write-Host ""
@@ -246,21 +185,11 @@ if ($hasAzCli) {
         } else {
             Write-Host "  ✗ Not logged in to Azure" -ForegroundColor Red
             Write-Host "    Run: az login" -ForegroundColor DarkGray
-            if ($script:_isWin) {
-                Write-Host "    Tip: az login opens a browser for interactive sign-in" -ForegroundColor DarkGray
-            } else {
-                Write-Host "    Tip: az login --use-device-code  (if no browser available)" -ForegroundColor DarkGray
-            }
             $fail++
         }
     } catch {
         Write-Host "  ✗ Not logged in to Azure" -ForegroundColor Red
         Write-Host "    Run: az login" -ForegroundColor DarkGray
-        if ($script:_isWin) {
-            Write-Host "    Tip: az login opens a browser for interactive sign-in" -ForegroundColor DarkGray
-        } else {
-            Write-Host "    Tip: az login --use-device-code  (if no browser available)" -ForegroundColor DarkGray
-        }
         $fail++
     }
 }
@@ -289,7 +218,7 @@ if ($hasPython) {
 
     # Install Python dependencies
     if (Test-Path $venvPath) {
-        $pipExe = if ($script:_isWin) { "$venvPath/Scripts/pip" } else { "$venvPath/bin/pip" }
+        $pipExe = if ($isWindows) { "$venvPath/Scripts/pip" } else { "$venvPath/bin/pip" }
         if (-not $CheckOnly) {
             Write-Host "  ⚙ Installing Python dependencies..." -ForegroundColor Yellow
             & $pipExe install -r $requirementsPath --quiet 2>$null

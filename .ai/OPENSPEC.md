@@ -2,10 +2,10 @@
 openspec: "1.0"
 title: "Medical Device FHIR Integration Platform"
 id: "med-device-fabric-emulator"
-version: "1.0.0"
+version: "1.1.0"
 status: "implemented"
 author: "Joey Brakefield"
-updated: "2026-03-18"
+updated: "2026-04-24"
 repository: "https://github.com/kfprugger/med-device-fabric-emulator"
 ---
 
@@ -225,6 +225,29 @@ Complete resource cleanup including orphaned identity artifacts.
 - [ ] `Remove-AllResources.ps1 -Force -Wait -DeleteWorkspace` leaves no artifacts
 - [ ] No Entra SP or app registration remains after teardown
 - [ ] Fresh deploy after teardown succeeds without conflicts
+
+### F9: CMS Quality & Claims Analytics
+**Status:** ✅ Implemented (dev branch)
+
+Claims data generation, CMS eCQM quality measurement, medication adherence scoring, and Power BI quality reporting.
+
+| Requirement | Detail |
+|------------|--------|
+| Claims generation | Synthea generates Claim, ExplanationOfBenefit, Coverage FHIR R4 resources |
+| Data flow | Claims flow through existing FHIR → HDS → Bronze → Silver pipeline (no new ingestion path) |
+| Gold materialization | PySpark notebook transforms Silver FHIR tables into Gold star schema (dim_payer, dim_diagnosis, fact_claim, fact_diagnosis) |
+| CMS eCQM measures | 7 measures computed: CMS122 (Diabetes HbA1c), CMS165 (Blood Pressure), CMS69 (BMI), CMS127 (Pneumococcal), CMS147 (Influenza), CMS134 (Nephropathy), CMS144 (HF Beta-Blocker) |
+| HEDIS adherence | 3 PDC classes: PDC-DR (Diabetes), PDC-RASA (RAS Antagonists), PDC-STA (Statins) |
+| Care gaps | Patient-level gap identification with recommended clinical actions |
+| Power BI report | CMS Quality Scorecard — 6 pages, 14 DAX measures, Direct Lake over Gold Lakehouse |
+| Ontology extension | 5 new entities (Claim, Payer, Diagnosis, PatientDiagnosis, MedAdherence) + 4 relationships bound to Gold Lakehouse |
+| Orchestrator | Phase 5 checkbox, mock deployment, Deploy-All.ps1 switches, backend activity |
+
+**Acceptance Criteria:**
+- [ ] Synthea generates EOB/Coverage resources that flow through HDS to Silver Lakehouse
+- [ ] Gold tables populated with correct claim amounts and quality rates
+- [ ] CMS Quality Scorecard report renders with data in all 6 pages
+- [ ] Ontology graph includes claims entities with working relationships
 
 ---
 

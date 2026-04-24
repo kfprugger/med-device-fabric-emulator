@@ -12,27 +12,15 @@
 .PARAMETER Force
     Skip confirmation prompts when killing existing processes.
 
-.PARAMETER SkipPrereqCheck
-    Skip running setup-prereqs.ps1 -CheckOnly before starting. Use if you've
-    already verified dependencies are installed.
-
-.PARAMETER InstallPrereqs
-    Run setup-prereqs.ps1 in install mode (not -CheckOnly) before starting.
-    This will install any missing dependencies.
-
 .EXAMPLE
-    .\Start-WebUI.ps1                   # Check prereqs, then start both servers
-    .\Start-WebUI.ps1 -Stop              # Stop both servers
-    .\Start-WebUI.ps1 -Force             # Start, auto-kill any existing processes
-    .\Start-WebUI.ps1 -InstallPrereqs    # Install missing prereqs then start
-    .\Start-WebUI.ps1 -SkipPrereqCheck   # Skip prereq verification
+    .\Start-WebUI.ps1              # Start both servers
+    .\Start-WebUI.ps1 -Stop        # Stop both servers
+    .\Start-WebUI.ps1 -Force       # Start, auto-kill any existing processes
 #>
 
 param(
     [switch]$Stop,
-    [switch]$Force,
-    [switch]$SkipPrereqCheck,
-    [switch]$InstallPrereqs
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,7 +29,6 @@ $BackendDir = Join-Path $ScriptDir "orchestrator"
 $FrontendDir = Join-Path $ScriptDir "orchestrator-ui"
 $VenvPython = Join-Path $BackendDir ".venv\Scripts\python.exe"
 $BackendScript = Join-Path $BackendDir "local_server.py"
-$PrereqScript = Join-Path $ScriptDir "setup-prereqs.ps1"
 $BackendPort = 7071
 $FrontendPort = 5173
 
@@ -111,35 +98,6 @@ if ($Stop) {
 # ── Start mode ─────────────────────────────────────────────────────────
 
 Write-Banner "STARTING ORCHESTRATOR UI"
-
-# ── Prereq verification ───────────────────────────────────────────────
-
-if (-not $SkipPrereqCheck) {
-    if (-not (Test-Path $PrereqScript)) {
-        Write-Host "  ⚠ setup-prereqs.ps1 not found at: $PrereqScript" -ForegroundColor Yellow
-        Write-Host "    Skipping prereq verification." -ForegroundColor DarkGray
-    } else {
-        if ($InstallPrereqs) {
-            Write-Host "  Running setup-prereqs.ps1 (install mode)..." -ForegroundColor White
-            & $PrereqScript
-        } else {
-            Write-Host "  Verifying prerequisites (setup-prereqs.ps1 -CheckOnly)..." -ForegroundColor White
-            & $PrereqScript -CheckOnly
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ""
-            Write-Host "  ✗ Prerequisite check failed." -ForegroundColor Red
-            if (-not $InstallPrereqs) {
-                Write-Host "    Run: .\Start-WebUI.ps1 -InstallPrereqs" -ForegroundColor DarkGray
-                Write-Host "    Or:  .\setup-prereqs.ps1" -ForegroundColor DarkGray
-                Write-Host "    Or skip this check with: .\Start-WebUI.ps1 -SkipPrereqCheck" -ForegroundColor DarkGray
-            }
-            exit 1
-        }
-        Write-Host "  ✓ Prerequisites verified" -ForegroundColor Green
-        Write-Host ""
-    }
-}
 
 # ── Preflight checks ──────────────────────────────────────────────────
 

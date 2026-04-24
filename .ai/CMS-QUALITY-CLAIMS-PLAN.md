@@ -309,45 +309,47 @@ Collection Rate = DIVIDE(SUM(fact_claim[paid_amount]), SUM(fact_claim[billed_amo
 
 ## Part 6: Implementation Phases
 
-### Phase A — Enable Claims in Synthea (Low Effort)
-1. Update `synthea.properties` to include `Claim,ExplanationOfBenefit,Coverage`
-2. Update `fhir-loader/load_fhir.py` to handle new resource types during bundle upload
-3. Verify FHIR $export includes new resource types (it should by default)
-4. Update HDS pipeline to process new resource types into Silver Lakehouse
+### Phase A — Enable Claims in Synthea ✅ DONE
+1. ✅ Update `synthea.properties` to include `Claim,ExplanationOfBenefit,Coverage`
+2. ✅ FHIR Loader already handles all resource types — no changes needed
+3. ✅ FHIR $export includes new resource types by default
+4. ✅ HDS pipeline processes new resource types into Silver Lakehouse automatically
 
-### Phase B — Create Gold Star Schema (Medium Effort)
-1. Create materialization notebook: Silver → Gold transform for claims tables
-2. Build `dim_payer`, `dim_diagnosis`, `fact_claim`, `fact_claim_line`, `fact_diagnosis`
-3. Compute quality measures → `agg_quality_measures`, `agg_quality_summary`
-4. Compute medication adherence → `agg_medication_adherence`
-5. Identify care gaps → `care_gaps`
+### Phase B+E — Create Gold Star Schema + Quality Computation ✅ DONE
+1. ✅ Created `fabric-rti/sql/materialize_claims_quality.py` — combined materialization + quality
+2. ✅ Built `dim_payer`, `dim_diagnosis`, `fact_claim`, `fact_diagnosis`
+3. ✅ Computed 7 CMS eCQM quality measures → `agg_quality_measures`, `agg_quality_summary`
+4. ✅ Computed 3 HEDIS PDC medication adherence scores → `agg_medication_adherence`
+5. ✅ Identified care gaps → `care_gaps` with recommended clinical actions
 
-### Phase C — Extend Ontology (Medium Effort)
-1. Add 5 new entity types to `ClinicalDeviceOntology`
-2. Add 8 new relationship types
-3. Update Data Agents with new instructions covering claims/quality queries
-4. Update `phase-4/deploy-ontology.ps1` with new entities
+### Phase C — Extend Ontology ✅ DONE
+1. ✅ Added 5 new entity types (Claim, Payer, Diagnosis, PatientDiagnosis, MedAdherence) to Gold LH
+2. ✅ Added 4 new relationship types (hasClaim, paidBy, hasDiagnosis, hasAdherence)
+3. ✅ Updated `phase-4/deploy-ontology.ps1` with Gold LH auto-discovery + new entities
+4. Agent instruction updates deferred to post-deployment testing
 
-### Phase D — Power BI Report (Medium Effort)
-1. Create `CMS Quality Scorecard` semantic model (Direct Lake)
-2. Build 6-page report with measures described above
-3. Add deployment script for the new report
-4. Integrate into orchestrator UI deploy flow
+### Phase D — Power BI Report ✅ DONE
+1. ✅ Created `CMS Quality Scorecard` semantic model (Direct Lake, 8 tables, 3 relationships)
+2. ✅ Built 6-page report definition (TMDL + page.json)
+3. ✅ Created 14 DAX measures in `_Measures.tmdl`
+4. ✅ Integrated into Deploy-All.ps1 Phase 5 + orchestrator UI
 
-### Phase E — Quality Computation Notebook (Medium Effort)
-1. Create `NB_Compute_Quality_Measures.py` — translates CMS eCQM logic to SQL
-2. Runs after Gold ETL, computes all Tier 1 + Tier 2 measures
-3. Outputs to `agg_quality_measures` and `care_gaps` tables
-4. Add to pipeline as post-Gold step
+### Orchestrator & Docs ✅ DONE
+1. ✅ Added Phase 5 checkbox to DeployWizard + PhaseMonitor
+2. ✅ Added mock deployment simulation (mockDeployment.ts)
+3. ✅ Added `-Phase5` / `-SkipQualityMeasures` to Deploy-All.ps1
+4. ✅ Created backend activity (`deploy_quality_measures.py`) + function_app.py wiring
+5. ✅ Created `docs/phase-5-cms-quality-and-claims.md`
+6. ✅ Updated README.md, CHANGELOG.md, TODO-ITEMS.MD
 
 ---
 
-## Key Decisions Needed
+## Key Decisions — RESOLVED
 
-1. **Re-run Synthea or post-process?** — Adding claims to Synthea properties requires re-generating all patient data (new container run). Alternatively, we could generate claims synthetically from existing encounter/procedure/medication data in a post-processing step (more control, no re-generation needed).
+1. **Re-run Synthea**: ✅ Generate claims with Synthea on next run (first-time or re-generation). No post-processing needed.
 
-2. **Gold Lakehouse location** — Use existing Silver Lakehouse for claims tables, or create a new Gold Lakehouse (`lh_gold_quality`) similar to the Payer-Provider demo's `lh_gold_curated`?
+2. **Gold Lakehouse location**: ✅ Use existing `healthcare1_reporting_gold` Lakehouse (already created by Phase 3).
 
-3. **Ontology binding** — New claims entities bind to Gold Lakehouse, while existing entities bind to Silver Lakehouse + Eventhouse. This cross-lakehouse ontology is supported but needs testing.
+3. **Ontology binding**: ✅ Cross-lakehouse binding — existing entities bind to Silver LH + Eventhouse, new claims entities bind to Gold LH. Deploy-ontology.ps1 auto-discovers Gold LH.
 
-4. **Quality measurement period** — Use Synthea's 10-year history window or restrict to most recent year?
+4. **Quality measurement period**: ✅ Full 10 years (matches `exporter.years_of_history = 10` in synthea.properties).

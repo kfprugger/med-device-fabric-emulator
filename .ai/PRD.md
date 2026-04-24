@@ -2,9 +2,9 @@
 
 ## Medical Device FHIR Integration Platform
 
-**Version:** 1.0
+**Version:** 1.1
 **Author:** Joey Brakefield
-**Last Updated:** March 2026
+**Last Updated:** April 2026
 
 ---
 
@@ -28,6 +28,8 @@ A fully deployable reference architecture that:
 6. **Downloads** real DICOM chest CT studies from TCIA, re-tags with Synthea patient identifiers, uploads to ADLS Gen2, and ingests into Fabric via HDS imaging pipeline
 7. **Deploys** two AI Data Agents (Patient 360 + Clinical Triage) that federate across KQL telemetry and Lakehouse clinical data
 8. **Creates** a Fabric IQ Ontology for semantic graph queries across all entity types
+9. **Generates** claims data (ExplanationOfBenefit, Coverage) and computes 7 CMS eCQM quality measures, 3 HEDIS PDC medication adherence scores, and care gap identification
+10. **Publishes** a CMS Quality Scorecard Power BI report (6 pages, Direct Lake) over Gold Lakehouse star schema
 
 The entire solution deploys with a single command (`Deploy-All.ps1`) and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
 
