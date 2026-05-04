@@ -17,6 +17,10 @@ $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Prevent interactive `az` extension-install prompts from hanging the orchestrator
+# (which runs pwsh with -NonInteractive — any prompt = infinite hang). See #fix-2.
+$null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
+
 $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 $procArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
 Write-Host "Host architecture: $hostArch (PowerShell process: $procArch)" -ForegroundColor Gray
@@ -429,9 +433,25 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONLEGACYWINDOWSSTDIO = "0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Build from a clean staging directory containing ONLY the files the Dockerfile needs.
+# `az acr build` ignores `.dockerignore` reliably on Windows, which historically caused
+# 40+ minute hangs uploading the entire 1+ GB repo. Staging keeps the upload to ~5 KB.
+$emulatorStaging = Join-Path $env:TEMP ("masimo-emulator-build-" + [Guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $emulatorStaging -Force | Out-Null
+Copy-Item -Path (Join-Path $RepoRoot "Dockerfile")   -Destination $emulatorStaging -Force
+Copy-Item -Path (Join-Path $RepoRoot "emulator.py")  -Destination $emulatorStaging -Force
+Write-Host "  Build context: $emulatorStaging (Dockerfile + emulator.py only)" -ForegroundColor DarkGray
+
 $acrBuildErrLog = Join-Path $env:TEMP ("acr-build-" + [Guid]::NewGuid().ToString() + ".log")
-$acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --no-logs 2>$acrBuildErrLog
-$acrBuildExitCode = $LASTEXITCODE
+Push-Location $emulatorStaging
+try {
+    $acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --no-logs 2>$acrBuildErrLog
+    $acrBuildExitCode = $LASTEXITCODE
+} finally {
+    Pop-Location
+    Remove-Item -Recurse -Force $emulatorStaging -ErrorAction SilentlyContinue
+}
 $acrBuildOutput | ForEach-Object {
     $line = $_ -replace '[^\x20-\x7E]', ''
     if ($line.Trim()) { Write-Host "  $line" }

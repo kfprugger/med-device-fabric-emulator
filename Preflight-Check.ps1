@@ -233,6 +233,34 @@ try {
     Write-Host "  ⚠ Python not found (optional)" -ForegroundColor Yellow
 }
 
+# 9b. Azure CLI dynamic-install setting
+# The orchestrator runs pwsh with -NonInteractive; if `az` ever needs to install an
+# extension on-the-fly (e.g. `healthcareapis`) and the prompt is enabled, the deployment
+# hangs forever waiting on stdin. Force `yes_without_prompt` so installs are automatic.
+# See #fix-4.
+try {
+    $dynInstall = az config get extension.use_dynamic_install --query value -o tsv 2>$null
+    if (-not $dynInstall) { $dynInstall = "yes_prompt" }  # CLI default when unset
+    if ($dynInstall -eq "yes_without_prompt") {
+        $checks += @{ name = "Az CLI Extension Auto-Install"; status = "pass"; detail = "yes_without_prompt" }
+        Write-Host "  ✓ Az CLI extension auto-install: yes_without_prompt" -ForegroundColor Green
+    } elseif ($dynInstall -eq "no") {
+        $checks += @{ name = "Az CLI Extension Auto-Install"; status = "fail"; detail = "disabled (no)" }
+        $failures += "Azure CLI extension dynamic-install is disabled. Run: az config set extension.use_dynamic_install=yes_without_prompt"
+        Write-Host "  ✗ Az CLI extension auto-install disabled — deployment will fail when an extension is needed" -ForegroundColor Red
+    } else {
+        # 'yes_prompt' (default) — will hang under -NonInteractive
+        $checks += @{ name = "Az CLI Extension Auto-Install"; status = "warn"; detail = "$dynInstall (will prompt)" }
+        $warnings += "Azure CLI is set to '$dynInstall' for extension installs. Under -NonInteractive (orchestrator) this will hang the deployment. Run: az config set extension.use_dynamic_install=yes_without_prompt"
+        Write-Host "  ⚠ Az CLI extension auto-install: $dynInstall — will hang under -NonInteractive" -ForegroundColor Yellow
+        Write-Host "    Fix: az config set extension.use_dynamic_install=yes_without_prompt" -ForegroundColor DarkGray
+    }
+} catch {
+    $checks += @{ name = "Az CLI Extension Auto-Install"; status = "warn"; detail = "unable to read az config" }
+    $warnings += "Could not read 'extension.use_dynamic_install' from az config."
+    Write-Host "  ⚠ Could not read az config for extension.use_dynamic_install" -ForegroundColor Yellow
+}
+
 # 10. Admin Security Group
 if ($AdminSecurityGroup) {
     try {

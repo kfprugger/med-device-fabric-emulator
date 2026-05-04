@@ -39,6 +39,10 @@ $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Prevent interactive `az` extension-install prompts from hanging the orchestrator
+# (which runs pwsh with -NonInteractive — any prompt = infinite hang). See #fix-2.
+$null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
+
 $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 $procArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
 Write-Host "Host architecture: $hostArch (PowerShell process: $procArch)" -ForegroundColor Gray
@@ -460,12 +464,17 @@ if ($LASTEXITCODE -eq 0 -and $fhirDeployment) {
     $aciIdentityId = $fhirJson.aciIdentityId.value
     $aciIdentityClientId = $fhirJson.aciIdentityClientId.value
 
-    # Verify the FHIR service is actually reachable
-    $fhirCheck = az healthcareapis workspace fhir-service show `
+    # Verify the FHIR service is actually reachable.
+    # Use `az resource show` (built-in) instead of `az healthcareapis workspace fhir-service show`
+    # so we don't depend on the `healthcareapis` CLI extension. Under -NonInteractive,
+    # a missing extension would silently hang waiting on a y/n prompt. See #fix-3.
+    $fhirCheck = az resource show `
         --resource-group $ResourceGroupName `
-        --workspace-name $workspaceName `
-        --fhir-service-name $fhirServiceName `
-        --query provisioningState -o tsv 2>$null
+        --namespace Microsoft.HealthcareApis `
+        --parent "workspaces/$workspaceName" `
+        --resource-type fhirservices `
+        --name $fhirServiceName `
+        --query "properties.provisioningState" -o tsv 2>$null
 
     if ($fhirCheck -eq "Succeeded") {
         $infraExists = $true

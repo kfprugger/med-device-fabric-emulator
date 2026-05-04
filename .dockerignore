@@ -1,0 +1,63 @@
+# Keep the masimo-emulator build context tiny. The Dockerfile only needs emulator.py.
+# Without this file az acr build uploads the entire 1+ GB repo to the registry,
+# which can take 40+ minutes on home networks and look like a hang.
+
+# Version control / IDE / OS
+.git/
+.github/
+.vscode/
+.ai/
+.gitignore
+.gitattributes
+
+# Heavy folders unrelated to the emulator image
+repo-overview-video/
+orchestrator-ui/
+orchestrator/
+cms-quality-report/
+docs/
+fabric-rti/
+fabric-rti-templates/
+fhir-loader/
+dicom-loader/
+phase-1/
+phase-2/
+phase-4/
+phase-5/
+synthea/
+utilities/
+cleanup/
+state-tracking/
+bicep/
+
+# Logs / build artifacts / caches
+**/*.log
+**/__pycache__/
+**/.pytest_cache/
+**/node_modules/
+**/.venv/
+**/.mypy_cache/
+**/.tox/
+**/*.pyc
+
+# Markdown / docs in root
+*.md
+LICENSE
+CHANGELOG.md
+README.md
+
+# Anything that looks like local logs
+LogFiles/
+app_logs/
+app_logs_py/
+appservice-logs/
+default_logs/
+prod-logs/
+webapp_logs/
+webapp_logs_py/
+
+# Reports / scans
+bandit_report.json
+npm_audit_report.json
+safety_report.json
+secrets_report.json

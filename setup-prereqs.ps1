@@ -30,11 +30,11 @@ Write-Host "|       PREREQUISITE SETUP — Med Device FHIR Platform        |" -F
 Write-Host "+============================================================+" -ForegroundColor Cyan
 Write-Host ""
 
-$isWindows = $env:OS -eq "Windows_NT" -or $PSVersionTable.OS -match "Windows"
+$isWin = $env:OS -eq "Windows_NT" -or $PSVersionTable.OS -match "Windows"
 $isMac = $PSVersionTable.OS -match "Darwin"
-$isLinux = $PSVersionTable.OS -match "Linux"
+$isLnx = $PSVersionTable.OS -match "Linux"
 
-$platform = if ($isWindows) { "Windows" } elseif ($isMac) { "macOS" } else { "Linux" }
+$platform = if ($isWin) { "Windows" } elseif ($isMac) { "macOS" } else { "Linux" }
 Write-Host "  Platform: $platform" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -71,7 +71,34 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 }
 
 # ── 2. Azure CLI ──────────────────────────────────────────────────────
-$hasAzCli = Check-Tool "Azure CLI" "az version --query '""azure-cli""' -o tsv 2>$null" "\d+\.\d+\.\d+" "https://aka.ms/installazurecli"
+# Direct invocation (don't use Check-Tool/Invoke-Expression; the latter has
+# quoting/exit-code interactions that occasionally report `az` as not found
+# even when it works at the prompt).
+$hasAzCli = $false
+$azCmd = Get-Command az -ErrorAction SilentlyContinue
+if ($azCmd) {
+    try {
+        $azVerJson = az version --output json 2>$null | ConvertFrom-Json
+        $cliVer = $azVerJson.'azure-cli'
+        if ($cliVer) {
+            Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+            $pass++
+            $hasAzCli = $true
+        } else {
+            Write-Host "  ⚠ Azure CLI present but version unreadable" -ForegroundColor Yellow
+            $warn++
+            $hasAzCli = $true  # binary exists; downstream checks can still try
+        }
+    } catch {
+        Write-Host "  ⚠ Azure CLI present but `az version` failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        $warn++
+        $hasAzCli = $true
+    }
+} else {
+    Write-Host "  ✗ Azure CLI — not found" -ForegroundColor Red
+    Write-Host "    Install: https://aka.ms/installazurecli" -ForegroundColor DarkGray
+    $fail++
+}
 
 # ── 3. Bicep ──────────────────────────────────────────────────────────
 if ($hasAzCli) {
@@ -89,6 +116,28 @@ if ($hasAzCli) {
         } else {
             Write-Host "  ✗ Bicep — not installed (run: az bicep install)" -ForegroundColor Red
             $fail++
+        }
+    }
+
+    # ── 3b. Azure CLI extension dynamic-install ──────────────────────
+    # The orchestrator runs pwsh with -NonInteractive. If az needs to install an
+    # extension (e.g. `healthcareapis`) and the default `yes_prompt` setting is in
+    # effect, the deployment hangs forever waiting on stdin.
+    $dynInstall = az config get extension.use_dynamic_install --query value -o tsv 2>$null
+    if ($dynInstall -eq "yes_without_prompt") {
+        Write-Host "  ✓ Az CLI extension auto-install (yes_without_prompt)" -ForegroundColor Green
+        $pass++
+    } else {
+        if (-not $CheckOnly) {
+            Write-Host "  ⚙ Configuring az CLI to auto-install extensions without prompt..." -ForegroundColor Yellow
+            $null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
+            $installed++
+            Write-Host "  ✓ Az CLI extension auto-install set to yes_without_prompt" -ForegroundColor Green
+            $pass++
+        } else {
+            Write-Host "  ⚠ Az CLI extension auto-install is '$dynInstall' (will hang under -NonInteractive)" -ForegroundColor Yellow
+            Write-Host "    Fix: az config set extension.use_dynamic_install=yes_without_prompt" -ForegroundColor DarkGray
+            $warn++
         }
     }
 }
@@ -218,7 +267,7 @@ if ($hasPython) {
 
     # Install Python dependencies
     if (Test-Path $venvPath) {
-        $pipExe = if ($isWindows) { "$venvPath/Scripts/pip" } else { "$venvPath/bin/pip" }
+        $pipExe = if ($isWin) { "$venvPath/Scripts/pip" } else { "$venvPath/bin/pip" }
         if (-not $CheckOnly) {
             Write-Host "  ⚙ Installing Python dependencies..." -ForegroundColor Yellow
             & $pipExe install -r $requirementsPath --quiet 2>$null

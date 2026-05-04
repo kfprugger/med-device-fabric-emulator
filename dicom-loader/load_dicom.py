@@ -245,16 +245,6 @@ def create_imaging_study(
         "numberOfSeries": 1,
         "numberOfInstances": instance_count,
         "description": f"TCIA re-tagged study — {instance_count} instances stored in ADLS Gen2",
-        "bodySite": {
-            "coding": [
-                {
-                    "system": "http://snomed.info/sct",
-                    "code": body_site["code"],
-                    "display": body_site["display"],
-                }
-            ],
-            "text": body_site["text"],
-        },
         "series": [
             {
                 "uid": series_uid,
@@ -263,6 +253,14 @@ def create_imaging_study(
                     "code": modality,
                 },
                 "numberOfInstances": instance_count,
+                # ImagingStudy.series.bodySite is a single Coding in FHIR R4
+                # (NOT a CodeableConcept). Building it as a CodeableConcept caused
+                # AHDS to reject every POST with HTTP 400.
+                "bodySite": {
+                    "system": "http://snomed.info/sct",
+                    "code": body_site["code"],
+                    "display": body_site["display"],
+                },
             }
         ],
         "identifier": [
@@ -285,7 +283,15 @@ def create_imaging_study(
     }
 
     resp = httpx.post(f"{fhir_url}/ImagingStudy", json=resource, headers=headers, timeout=30)
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        # Surface the FHIR OperationOutcome so failures are diagnosable.
+        body_preview = (resp.text or "")[:500]
+        logger.error(
+            "    FHIR ImagingStudy POST failed (%d): %s",
+            resp.status_code,
+            body_preview.replace("\n", " "),
+        )
+        resp.raise_for_status()
     result = resp.json()
     return result.get("id", "unknown")
 

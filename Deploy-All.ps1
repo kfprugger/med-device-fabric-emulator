@@ -86,6 +86,11 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+# Prevent interactive `az` extension-install prompts from hanging the orchestrator.
+# The orchestrator launches pwsh with -NonInteractive; any extension prompt would hang forever.
+# See #fix-2.
+$null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
+
 # Validate conditionally-required parameters
 if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $AdminSecurityGroup) {
     throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, -Phase4, and -Phase5 can omit it."

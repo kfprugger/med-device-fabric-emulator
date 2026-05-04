@@ -296,10 +296,12 @@ export async function listCapacities(
   const query = subscriptionId
     ? `?subscription_id=${encodeURIComponent(subscriptionId)}`
     : "";
+  // Capacity scan invokes `az` subprocesses; cold calls can take 10-30s when
+  // the Resource Graph fallback fans out across multiple subscriptions.
   const resp = await fetchWithTimeout(
     `${API_BASE}/scan/capacities${query}`,
     {},
-    12000
+    60000
   );
   if (!resp.ok) return [];
   return resp.json();
