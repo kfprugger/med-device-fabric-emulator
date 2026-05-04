@@ -124,8 +124,19 @@ export async function startDeployment(
   if (!resp.ok) {
     const err = await resp.json();
     const issues = Array.isArray(err.issues) ? err.issues : [];
-    const suffix = issues.length > 0 ? ` ${issues.join(" ")}` : "";
-    throw new Error((err.error || "Failed to start deployment") + suffix);
+    const detail = err.detail;
+    const detailMessages = Array.isArray(detail)
+      ? detail
+          .map((entry: { loc?: unknown[]; msg?: string }) => {
+            const path = Array.isArray(entry?.loc) ? entry.loc.slice(1).join(".") : "";
+            return path ? `${path}: ${entry?.msg ?? "Invalid value"}` : entry?.msg ?? "Invalid request";
+          })
+          .filter(Boolean)
+      : typeof detail === "string"
+        ? [detail]
+        : [];
+    const messageParts = [err.error || "Failed to start deployment", ...issues, ...detailMessages].filter(Boolean);
+    throw new Error(messageParts.join(" "));
   }
   return resp.json();
 }

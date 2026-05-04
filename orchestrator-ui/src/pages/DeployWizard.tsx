@@ -266,6 +266,7 @@ export function DeployWizard() {
       setCapacities((prev) => prev.map((c) =>
         c.state === "Resuming" ? { ...c, state: "Active" } : c
       ));
+      setLoadWarning("");
       return;
     }
     setCapacityRefreshing(true);
@@ -286,10 +287,15 @@ export function DeployWizard() {
         }
         if (allCaps.length === 0) {
           setError("Unable to load Fabric capacities right now.");
+          setLoadWarning("Unable to load Fabric capacities right now.");
+        } else {
+          setError("");
+          setLoadWarning("");
         }
       })
       .catch(() => {
         setError("Failed to refresh capacity state. Try again.");
+        setLoadWarning("Unable to load Fabric capacities right now.");
       })
       .finally(() => setCapacityRefreshing(false));
   };
@@ -308,6 +314,7 @@ export function DeployWizard() {
         if (subs.length > 0) {
           setSubscriptions(subs);
           setUsingMock(false);
+          setLoadWarning("");
           if (!selectedSubscription) {
             setSelectedSubscription(subs[0].id);
           }
@@ -328,6 +335,7 @@ export function DeployWizard() {
       setCapacities(mockCaps);
       const active = mockCaps.find((c) => c.state === "Active");
       if (active && !selectedCapacity) setSelectedCapacity(getCapacitySelectionValue(active));
+      setLoadWarning("");
       setInitializing(false);
       return;
     }
@@ -339,6 +347,7 @@ export function DeployWizard() {
         if (active) setSelectedCapacity(getCapacitySelectionValue(active));
         else setSelectedCapacity(getCapacitySelectionValue(ctxCapacities[0]));
       }
+      setLoadWarning("");
       setInitializing(false);
     }
     setCapacityRefreshing(true);
@@ -353,6 +362,8 @@ export function DeployWizard() {
         }
         if (allCaps.length === 0) {
           setLoadWarning("Unable to load Fabric capacities right now.");
+        } else {
+          setLoadWarning("");
         }
       })
       .catch(() => {
@@ -658,11 +669,12 @@ export function DeployWizard() {
       }
       // Inject capacity fields from state
       const cap = findCapacity(selectedCapacity);
+      const fallbackCapacity = getCapacityFallbackParts(selectedCapacity);
       const deployConfig: DeploymentConfig = {
         ...config,
-        capacity_name: cap?.name ?? selectedCapacity,
-        capacity_resource_group: cap?.resourceGroup ?? "",
-        capacity_subscription_id: cap?.subscription ?? selectedSubscription,
+        capacity_name: cap?.name ?? fallbackCapacity?.capacityName ?? selectedCapacity,
+        capacity_resource_group: cap?.resourceGroup ?? config.capacity_resource_group ?? "",
+        capacity_subscription_id: cap?.subscription ?? fallbackCapacity?.subscriptionId ?? selectedSubscription,
         pause_capacity_after_deploy: pauseAfterDeploy,
       };
       const { instanceId } = await startDeployment(deployConfig);
@@ -716,6 +728,22 @@ export function DeployWizard() {
   ]);
 
   const canStartDeployment = validationErrors.length === 0 && !loading;
+
+  useEffect(() => {
+    if (!error) return;
+    setError("");
+  }, [
+    selectedSubscription,
+    selectedCapacity,
+    config.admin_security_group,
+    config.resource_group_name,
+    config.fabric_workspace_name,
+    config.alert_email,
+    config.patient_count,
+    config.location,
+    useNamingConvention,
+    namingPrefix,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ display: "flex", gap: "24px", position: "relative" }}>
@@ -1336,7 +1364,7 @@ export function DeployWizard() {
               <Checkbox
                 checked={pauseAfterDeploy}
                 onChange={(_, d) => setPauseAfterDeploy(!!d.checked)}
-                label={`Pause capacity "${findCapacity(selectedCapacity)?.name ?? selectedCapacity}" after successful deployment`}
+                label={`Pause capacity "${formatSelectedCapacityLabel(selectedCapacity)}" after successful deployment`}
               />
             )}
           </div>
@@ -1736,7 +1764,7 @@ export function DeployWizard() {
               <div>
                 <Text size={200} weight="semibold" block>Capacity</Text>
                 <Text size={200} block style={{ color: tokens.colorNeutralForeground2 }}>
-                  {findCapacity(selectedCapacity)?.name || selectedCapacity || "<not selected>"}
+                  {selectedCapacity ? formatSelectedCapacityLabel(selectedCapacity) : "<not selected>"}
                 </Text>
               </div>
               <div>
