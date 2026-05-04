@@ -1,9 +1,10 @@
 FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu
 
 # Install wget, unzip, and Azure CLI
-RUN apt-get update && apt-get install -y wget unzip curl apt-transport-https lsb-release gnupg ca-certificates \
+# Note: lsb-release was removed in Ubuntu 22.04; use /etc/os-release instead
+RUN apt-get update && apt-get install -y wget unzip curl apt-transport-https gnupg ca-certificates \
     && curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg \
-    && echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list \
+    && . /etc/os-release && echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ ${UBUNTU_CODENAME} main" > /etc/apt/sources.list.d/azure-cli.list \
     && apt-get update && apt-get install -y azure-cli \
     && rm -rf /var/lib/apt/lists/*
 
