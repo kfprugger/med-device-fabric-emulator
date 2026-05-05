@@ -115,6 +115,10 @@ def run_preflight(config: dict[str, Any]) -> dict[str, Any]:
         args += ["-Location", config.get("location", "eastus")]
     if config.get("admin_security_group"):
         args += ["-AdminSecurityGroup", config["admin_security_group"]]
+    if config.get("dicom_toolkit_path"):
+        args += ["-DicomToolkitPath", config["dicom_toolkit_path"]]
+    if config.get("skip_imaging"):
+        args += ["-SkipImaging"]
 
     logger.info("Running preflight checks...")
 

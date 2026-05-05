@@ -10,7 +10,8 @@ param (
     [string]$Location = "eastus",
     [string]$AdminSecurityGroup = "",
     [string]$DicomToolkitPath = "",
-    [switch]$Phase3
+    [switch]$Phase3,
+    [switch]$SkipImaging
 )
 
 $ErrorActionPreference = "Stop"
@@ -311,6 +312,38 @@ try {
     $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "API unreachable" }
     $failures += "Cannot access Fabric API. Ensure Az login has Fabric permissions."
     Write-Host "  ✗ Fabric API unreachable" -ForegroundColor Red
+}
+
+# 12. FabricDicomCohortingToolkit upstream repo (required for Phase 3 imaging)
+# Phase 3 (Cohorting Agent + DICOM Viewer + ImagingReport) consumes this repo,
+# which is not vendored in this workspace. Phase 3 runs as part of the default
+# full deployment, so check unless the caller is explicitly skipping imaging.
+if (-not $SkipImaging) {
+    $resolvedToolkitPath = if ([string]::IsNullOrWhiteSpace($DicomToolkitPath)) {
+        # Platform-aware default. Windows convention is C:\git\..., while
+        # macOS/Linux users typically clone under ~/git/...
+        if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+            "C:\git\FabricDicomCohortingToolkit"
+        } else {
+            Join-Path $HOME 'git/FabricDicomCohortingToolkit'
+        }
+    } else {
+        $DicomToolkitPath
+    }
+    $toolkitMarker = Join-Path $resolvedToolkitPath "Deploy-DataAgent.ps1"
+    if (Test-Path $toolkitMarker) {
+        $checks += @{ name = "DICOM Toolkit"; status = "pass"; detail = "$resolvedToolkitPath" }
+        Write-Host "  ✓ DICOM Toolkit found at $resolvedToolkitPath" -ForegroundColor Green
+    } else {
+        $checks += @{ name = "DICOM Toolkit"; status = "fail"; detail = "missing at $resolvedToolkitPath" }
+        $failures += (
+            "FabricDicomCohortingToolkit not found at '$resolvedToolkitPath'. Clone it: " +
+            "git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$resolvedToolkitPath' " +
+            "(or pass -DicomToolkitPath / set the orchestrator's skip_imaging option to bypass)."
+        )
+        Write-Host "  ✗ DICOM Toolkit missing at $resolvedToolkitPath" -ForegroundColor Red
+        Write-Host "    Fix: git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$resolvedToolkitPath'" -ForegroundColor DarkGray
+    }
 }
 
 Write-Host ""

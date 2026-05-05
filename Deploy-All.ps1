@@ -86,6 +86,15 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+# Normalize $DicomToolkitPath default for non-Windows hosts.
+# The param default ("C:\git\FabricDicomCohortingToolkit") is Windows-style;
+# on macOS/Linux fall back to ~/git/FabricDicomCohortingToolkit unless the
+# caller passed an explicit path.
+if (-not ($IsWindows -or $env:OS -eq 'Windows_NT') -and `
+    $DicomToolkitPath -eq 'C:\git\FabricDicomCohortingToolkit') {
+    $DicomToolkitPath = Join-Path $HOME 'git/FabricDicomCohortingToolkit'
+}
+
 # Prevent interactive `az` extension-install prompts from hanging the orchestrator.
 # The orchestrator launches pwsh with -NonInteractive; any extension prompt would hang forever.
 # See #fix-2.
@@ -257,13 +266,29 @@ function Test-Prerequisites {
         Write-Host "  ✗ Fabric API unreachable: $($_.Exception.Message)" -ForegroundColor Red
     }
 
-    # 10. DicomToolkitPath (Phase 3 only)
-    if ($Phase3 -and $DicomToolkitPath) {
-        if (Test-Path $DicomToolkitPath) {
-            Write-Host "  ✓ DICOM Toolkit found at $DicomToolkitPath" -ForegroundColor Green
+    # 10. DicomToolkitPath (Phase 3 imaging — runs in default full deployment, -Phase2, and -Phase3)
+    # Skip only when the caller explicitly opts out of imaging.
+    if (-not $SkipImaging -and -not $Teardown) {
+        $resolvedToolkitPath = if ([string]::IsNullOrWhiteSpace($DicomToolkitPath)) {
+            # Platform-aware default to match Preflight-Check.ps1 (#12) behavior
+            # so the same default works cleanly on Windows, macOS, and Linux.
+            if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+                "C:\git\FabricDicomCohortingToolkit"
+            } else {
+                Join-Path $HOME 'git/FabricDicomCohortingToolkit'
+            }
         } else {
-            $failures += "DICOM Toolkit not found at '$DicomToolkitPath'. Clone from GitHub or set -DicomToolkitPath"
-            Write-Host "  ✗ DICOM Toolkit not found at $DicomToolkitPath" -ForegroundColor Red
+            $DicomToolkitPath
+        }
+        if (Test-Path (Join-Path $resolvedToolkitPath "Deploy-DataAgent.ps1")) {
+            Write-Host "  ✓ DICOM Toolkit found at $resolvedToolkitPath" -ForegroundColor Green
+        } else {
+            $failures += (
+                "FabricDicomCohortingToolkit not found at '$resolvedToolkitPath'. Clone it: " +
+                "git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$resolvedToolkitPath' " +
+                "(or pass -DicomToolkitPath, or run with -SkipImaging to bypass)."
+            )
+            Write-Host "  ✗ DICOM Toolkit not found at $resolvedToolkitPath" -ForegroundColor Red
         }
     }
 
