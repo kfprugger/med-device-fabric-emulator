@@ -59,24 +59,28 @@ table fact_claim
 
 	column billed_amount
 		dataType: double
+		formatString: \$#,0
 		lineageTag: 33333333-aaaa-bbbb-cccc-333333333339
 		sourceColumn: billed_amount
 		summarizeBy: sum
 
 	column paid_amount
 		dataType: double
+		formatString: \$#,0
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333a
 		sourceColumn: paid_amount
 		summarizeBy: sum
 
 	column allowed_amount
 		dataType: double
+		formatString: \$#,0
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333b
 		sourceColumn: allowed_amount
 		summarizeBy: sum
 
 	column patient_responsibility
 		dataType: double
+		formatString: \$#,0
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333c
 		sourceColumn: patient_responsibility
 		summarizeBy: sum

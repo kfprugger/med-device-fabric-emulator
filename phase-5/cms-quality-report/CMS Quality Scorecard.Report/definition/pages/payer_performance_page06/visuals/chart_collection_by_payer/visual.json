@@ -2,69 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_collection_by_payer",
   "position": {
-    "tabOrder": 2000,
+    "z": 2000,
     "x": 10,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2000
+    "tabOrder": 2000
   },
   "visual": {
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "dim_payer.payer_category",
+              "nativeQueryRef": "payer_category",
               "field": {
                 "Column": {
-                  "Property": "payer_category",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "dim_payer"
                     }
-                  }
+                  },
+                  "Property": "payer_category"
                 }
               },
-              "nativeQueryRef": "payer_category"
+              "queryRef": "dim_payer.payer_category"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Collection Rate",
+              "nativeQueryRef": "Collection Rate",
               "field": {
                 "Measure": {
-                  "Property": "Collection Rate",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Collection Rate"
                 }
               },
-              "nativeQueryRef": "Collection Rate"
-            },
-            {
-              "queryRef": "_Measures.Denial Rate",
-              "field": {
-                "Measure": {
-                  "Property": "Denial Rate",
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "_Measures"
-                    }
-                  }
-                }
-              },
-              "nativeQueryRef": "Denial Rate"
+              "queryRef": "_Measures.Collection Rate"
             }
           ]
         }
       }
-    },
-    "visualType": "barChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

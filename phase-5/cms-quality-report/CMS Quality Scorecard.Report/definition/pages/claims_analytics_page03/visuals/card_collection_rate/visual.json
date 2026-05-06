@@ -2,37 +2,37 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "card_collection_rate",
   "position": {
-    "tabOrder": 1300,
+    "z": 1300,
     "x": 880,
-    "y": 20,
     "width": 280,
+    "y": 20,
     "height": 130,
-    "z": 1300
+    "tabOrder": 1300
   },
   "visual": {
+    "visualType": "card",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "_Measures.Collection Rate",
+              "nativeQueryRef": "Collection Rate",
               "field": {
                 "Measure": {
-                  "Property": "Collection Rate",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Collection Rate"
                 }
               },
-              "nativeQueryRef": "Collection Rate"
+              "queryRef": "_Measures.Collection Rate"
             }
           ]
         }
       }
-    },
-    "visualType": "card",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

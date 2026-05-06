@@ -2,37 +2,37 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "card_qr_uninsured",
   "position": {
-    "tabOrder": 1300,
+    "z": 1300,
     "x": 880,
-    "y": 20,
     "width": 280,
+    "y": 20,
     "height": 130,
-    "z": 1300
+    "tabOrder": 1300
   },
   "visual": {
+    "visualType": "card",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "_Measures.Quality Rate (Uninsured)",
+              "nativeQueryRef": "Quality Rate (Uninsured)",
               "field": {
                 "Measure": {
-                  "Property": "Quality Rate (Uninsured)",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Quality Rate (Uninsured)"
                 }
               },
-              "nativeQueryRef": "Quality Rate (Uninsured)"
+              "queryRef": "_Measures.Quality Rate (Uninsured)"
             }
           ]
         }
       }
-    },
-    "visualType": "card",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

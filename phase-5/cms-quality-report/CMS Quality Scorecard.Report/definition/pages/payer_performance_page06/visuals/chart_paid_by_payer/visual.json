@@ -2,69 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_paid_by_payer",
   "position": {
-    "tabOrder": 2100,
+    "z": 2100,
     "x": 590,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2100
+    "tabOrder": 2100
   },
   "visual": {
+    "visualType": "columnChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "dim_payer.payer_category",
+              "nativeQueryRef": "payer_category",
               "field": {
                 "Column": {
-                  "Property": "payer_category",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "dim_payer"
                     }
-                  }
+                  },
+                  "Property": "payer_category"
                 }
               },
-              "nativeQueryRef": "payer_category"
+              "queryRef": "dim_payer.payer_category"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Total Paid",
+              "nativeQueryRef": "paid_amount",
               "field": {
-                "Measure": {
-                  "Property": "Total Paid",
+                "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "_Measures"
+                      "Entity": "fact_claim"
                     }
-                  }
+                  },
+                  "Property": "paid_amount"
                 }
               },
-              "nativeQueryRef": "Total Paid"
-            },
-            {
-              "queryRef": "_Measures.Total Billed",
-              "field": {
-                "Measure": {
-                  "Property": "Total Billed",
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "_Measures"
-                    }
-                  }
-                }
-              },
-              "nativeQueryRef": "Total Billed"
+              "queryRef": "fact_claim.paid_amount"
             }
           ]
         }
       }
-    },
-    "visualType": "columnChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

@@ -32,15 +32,15 @@ table _Measures
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999995
 
 	measure 'Total Billed' =
-		SUM(fact_claim[billed_amount])
+		SUMX(fact_claim, fact_claim[billed_amount])
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999996
 
 	measure 'Total Paid' =
-		SUM(fact_claim[paid_amount])
+		SUMX(fact_claim, fact_claim[paid_amount])
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999997
 
 	measure 'Collection Rate' =
-		DIVIDE(SUM(fact_claim[paid_amount]), SUM(fact_claim[billed_amount]), 0)
+		DIVIDE(SUMX(fact_claim, fact_claim[paid_amount]), SUMX(fact_claim, fact_claim[billed_amount]), 0)
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999998
 
 	measure 'Denial Rate' =

@@ -2,107 +2,107 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "table_adherence",
   "position": {
-    "tabOrder": 2100,
+    "z": 2100,
     "x": 590,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2100
+    "tabOrder": 2100
   },
   "visual": {
+    "visualType": "tableEx",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "agg_medication_adherence.patient_id",
+              "nativeQueryRef": "patient_id",
               "field": {
                 "Column": {
-                  "Property": "patient_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "patient_id"
                 }
               },
-              "nativeQueryRef": "patient_id"
+              "queryRef": "agg_medication_adherence.patient_id"
             },
             {
-              "queryRef": "agg_medication_adherence.medication_class",
+              "nativeQueryRef": "medication_class",
               "field": {
                 "Column": {
-                  "Property": "medication_class",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "medication_class"
                 }
               },
-              "nativeQueryRef": "medication_class"
+              "queryRef": "agg_medication_adherence.medication_class"
             },
             {
-              "queryRef": "agg_medication_adherence.adherence_category",
+              "nativeQueryRef": "adherence_category",
               "field": {
                 "Column": {
-                  "Property": "adherence_category",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "adherence_category"
                 }
               },
-              "nativeQueryRef": "adherence_category"
+              "queryRef": "agg_medication_adherence.adherence_category"
             },
             {
-              "queryRef": "agg_medication_adherence.pdc_score",
+              "nativeQueryRef": "pdc_score",
               "field": {
                 "Column": {
-                  "Property": "pdc_score",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "pdc_score"
                 }
               },
-              "nativeQueryRef": "pdc_score"
+              "queryRef": "agg_medication_adherence.pdc_score"
             },
             {
-              "queryRef": "agg_medication_adherence.gap_days",
+              "nativeQueryRef": "gap_days",
               "field": {
                 "Column": {
-                  "Property": "gap_days",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "gap_days"
                 }
               },
-              "nativeQueryRef": "gap_days"
+              "queryRef": "agg_medication_adherence.gap_days"
             },
             {
-              "queryRef": "agg_medication_adherence.total_fills",
+              "nativeQueryRef": "total_fills",
               "field": {
                 "Column": {
-                  "Property": "total_fills",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "total_fills"
                 }
               },
-              "nativeQueryRef": "total_fills"
+              "queryRef": "agg_medication_adherence.total_fills"
             }
           ]
         }
       }
-    },
-    "visualType": "tableEx",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

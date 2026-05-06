@@ -2,55 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_quality_by_year",
   "position": {
-    "tabOrder": 2100,
+    "z": 2100,
     "x": 600,
-    "y": 160,
     "width": 560,
+    "y": 160,
     "height": 530,
-    "z": 2100
+    "tabOrder": 2100
   },
   "visual": {
+    "visualType": "columnChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "agg_quality_summary.measurement_year",
+              "nativeQueryRef": "measurement_year",
               "field": {
                 "Column": {
-                  "Property": "measurement_year",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_quality_summary"
                     }
-                  }
+                  },
+                  "Property": "measurement_year"
                 }
               },
-              "nativeQueryRef": "measurement_year"
+              "queryRef": "agg_quality_summary.measurement_year"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Quality Rate",
+              "nativeQueryRef": "Quality Rate",
               "field": {
                 "Measure": {
-                  "Property": "Quality Rate",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Quality Rate"
                 }
               },
-              "nativeQueryRef": "Quality Rate"
+              "queryRef": "_Measures.Quality Rate"
             }
           ]
         }
       }
-    },
-    "visualType": "columnChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

@@ -110,6 +110,22 @@ function BarChartBody ([string]$catEntity, [string]$catColumn, [string[]]$measur
     }
 }
 
+# A bar/column chart that projects a column with implicit aggregation
+# (works around a Direct Lake bug where two named measures from the same
+# fact table can fail with MdxScript SYNTAXERROR).
+function BarChartColBody ([string]$catEntity, [string]$catColumn, [string]$valEntity, [string]$valColumn, [string]$visualType = "barChart") {
+    return @{
+        visualType = $visualType
+        query = @{
+            queryState = @{
+                Category = @{ projections = @( (ColumnField $catEntity $catColumn) ) }
+                Y        = @{ projections = @( (ColumnField $valEntity $valColumn) ) }
+            }
+        }
+        drillFilterOtherVisuals = $true
+    }
+}
+
 # Table / matrix with arbitrary projections
 function TableBody ([object[]]$projections, [string]$visualType = "tableEx") {
     return @{
@@ -181,15 +197,16 @@ Write-VisualJson $p3 "card_total_billed"      @{ position = (Pos 300  20 280 130
 Write-VisualJson $p3 "card_total_paid"        @{ position = (Pos 590  20 280 130 1200); body = (CardBody "Total Paid") }
 Write-VisualJson $p3 "card_collection_rate"   @{ position = (Pos 880  20 280 130 1300); body = (CardBody "Collection Rate") }
 
-# Claims by payer
+# Claims by payer — use column projections (implicit sum) to avoid
+# Direct Lake's two-measure SYNTAXERROR bug on fact_claim aggregations.
 Write-VisualJson $p3 "chart_paid_by_payer" @{
     position = (Pos 10 160 570 530 2000)
-    body = (BarChartBody "fact_claim" "payer_category" @("Total Paid","Total Billed") "barChart")
+    body = (BarChartColBody "fact_claim" "payer_category" "fact_claim" "paid_amount" "barChart")
 }
-# Denial rate trend
+# Denial rate by claim type (single measure works fine)
 Write-VisualJson $p3 "chart_denial_rate" @{
     position = (Pos 590 160 570 530 2100)
-    body = (BarChartBody "fact_claim" "claim_type" @("Denial Rate","Collection Rate") "columnChart")
+    body = (BarChartBody "fact_claim" "claim_type" @("Denial Rate") "columnChart")
 }
 
 # ============================================================================
@@ -259,15 +276,15 @@ Write-VisualJson $p6 "card_qr_medicaid"    @{ position = (Pos 300 20 280 130 110
 Write-VisualJson $p6 "card_qr_commercial"  @{ position = (Pos 590 20 280 130 1200); body = (CardBody "Quality Rate (Commercial)") }
 Write-VisualJson $p6 "card_qr_uninsured"   @{ position = (Pos 880 20 280 130 1300); body = (CardBody "Quality Rate (Uninsured)") }
 
-# Payer-stratified bar chart
+# Payer-stratified collection rate (single measure)
 Write-VisualJson $p6 "chart_collection_by_payer" @{
     position = (Pos 10 160 570 530 2000)
-    body = (BarChartBody "dim_payer" "payer_category" @("Collection Rate","Denial Rate") "barChart")
+    body = (BarChartBody "dim_payer" "payer_category" @("Collection Rate") "barChart")
 }
-# Payer paid amounts
+# Payer paid amounts — use column projection to avoid Direct Lake quirk
 Write-VisualJson $p6 "chart_paid_by_payer" @{
     position = (Pos 590 160 570 530 2100)
-    body = (BarChartBody "dim_payer" "payer_category" @("Total Paid","Total Billed") "columnChart")
+    body = (BarChartColBody "dim_payer" "payer_category" "fact_claim" "paid_amount" "columnChart")
 }
 
 Write-Host ""

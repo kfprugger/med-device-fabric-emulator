@@ -2,37 +2,37 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "slicer_measure",
   "position": {
-    "tabOrder": 1300,
+    "z": 1300,
     "x": 880,
-    "y": 20,
     "width": 280,
+    "y": 20,
     "height": 130,
-    "z": 1300
+    "tabOrder": 1300
   },
   "visual": {
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "care_gaps.measure_id",
+              "nativeQueryRef": "measure_id",
               "field": {
                 "Column": {
-                  "Property": "measure_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "measure_id"
                 }
               },
-              "nativeQueryRef": "measure_id"
+              "queryRef": "care_gaps.measure_id"
             }
           ]
         }
       }
-    },
-    "visualType": "slicer",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

@@ -2,37 +2,37 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "slicer_year",
   "position": {
-    "tabOrder": 1100,
+    "z": 1100,
     "x": 270,
-    "y": 20,
     "width": 250,
+    "y": 20,
     "height": 120,
-    "z": 1100
+    "tabOrder": 1100
   },
   "visual": {
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "agg_quality_summary.measurement_year",
+              "nativeQueryRef": "measurement_year",
               "field": {
                 "Column": {
-                  "Property": "measurement_year",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_quality_summary"
                     }
-                  }
+                  },
+                  "Property": "measurement_year"
                 }
               },
-              "nativeQueryRef": "measurement_year"
+              "queryRef": "agg_quality_summary.measurement_year"
             }
           ]
         }
       }
-    },
-    "visualType": "slicer",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

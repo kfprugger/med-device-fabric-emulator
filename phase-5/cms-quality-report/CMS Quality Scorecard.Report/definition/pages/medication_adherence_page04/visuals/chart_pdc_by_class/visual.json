@@ -2,55 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_pdc_by_class",
   "position": {
-    "tabOrder": 2000,
+    "z": 2000,
     "x": 10,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2000
+    "tabOrder": 2000
   },
   "visual": {
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "agg_medication_adherence.medication_class",
+              "nativeQueryRef": "medication_class",
               "field": {
                 "Column": {
-                  "Property": "medication_class",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_medication_adherence"
                     }
-                  }
+                  },
+                  "Property": "medication_class"
                 }
               },
-              "nativeQueryRef": "medication_class"
+              "queryRef": "agg_medication_adherence.medication_class"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Avg PDC Score",
+              "nativeQueryRef": "Avg PDC Score",
               "field": {
                 "Measure": {
-                  "Property": "Avg PDC Score",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Avg PDC Score"
                 }
               },
-              "nativeQueryRef": "Avg PDC Score"
+              "queryRef": "_Measures.Avg PDC Score"
             }
           ]
         }
       }
-    },
-    "visualType": "barChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

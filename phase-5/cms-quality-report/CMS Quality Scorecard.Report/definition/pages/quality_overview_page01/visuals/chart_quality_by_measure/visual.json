@@ -2,55 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_quality_by_measure",
   "position": {
-    "tabOrder": 2000,
+    "z": 2000,
     "x": 10,
-    "y": 160,
     "width": 580,
+    "y": 160,
     "height": 530,
-    "z": 2000
+    "tabOrder": 2000
   },
   "visual": {
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "agg_quality_summary.measure_name",
+              "nativeQueryRef": "measure_name",
               "field": {
                 "Column": {
-                  "Property": "measure_name",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "agg_quality_summary"
                     }
-                  }
+                  },
+                  "Property": "measure_name"
                 }
               },
-              "nativeQueryRef": "measure_name"
+              "queryRef": "agg_quality_summary.measure_name"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Quality Rate",
+              "nativeQueryRef": "Quality Rate",
               "field": {
                 "Measure": {
-                  "Property": "Quality Rate",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Quality Rate"
                 }
               },
-              "nativeQueryRef": "Quality Rate"
+              "queryRef": "_Measures.Quality Rate"
             }
           ]
         }
       }
-    },
-    "visualType": "barChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

@@ -2,55 +2,55 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "chart_gaps_by_measure",
   "position": {
-    "tabOrder": 2000,
+    "z": 2000,
     "x": 10,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2000
+    "tabOrder": 2000
   },
   "visual": {
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Category": {
           "projections": [
             {
-              "queryRef": "care_gaps.measure_id",
+              "nativeQueryRef": "measure_id",
               "field": {
                 "Column": {
-                  "Property": "measure_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "measure_id"
                 }
               },
-              "nativeQueryRef": "measure_id"
+              "queryRef": "care_gaps.measure_id"
             }
           ]
         },
         "Y": {
           "projections": [
             {
-              "queryRef": "_Measures.Open Care Gaps",
+              "nativeQueryRef": "Open Care Gaps",
               "field": {
                 "Measure": {
-                  "Property": "Open Care Gaps",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Measures"
                     }
-                  }
+                  },
+                  "Property": "Open Care Gaps"
                 }
               },
-              "nativeQueryRef": "Open Care Gaps"
+              "queryRef": "_Measures.Open Care Gaps"
             }
           ]
         }
       }
-    },
-    "visualType": "barChart",
-    "drillFilterOtherVisuals": true
+    }
   }
 }

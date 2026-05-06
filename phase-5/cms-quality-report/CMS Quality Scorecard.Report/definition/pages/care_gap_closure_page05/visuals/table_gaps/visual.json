@@ -2,107 +2,107 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
   "name": "table_gaps",
   "position": {
-    "tabOrder": 2100,
+    "z": 2100,
     "x": 590,
-    "y": 160,
     "width": 570,
+    "y": 160,
     "height": 530,
-    "z": 2100
+    "tabOrder": 2100
   },
   "visual": {
+    "visualType": "tableEx",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
           "projections": [
             {
-              "queryRef": "care_gaps.patient_id",
+              "nativeQueryRef": "patient_id",
               "field": {
                 "Column": {
-                  "Property": "patient_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "patient_id"
                 }
               },
-              "nativeQueryRef": "patient_id"
+              "queryRef": "care_gaps.patient_id"
             },
             {
-              "queryRef": "care_gaps.measure_id",
+              "nativeQueryRef": "measure_id",
               "field": {
                 "Column": {
-                  "Property": "measure_id",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "measure_id"
                 }
               },
-              "nativeQueryRef": "measure_id"
+              "queryRef": "care_gaps.measure_id"
             },
             {
-              "queryRef": "care_gaps.gap_type",
+              "nativeQueryRef": "gap_type",
               "field": {
                 "Column": {
-                  "Property": "gap_type",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "gap_type"
                 }
               },
-              "nativeQueryRef": "gap_type"
+              "queryRef": "care_gaps.gap_type"
             },
             {
-              "queryRef": "care_gaps.gap_status",
+              "nativeQueryRef": "gap_status",
               "field": {
                 "Column": {
-                  "Property": "gap_status",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "gap_status"
                 }
               },
-              "nativeQueryRef": "gap_status"
+              "queryRef": "care_gaps.gap_status"
             },
             {
-              "queryRef": "care_gaps.days_overdue",
+              "nativeQueryRef": "days_overdue",
               "field": {
                 "Column": {
-                  "Property": "days_overdue",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "days_overdue"
                 }
               },
-              "nativeQueryRef": "days_overdue"
+              "queryRef": "care_gaps.days_overdue"
             },
             {
-              "queryRef": "care_gaps.recommended_action",
+              "nativeQueryRef": "recommended_action",
               "field": {
                 "Column": {
-                  "Property": "recommended_action",
                   "Expression": {
                     "SourceRef": {
                       "Entity": "care_gaps"
                     }
-                  }
+                  },
+                  "Property": "recommended_action"
                 }
               },
-              "nativeQueryRef": "recommended_action"
+              "queryRef": "care_gaps.recommended_action"
             }
           ]
         }
       }
-    },
-    "visualType": "tableEx",
-    "drillFilterOtherVisuals": true
+    }
   }
 }
