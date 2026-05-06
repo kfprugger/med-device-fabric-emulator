@@ -32,10 +32,10 @@ table dim_payer
 		lineageTag: 44444444-aaaa-bbbb-cccc-444444444444
 		sourceColumn: payer_type
 		summarizeBy: none
-        /// Normalised payer category used for stratification
-        /// (Medicare / Medicaid / Commercial / Uninsured / Other).
-        column payer_category
-                dataType: string
-                lineageTag: 44444444-aaaa-bbbb-cccc-444444444445
-                sourceColumn: payer_category
-                summarizeBy: none
+	/// Normalised payer category used for stratification
+	/// (Medicare / Medicaid / Commercial / Uninsured / Other).
+	column payer_category
+		dataType: string
+		lineageTag: 44444444-aaaa-bbbb-cccc-444444444445
+		sourceColumn: payer_category
+		summarizeBy: none

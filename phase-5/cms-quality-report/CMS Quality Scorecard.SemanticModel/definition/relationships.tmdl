@@ -1,13 +1,19 @@
-/// Relationships for CMS Quality Scorecard model
-
-relationship rel-quality-measures-gaps
+relationship 33333333-aaaa-bbbb-cccc-444444444401
+	crossFilteringBehavior: bothDirections
 	fromColumn: care_gaps.patient_id
 	toColumn: agg_quality_measures.patient_id
 
-relationship rel-quality-measures-adherence
+relationship 33333333-aaaa-bbbb-cccc-444444444402
+	crossFilteringBehavior: bothDirections
 	fromColumn: agg_medication_adherence.patient_id
 	toColumn: agg_quality_measures.patient_id
 
-relationship rel-claim-diagnosis
+relationship 33333333-aaaa-bbbb-cccc-444444444403
+	crossFilteringBehavior: bothDirections
 	fromColumn: fact_diagnosis.icd_code
 	toColumn: dim_diagnosis.icd_code
+
+relationship 33333333-aaaa-bbbb-cccc-444444444404
+	crossFilteringBehavior: bothDirections
+	fromColumn: fact_claim.patient_ref
+	toColumn: agg_quality_measures.patient_id

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "slicer_adherence",
+  "position": {
+    "tabOrder": 1300,
+    "x": 880,
+    "y": 20,
+    "width": 280,
+    "height": 130,
+    "z": 1300
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "agg_medication_adherence.adherence_category",
+              "field": {
+                "Column": {
+                  "Property": "adherence_category",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "agg_medication_adherence"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "adherence_category"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true
+  }
+}

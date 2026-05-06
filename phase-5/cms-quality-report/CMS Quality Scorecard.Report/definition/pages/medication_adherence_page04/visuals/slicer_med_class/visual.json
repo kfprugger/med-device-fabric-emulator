@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "slicer_med_class",
+  "position": {
+    "tabOrder": 1200,
+    "x": 590,
+    "y": 20,
+    "width": 280,
+    "height": 130,
+    "z": 1200
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "agg_medication_adherence.medication_class",
+              "field": {
+                "Column": {
+                  "Property": "medication_class",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "agg_medication_adherence"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "medication_class"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "chart_collection_by_payer",
+  "position": {
+    "tabOrder": 2000,
+    "x": 10,
+    "y": 160,
+    "width": 570,
+    "height": 530,
+    "z": 2000
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "queryRef": "dim_payer.payer_category",
+              "field": {
+                "Column": {
+                  "Property": "payer_category",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dim_payer"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "payer_category"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Collection Rate",
+              "field": {
+                "Measure": {
+                  "Property": "Collection Rate",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Collection Rate"
+            },
+            {
+              "queryRef": "_Measures.Denial Rate",
+              "field": {
+                "Measure": {
+                  "Property": "Denial Rate",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Denial Rate"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true
+  }
+}

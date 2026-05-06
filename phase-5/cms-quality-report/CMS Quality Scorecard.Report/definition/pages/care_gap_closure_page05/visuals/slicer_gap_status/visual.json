@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "slicer_gap_status",
+  "position": {
+    "tabOrder": 1100,
+    "x": 300,
+    "y": 20,
+    "width": 280,
+    "height": 130,
+    "z": 1100
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "care_gaps.gap_status",
+              "field": {
+                "Column": {
+                  "Property": "gap_status",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "care_gaps"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "gap_status"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true
+  }
+}

@@ -1,8 +1,12 @@
-[
-  "quality_overview_page01",
-  "measure_deepdive_page02",
-  "claims_analytics_page03",
-  "medication_adherence_page04",
-  "care_gap_closure_page05",
-  "payer_performance_page06"
-]
+{
+  "activePageName": "quality_overview_page01",
+  "pageOrder": [
+    "quality_overview_page01",
+    "measure_deepdive_page02",
+    "claims_analytics_page03",
+    "medication_adherence_page04",
+    "care_gap_closure_page05",
+    "payer_performance_page06"
+  ],
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json"
+}

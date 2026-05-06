@@ -62,10 +62,10 @@ table agg_quality_measures
 		lineageTag: 11111111-aaaa-bbbb-cccc-11111111111a
 		sourceColumn: measurement_year
 		summarizeBy: none
-        /// Denormalised payer bucket so CMS quality rates can be
-        /// stratified Medicare / Medicaid / Commercial / Uninsured / Other.
-        column payer_category
-                dataType: string
-                lineageTag: 11111111-aaaa-bbbb-cccc-11111111111b
-                sourceColumn: payer_category
-                summarizeBy: none
+	/// Denormalised payer bucket so CMS quality rates can be
+	/// stratified Medicare / Medicaid / Commercial / Uninsured / Other.
+	column payer_category
+		dataType: string
+		lineageTag: 11111111-aaaa-bbbb-cccc-11111111111b
+		sourceColumn: payer_category
+		summarizeBy: none

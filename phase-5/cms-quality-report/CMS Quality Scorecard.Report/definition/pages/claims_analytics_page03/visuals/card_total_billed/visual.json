@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "card_total_billed",
+  "position": {
+    "tabOrder": 1100,
+    "x": 300,
+    "y": 20,
+    "width": 280,
+    "height": 130,
+    "z": 1100
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Total Billed",
+              "field": {
+                "Measure": {
+                  "Property": "Total Billed",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Total Billed"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "card",
+    "drillFilterOtherVisuals": true
+  }
+}

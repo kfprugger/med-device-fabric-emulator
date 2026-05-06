@@ -1,0 +1,56 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "chart_pdc_by_class",
+  "position": {
+    "tabOrder": 2000,
+    "x": 10,
+    "y": 160,
+    "width": 570,
+    "height": 530,
+    "z": 2000
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "queryRef": "agg_medication_adherence.medication_class",
+              "field": {
+                "Column": {
+                  "Property": "medication_class",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "agg_medication_adherence"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "medication_class"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Avg PDC Score",
+              "field": {
+                "Measure": {
+                  "Property": "Avg PDC Score",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Avg PDC Score"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true
+  }
+}

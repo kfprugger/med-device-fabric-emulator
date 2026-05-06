@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "slicer_measure",
+  "position": {
+    "tabOrder": 1000,
+    "x": 10,
+    "y": 20,
+    "width": 250,
+    "height": 120,
+    "z": 1000
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "agg_quality_summary.measure_name",
+              "field": {
+                "Column": {
+                  "Property": "measure_name",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "agg_quality_summary"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "measure_name"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true
+  }
+}

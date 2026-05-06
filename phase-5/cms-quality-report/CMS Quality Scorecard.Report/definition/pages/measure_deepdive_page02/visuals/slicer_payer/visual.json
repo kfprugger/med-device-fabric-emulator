@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "slicer_payer",
+  "position": {
+    "tabOrder": 1200,
+    "x": 530,
+    "y": 20,
+    "width": 250,
+    "height": 120,
+    "z": 1200
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "dim_payer.payer_category",
+              "field": {
+                "Column": {
+                  "Property": "payer_category",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dim_payer"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "payer_category"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "slicer",
+    "drillFilterOtherVisuals": true
+  }
+}

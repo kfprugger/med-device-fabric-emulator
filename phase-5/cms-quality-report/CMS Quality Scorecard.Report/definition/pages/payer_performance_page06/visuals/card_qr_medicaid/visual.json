@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "card_qr_medicaid",
+  "position": {
+    "tabOrder": 1100,
+    "x": 300,
+    "y": 20,
+    "width": 280,
+    "height": 130,
+    "z": 1100
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Quality Rate (Medicaid)",
+              "field": {
+                "Measure": {
+                  "Property": "Quality Rate (Medicaid)",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Quality Rate (Medicaid)"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "card",
+    "drillFilterOtherVisuals": true
+  }
+}

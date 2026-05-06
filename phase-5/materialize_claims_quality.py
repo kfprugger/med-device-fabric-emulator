@@ -47,7 +47,7 @@ print(f"Measurement period: {MEASUREMENT_YEAR_START} to {MEASUREMENT_YEAR_END}")
 
 def read_silver(table_name):
     """Read a Silver Lakehouse FHIR table."""
-    return spark.read.format("delta").table(f"{SILVER_LAKEHOUSE}.dbo.{table_name}")
+    return spark.read.format("delta").table(f"{SILVER_LAKEHOUSE}.{table_name}")
 
 
 # ============================================================================
@@ -56,43 +56,87 @@ def read_silver(table_name):
 
 print("\n--- Step 1: dim_payer ---")
 
+# Synthea's R4 FHIR exporter emits Coverage as a CONTAINED resource inside
+# each ExplanationOfBenefit (under `contained` with id="coverage"), not as
+# top-level Coverage bundle entries. The Silver Coverage table therefore
+# is empty/sparse. We synthesize dim_payer from EOB.contained instead so
+# that the rest of the gold pipeline (patient_payer, fact_claim payer
+# stratification) has real data to work with.
+
 try:
-    coverage_df = read_silver("Coverage")
-    
-    dim_payer = coverage_df.select(
-        F.monotonically_increasing_id().alias("payer_key"),
-        F.col("idOrig").alias("payer_id"),
-        # Extract payor name from JSON
-        F.get_json_object(F.col("payor_string"), "$[0].display").alias("payer_name"),
-        # Classify payer type
-        F.when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).contains("medicare"), "Medicare"
-        ).when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).contains("medicaid"), "Medicaid"
-        ).when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).isin(
-                "self-pay", "self pay"
-            ), "Uninsured"
-        ).otherwise("Commercial").alias("payer_type"),
-        F.col("period_start").cast("date").alias("coverage_start"),
-        F.col("period_end").cast("date").alias("coverage_end"),
-        F.get_json_object(F.col("beneficiary_string"), "$.reference").alias("patient_ref"),
-        F.lit(1).alias("is_active"),
-        F.current_timestamp().alias("load_timestamp")
-    ).dropDuplicates(["payer_id"])
-    
-    # payer_category mirrors payer_type as a convenience name for stratified
-    # reporting (Medicare / Medicaid / Commercial / Uninsured / Other).
-    dim_payer = dim_payer.withColumn(
-        "payer_category",
-        F.when(F.col("payer_type").isin("Medicare", "Medicaid", "Commercial", "Uninsured"),
-               F.col("payer_type")).otherwise(F.lit("Other"))
+    eob_for_payers = read_silver("ExplanationOfBenefit")
+
+    # Pull payer name from EOB.insurer.display (always populated by Synthea).
+    # Fall back to EOB.contained[*].Coverage.payor[0].display if needed.
+    payer_name_col = F.coalesce(
+        F.get_json_object(F.col("insurer_string"), "$.display"),
+        F.get_json_object(F.col("contained_string"), "$[?(@.resourceType=='Coverage')].payor[0].display"),
+        F.lit("Unknown")
     )
-    dim_payer.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
-        .saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.dim_payer")
-    print(f"  ✓ dim_payer: {dim_payer.count()} rows (with payer_category)")
+
+    eob_payer = eob_for_payers.select(
+        F.col("idOrig").alias("eob_id"),
+        # HDS flattens FHIR references and stores the resolved UUID under
+        # `<field>.msftSourceReference` (the original `reference` ends up null
+        # because the bundle used urn:uuid: at ingest time).
+        F.col("patient.msftSourceReference").alias("patient_id"),
+        payer_name_col.alias("payer_name"),
+        F.col("billablePeriod_string"),
+        F.col("created")
+    ).withColumn(
+        "period_start",
+        F.coalesce(
+            F.get_json_object(F.col("billablePeriod_string"), "$.start").cast("timestamp"),
+            F.col("created").cast("timestamp")
+        ).cast("date")
+    ).withColumn(
+        "period_end",
+        F.get_json_object(F.col("billablePeriod_string"), "$.end").cast("timestamp").cast("date")
+    ).withColumn(
+        "patient_ref",
+        F.concat(F.lit("Patient/"), F.col("patient_id"))
+    ).filter(F.col("payer_name") != "Unknown")
+
+    # Distinct payers — generate a stable payer_id from the name
+    dim_payer = eob_payer.select("payer_name").distinct() \
+        .withColumn("payer_key", F.monotonically_increasing_id()) \
+        .withColumn("payer_id", F.expr("sha2(payer_name, 256)")) \
+        .withColumn(
+            "payer_type",
+            F.when(F.lower(F.col("payer_name")).contains("medicare"), "Medicare")
+             .when(F.lower(F.col("payer_name")).contains("medicaid"), "Medicaid")
+             .when(F.lower(F.col("payer_name")).rlike("no_insurance|self.?pay|uninsured"), "Uninsured")
+             .otherwise("Commercial")
+        ).withColumn(
+            "payer_category",
+            F.when(F.col("payer_type").isin("Medicare", "Medicaid", "Commercial", "Uninsured"),
+                   F.col("payer_type")).otherwise(F.lit("Other"))
+        ).withColumn("is_active", F.lit(1)) \
+         .withColumn("load_timestamp", F.current_timestamp())
+
+    # Per-patient earliest+latest coverage period (from EOB billablePeriod)
+    patient_period = eob_payer.groupBy("patient_id", "payer_name").agg(
+        F.min("period_start").alias("coverage_start"),
+        F.max("period_end").alias("coverage_end"),
+        F.first("patient_ref", ignorenulls=True).alias("patient_ref")
+    )
+
+    # Combine: one row per (patient, payer) so patient_payer can pick the
+    # latest. dim_payer itself only needs distinct payer names, but the
+    # downstream patient_payer step expects coverage period + patient_ref
+    # columns — keep the schema compatible by joining patient periods back.
+    dim_payer_full = dim_payer.join(patient_period, on="payer_name", how="left")
+
+    dim_payer_full = dim_payer_full.select(
+        "payer_key", "payer_id", "payer_name", "payer_type", "payer_category",
+        "coverage_start", "coverage_end", "patient_ref", "is_active", "load_timestamp"
+    )
+
+    dim_payer_full.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.dim_payer")
+    print(f"  ✓ dim_payer: {dim_payer_full.count()} rows (synthesized from EOB.insurer)")
 except Exception as e:
-    print(f"  ⚠ Coverage table not available yet — creating empty dim_payer: {e}")
+    print(f"  ⚠ EOB-derived dim_payer build failed — creating empty: {e}")
     dim_payer_schema = StructType([
         StructField("payer_key", LongType()), StructField("payer_id", StringType()),
         StructField("payer_name", StringType()), StructField("payer_type", StringType()),
@@ -102,7 +146,7 @@ except Exception as e:
         StructField("load_timestamp", TimestampType())
     ])
     spark.createDataFrame([], dim_payer_schema).write.format("delta").mode("overwrite") \
-        .saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.dim_payer")
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.dim_payer")
 
 
 # ============================================================================
@@ -115,7 +159,7 @@ except Exception as e:
 print("\n--- Step 1b: patient_payer (stratification lookup) ---")
 patient_payer = None
 try:
-    dp = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.dbo.dim_payer")
+    dp = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.dim_payer")
     if dp.count() > 0:
         patient_payer = dp.withColumn(
             "patient_id",
@@ -173,7 +217,7 @@ try:
         F.current_timestamp().alias("load_timestamp")
     ).dropDuplicates(["icd_code"])
     
-    dim_diagnosis.write.format("delta").mode("overwrite").saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.dim_diagnosis")
+    dim_diagnosis.write.format("delta").mode("overwrite").saveAsTable(f"{GOLD_LAKEHOUSE}.dim_diagnosis")
     print(f"  ✓ dim_diagnosis: {dim_diagnosis.count()} rows")
 except Exception as e:
     print(f"  ⚠ Condition table issue: {e}")
@@ -191,14 +235,20 @@ try:
     fact_claim = eob_df.select(
         F.monotonically_increasing_id().alias("claim_key"),
         F.col("idOrig").alias("claim_id"),
-        # Patient reference
-        F.get_json_object(F.col("patient_string"), "$.reference").alias("patient_ref"),
+        # Patient reference — HDS exposes the resolved UUID via patient.msftSourceReference
+        F.col("patient.msftSourceReference").alias("patient_id"),
         # Provider reference
-        F.get_json_object(F.col("provider_string"), "$.reference").alias("provider_ref"),
+        F.col("provider.msftSourceReference").alias("provider_id"),
         # Facility reference
-        F.get_json_object(F.col("facility_string"), "$.reference").alias("facility_ref"),
-        # Insurance/payer reference
-        F.get_json_object(F.col("insurance_string"), "$[0].coverage.reference").alias("coverage_ref"),
+        F.col("facility.msftSourceReference").alias("facility_id"),
+        # Synthea Coverage is an EOB.contained resource (#coverage) so we
+        # cannot resolve a separate Coverage entity — leave coverage_id null.
+        F.lit(None).cast("string").alias("coverage_id"),
+        # Payer name from EOB.insurer (the canonical source for Synthea claims)
+        F.coalesce(
+            F.get_json_object(F.col("insurer_string"), "$.display"),
+            F.lit("Unknown")
+        ).alias("payer_name"),
         # Claim type
         F.coalesce(
             F.get_json_object(F.col("type_string"), "$.coding[0].display"),
@@ -207,10 +257,10 @@ try:
         ).alias("claim_type"),
         # Outcome/status
         F.coalesce(F.col("outcome"), F.lit("complete")).alias("claim_status"),
-        # Service date
+        # Service date — derive from billablePeriod JSON struct or `created`
         F.coalesce(
-            F.col("billablePeriod_start"),
-            F.col("created")
+            F.get_json_object(F.col("billablePeriod_string"), "$.start").cast("timestamp"),
+            F.col("created").cast("timestamp")
         ).cast("date").alias("service_date"),
         # Amounts — extract from total array
         F.coalesce(
@@ -232,7 +282,9 @@ try:
         F.current_timestamp().alias("load_timestamp")
     )
     
-    # Add computed columns
+    # Add computed columns. Use patient_id directly (HDS-resolved UUID)
+    # and synthesise patient_ref / provider_ref / facility_ref strings
+    # for backward compatibility with the report.
     fact_claim = fact_claim.withColumn(
         "patient_responsibility",
         F.col("billed_amount") - F.col("paid_amount")
@@ -240,32 +292,36 @@ try:
         "allowed_amount",
         F.col("billed_amount")  # Synthea doesn't have separate allowed; use billed
     ).withColumn(
-        # Strip "Patient/" / "Coverage/" prefixes for downstream joins
-        "patient_id",
-        F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
+        "patient_ref",
+        F.when(F.col("patient_id").isNotNull(),
+               F.concat(F.lit("Patient/"), F.col("patient_id"))).otherwise(F.lit(None).cast("string"))
     ).withColumn(
-        "coverage_id",
-        F.regexp_extract(F.col("coverage_ref"), r"Coverage/(.*)", 1)
+        "provider_ref",
+        F.when(F.col("provider_id").isNotNull(),
+               F.concat(F.lit("Practitioner/"), F.col("provider_id"))).otherwise(F.lit(None).cast("string"))
+    ).withColumn(
+        "facility_ref",
+        F.when(F.col("facility_id").isNotNull(),
+               F.concat(F.lit("Location/"), F.col("facility_id"))).otherwise(F.lit(None).cast("string"))
+    ).withColumn(
+        "coverage_ref",
+        F.lit(None).cast("string")
     )
 
-    # Stratify each claim by payer_category. Prefer the Coverage referenced by
-    # the EOB itself; fall back to the patient's primary Coverage; default to
-    # "Unknown" when no Coverage data is available.
-    if patient_payer is not None:
-        dp_lookup = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.dbo.dim_payer") \
-            .select(F.col("payer_id").alias("coverage_id"),
-                    F.col("payer_category").alias("claim_payer_category"))
-        fact_claim = fact_claim.join(dp_lookup, "coverage_id", "left") \
-            .join(patient_payer.select("patient_id", "payer_category"), "patient_id", "left") \
-            .withColumn(
-                "payer_category",
-                F.coalesce(F.col("claim_payer_category"), F.col("payer_category"), F.lit("Unknown"))
-            ).drop("claim_payer_category")
-    else:
-        fact_claim = fact_claim.withColumn("payer_category", F.lit("Unknown"))
+    # Stratify each claim by payer_category. Synthea EOB has insurer.display
+    # that we already extracted as `payer_name` — map that directly to a
+    # category. Falls back to patient_payer lookup if name didn't resolve.
+    fact_claim = fact_claim.withColumn(
+        "payer_category",
+        F.when(F.lower(F.col("payer_name")).contains("medicare"), "Medicare")
+         .when(F.lower(F.col("payer_name")).contains("medicaid"), "Medicaid")
+         .when(F.lower(F.col("payer_name")).rlike("no_insurance|self.?pay|uninsured"), "Uninsured")
+         .when(F.col("payer_name") != "Unknown", "Commercial")
+         .otherwise(F.lit("Unknown"))
+    )
 
     fact_claim.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
-        .saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.fact_claim")
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.fact_claim")
     print(f"  ✓ fact_claim: {fact_claim.count()} rows (with payer_category)")
 except Exception as e:
     print(f"  ⚠ ExplanationOfBenefit not available yet: {e}")
@@ -285,7 +341,7 @@ try:
         F.monotonically_increasing_id().alias("fact_diagnosis_key"),
         F.col("idOrig").alias("diagnosis_id"),
         # Patient
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         # Encounter
         F.get_json_object(F.col("encounter_string"), "$.reference").alias("encounter_ref"),
         # Diagnosis code
@@ -307,7 +363,7 @@ try:
         F.current_timestamp().alias("load_timestamp")
     )
     
-    fact_diagnosis.write.format("delta").mode("overwrite").saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.fact_diagnosis")
+    fact_diagnosis.write.format("delta").mode("overwrite").saveAsTable(f"{GOLD_LAKEHOUSE}.fact_diagnosis")
     print(f"  ✓ fact_diagnosis: {fact_diagnosis.count()} rows")
 except Exception as e:
     print(f"  ⚠ fact_diagnosis issue: {e}")
@@ -337,29 +393,31 @@ try:
     
     # Parse conditions per patient (SNOMED codes)
     patient_conditions = condition_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("condition_code"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("condition_display"),
         F.get_json_object(F.col("clinicalStatus_string"), "$.coding[0].code").alias("clinical_status")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1))
+    )
     
     # Parse observations (LOINC codes for labs/vitals)
+    # Note: silver schema stores valueQuantity as struct + valueQuantity_string
+    # (JSON). We use valueQuantity_string for portable JSON-path extraction.
     patient_obs = observation_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("loinc_code"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("obs_name"),
-        F.col("valueQuantity_value").cast("double").alias("value"),
-        F.col("valueQuantity_unit").alias("unit"),
+        F.get_json_object(F.col("valueQuantity_string"), "$.value").cast("double").alias("value"),
+        F.get_json_object(F.col("valueQuantity_string"), "$.unit").alias("unit"),
         F.col("effectiveDateTime").cast("date").alias("obs_date")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1))
+    )
     
     # Parse immunizations
     patient_imm = immunization_df.select(
-        F.get_json_object(F.col("patient_string"), "$.reference").alias("patient_ref"),
+        F.col("patient.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("vaccineCode_string"), "$.coding[0].code").alias("vaccine_code"),
         F.get_json_object(F.col("vaccineCode_string"), "$.coding[0].display").alias("vaccine_name"),
         F.col("occurrenceDateTime").cast("date").alias("imm_date")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1))
+    )
     
     # ---- CMS122: Diabetes HbA1c Poor Control ----
     # Denominator: Patients 18-75 with diabetes + qualifying encounter
@@ -522,9 +580,9 @@ try:
     
     # ACE/ARB medications (check for common drug names in medication text)
     acei_arb_patients = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)).filter(
+    ).filter(
         F.lower(F.col("med_name")).rlike("lisinopril|enalapril|ramipril|losartan|valsartan|irbesartan|olmesartan|candesartan|benazepril|captopril|fosinopril|quinapril|trandolapril|perindopril|eprosartan|telmisartan|azilsartan")
     ).select("patient_id").distinct()
     
@@ -556,9 +614,9 @@ try:
     ).select("patient_id")
     
     bb_patients = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)).filter(
+    ).filter(
         F.lower(F.col("med_name")).rlike("metoprolol|carvedilol|bisoprolol|atenolol|propranolol|nebivolol|nadolol|labetalol")
     ).select("patient_id").distinct()
     
@@ -595,7 +653,7 @@ try:
         all_measures = all_measures.withColumn("payer_category", F.lit("Unknown"))
 
     all_measures.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
-        .saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.agg_quality_measures")
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.agg_quality_measures")
     print(f"  ✓ agg_quality_measures: {all_measures.count()} rows across 7 measures (with payer_category)")
 
     # ---- Build agg_quality_summary ----
@@ -621,7 +679,7 @@ try:
     ).withColumn("load_timestamp", F.current_timestamp())
 
     agg_summary.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
-        .saveAsTable(f"{GOLD_LAKEHOUSE}.dbo.agg_quality_summary")
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.agg_quality_summary")
     print(f"  ✓ agg_quality_summary: {agg_summary.count()} rows (per measure × payer_category)")
     
 except Exception as e:
@@ -641,12 +699,12 @@ try:
     
     # Parse medications with dates
     med_parsed = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        F.col("subject.msftSourceReference").alias("patient_id"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].code").alias("med_code"),
         F.col("authoredOn").cast("date").alias("authored_date"),
         F.col("status")
-    ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1))
+    )
     
     # Classify into HEDIS adherence drug classes
     med_classified = med_parsed.withColumn(
@@ -688,7 +746,7 @@ try:
     ).withColumn("load_timestamp", F.current_timestamp())
     
     med_adherence.write.format("delta").mode("overwrite").saveAsTable(
-        f"{GOLD_LAKEHOUSE}.dbo.agg_medication_adherence"
+        f"{GOLD_LAKEHOUSE}.agg_medication_adherence"
     )
     print(f"  ✓ agg_medication_adherence: {med_adherence.count()} rows")
     
@@ -703,7 +761,7 @@ except Exception as e:
 print("\n--- Step 7: Care Gaps ---")
 
 try:
-    quality_df = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.dbo.agg_quality_measures")
+    quality_df = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.agg_quality_measures")
     
     # Care gaps = patients in denominator but NOT meeting quality
     care_gaps = quality_df.filter(
@@ -727,7 +785,7 @@ try:
     )
     
     care_gaps.write.format("delta").mode("overwrite").saveAsTable(
-        f"{GOLD_LAKEHOUSE}.dbo.care_gaps"
+        f"{GOLD_LAKEHOUSE}.care_gaps"
     )
     print(f"  ✓ care_gaps: {care_gaps.count()} rows")
     
@@ -751,7 +809,7 @@ tables = [
 
 for t in tables:
     try:
-        count = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.dbo.{t}").count()
+        count = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.{t}").count()
         print(f"  {t}: {count:,} rows")
     except:
         print(f"  {t}: not yet created (needs Synthea re-run with claims)")

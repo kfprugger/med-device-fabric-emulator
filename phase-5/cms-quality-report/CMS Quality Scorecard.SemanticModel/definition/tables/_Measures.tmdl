@@ -4,11 +4,10 @@ table _Measures
 
 	measure 'Quality Rate' =
 		DIVIDE(
-			COUNTROWS(FILTER(agg_quality_measures, [quality_met] = TRUE())),
-			COUNTROWS(FILTER(agg_quality_measures, [in_denominator] = TRUE())),
+			CALCULATE(COUNTROWS(agg_quality_measures), agg_quality_measures[quality_met] = TRUE()),
+			CALCULATE(COUNTROWS(agg_quality_measures), agg_quality_measures[in_denominator] = TRUE()),
 			0
 		)
-		formatString: 0.0%
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999991
 
 	measure 'Measures Met' =
@@ -29,134 +28,109 @@ table _Measures
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999994
 
 	measure 'Open Care Gaps' =
-		COUNTROWS(FILTER(care_gaps, [gap_status] = "open"))
+		CALCULATE(COUNTROWS(care_gaps), care_gaps[gap_status] = "open")
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999995
 
 	measure 'Total Billed' =
 		SUM(fact_claim[billed_amount])
-		formatString: \$#,0
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999996
 
 	measure 'Total Paid' =
 		SUM(fact_claim[paid_amount])
-		formatString: \$#,0
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999997
 
 	measure 'Collection Rate' =
 		DIVIDE(SUM(fact_claim[paid_amount]), SUM(fact_claim[billed_amount]), 0)
-		formatString: 0.0%
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999998
 
 	measure 'Denial Rate' =
 		DIVIDE(
-			COUNTROWS(FILTER(fact_claim, [denial_flag] = 1)),
+			CALCULATE(COUNTROWS(fact_claim), fact_claim[denial_flag] = 1),
 			COUNTROWS(fact_claim),
 			0
 		)
-		formatString: 0.0%
 		lineageTag: 99999999-aaaa-bbbb-cccc-999999999999
 
 	measure 'Avg PDC Score' =
 		AVERAGE(agg_medication_adherence[pdc_score])
-		formatString: 0.0%
 		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999a
 
 	measure 'Non-Adherent Patients' =
-		COUNTROWS(FILTER(agg_medication_adherence, [adherence_category] = "Non-Adherent"))
+		CALCULATE(COUNTROWS(agg_medication_adherence), agg_medication_adherence[adherence_category] = "Non-Adherent")
 		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999b
 
 	measure 'Avg Claim Amount' =
 		AVERAGE(fact_claim[billed_amount])
-		formatString: \$#,0.00
 		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999c
 
 	measure 'Revenue Leakage' =
 		SUM(fact_claim[billed_amount]) - SUM(fact_claim[paid_amount])
-		formatString: \$#,0
 		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999d
 
 	measure 'Total Claims' =
 		COUNTROWS(fact_claim)
-		formatString: #,0
 		lineageTag: 99999999-aaaa-bbbb-cccc-99999999999e
-        // ── Payer-stratified measures ────────────────────────────────────────
-        // Wrap the base measures in CALCULATE() with a payer_category filter
-        // so visuals can compare Medicare vs Medicaid vs Commercial rates
-        // without needing a slicer.
 
-        measure 'Quality Rate (Medicare)' =
-                CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Medicare")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a1
+	measure 'Quality Rate (Medicare)' =
+		CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Medicare")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a1
 
-        measure 'Quality Rate (Medicaid)' =
-                CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Medicaid")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a2
+	measure 'Quality Rate (Medicaid)' =
+		CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Medicaid")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a2
 
-        measure 'Quality Rate (Commercial)' =
-                CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Commercial")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a3
+	measure 'Quality Rate (Commercial)' =
+		CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Commercial")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a3
 
-        measure 'Quality Rate (Uninsured)' =
-                CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Uninsured")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a4
+	measure 'Quality Rate (Uninsured)' =
+		CALCULATE([Quality Rate], agg_quality_measures[payer_category] = "Uninsured")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a4
 
-        measure 'Collection Rate (Medicare)' =
-                CALCULATE([Collection Rate], fact_claim[payer_category] = "Medicare")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a5
+	measure 'Collection Rate (Medicare)' =
+		CALCULATE([Collection Rate], fact_claim[payer_category] = "Medicare")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a5
 
-        measure 'Collection Rate (Medicaid)' =
-                CALCULATE([Collection Rate], fact_claim[payer_category] = "Medicaid")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a6
+	measure 'Collection Rate (Medicaid)' =
+		CALCULATE([Collection Rate], fact_claim[payer_category] = "Medicaid")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a6
 
-        measure 'Collection Rate (Commercial)' =
-                CALCULATE([Collection Rate], fact_claim[payer_category] = "Commercial")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a7
+	measure 'Collection Rate (Commercial)' =
+		CALCULATE([Collection Rate], fact_claim[payer_category] = "Commercial")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a7
 
-        measure 'Denial Rate (Medicare)' =
-                CALCULATE([Denial Rate], fact_claim[payer_category] = "Medicare")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a8
+	measure 'Denial Rate (Medicare)' =
+		CALCULATE([Denial Rate], fact_claim[payer_category] = "Medicare")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a8
 
-        measure 'Denial Rate (Medicaid)' =
-                CALCULATE([Denial Rate], fact_claim[payer_category] = "Medicaid")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a9
+	measure 'Denial Rate (Medicaid)' =
+		CALCULATE([Denial Rate], fact_claim[payer_category] = "Medicaid")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999a9
 
-        measure 'Denial Rate (Commercial)' =
-                CALCULATE([Denial Rate], fact_claim[payer_category] = "Commercial")
-                formatString: 0.0%
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999aa
+	measure 'Denial Rate (Commercial)' =
+		CALCULATE([Denial Rate], fact_claim[payer_category] = "Commercial")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999aa
 
-        measure 'Total Paid (Medicare)' =
-                CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Medicare")
-                formatString: \$#,0
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ab
+	measure 'Total Paid (Medicare)' =
+		CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Medicare")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ab
 
-        measure 'Total Paid (Medicaid)' =
-                CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Medicaid")
-                formatString: \$#,0
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ac
+	measure 'Total Paid (Medicaid)' =
+		CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Medicaid")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ac
 
-        measure 'Total Paid (Commercial)' =
-                CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Commercial")
-                formatString: \$#,0
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ad
+	measure 'Total Paid (Commercial)' =
+		CALCULATE(SUM(fact_claim[paid_amount]), fact_claim[payer_category] = "Commercial")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ad
 
-        measure 'Patients Measured (Medicare)' =
-                CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Medicare")
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ae
+	measure 'Patients Measured (Medicare)' =
+		CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Medicare")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999ae
 
-        measure 'Patients Measured (Medicaid)' =
-                CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Medicaid")
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999af
+	measure 'Patients Measured (Medicaid)' =
+		CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Medicaid")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999af
 
-        measure 'Patients Measured (Commercial)' =
-                CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Commercial")
-                lineageTag: 99999999-aaaa-bbbb-cccc-9999999999b0
+	measure 'Patients Measured (Commercial)' =
+		CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Commercial")
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999b0

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "chart_gaps_by_measure",
+  "position": {
+    "tabOrder": 2000,
+    "x": 10,
+    "y": 160,
+    "width": 570,
+    "height": 530,
+    "z": 2000
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "queryRef": "care_gaps.measure_id",
+              "field": {
+                "Column": {
+                  "Property": "measure_id",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "care_gaps"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "measure_id"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Open Care Gaps",
+              "field": {
+                "Measure": {
+                  "Property": "Open Care Gaps",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Open Care Gaps"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "barChart",
+    "drillFilterOtherVisuals": true
+  }
+}

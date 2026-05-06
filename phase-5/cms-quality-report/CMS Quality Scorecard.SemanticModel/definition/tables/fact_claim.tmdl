@@ -53,35 +53,30 @@ table fact_claim
 
 	column service_date
 		dataType: dateTime
-		formatString: Short Date
 		lineageTag: 33333333-aaaa-bbbb-cccc-333333333338
 		sourceColumn: service_date
 		summarizeBy: none
 
 	column billed_amount
 		dataType: double
-		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: 33333333-aaaa-bbbb-cccc-333333333339
 		sourceColumn: billed_amount
 		summarizeBy: sum
 
 	column paid_amount
 		dataType: double
-		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333a
 		sourceColumn: paid_amount
 		summarizeBy: sum
 
 	column allowed_amount
 		dataType: double
-		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333b
 		sourceColumn: allowed_amount
 		summarizeBy: sum
 
 	column patient_responsibility
 		dataType: double
-		formatString: \$#,0.00;(\$#,0.00);\$#,0.00
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333c
 		sourceColumn: patient_responsibility
 		summarizeBy: sum
@@ -91,10 +86,10 @@ table fact_claim
 		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333d
 		sourceColumn: denial_flag
 		summarizeBy: sum
-        /// Denormalised payer bucket for slicing claims by
-        /// Medicare / Medicaid / Commercial / Uninsured / Other.
-        column payer_category
-                dataType: string
-                lineageTag: 33333333-aaaa-bbbb-cccc-33333333333e
-                sourceColumn: payer_category
-                summarizeBy: none
+	/// Denormalised payer bucket for slicing claims by
+	/// Medicare / Medicaid / Commercial / Uninsured / Other.
+	column payer_category
+		dataType: string
+		lineageTag: 33333333-aaaa-bbbb-cccc-33333333333e
+		sourceColumn: payer_category
+		summarizeBy: none

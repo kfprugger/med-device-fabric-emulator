@@ -1,0 +1,70 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "chart_denial_rate",
+  "position": {
+    "tabOrder": 2100,
+    "x": 590,
+    "y": 160,
+    "width": 570,
+    "height": 530,
+    "z": 2100
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "queryRef": "fact_claim.claim_type",
+              "field": {
+                "Column": {
+                  "Property": "claim_type",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_claim"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "claim_type"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Denial Rate",
+              "field": {
+                "Measure": {
+                  "Property": "Denial Rate",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Denial Rate"
+            },
+            {
+              "queryRef": "_Measures.Collection Rate",
+              "field": {
+                "Measure": {
+                  "Property": "Collection Rate",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Collection Rate"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "columnChart",
+    "drillFilterOtherVisuals": true
+  }
+}

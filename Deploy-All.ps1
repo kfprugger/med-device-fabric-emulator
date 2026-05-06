@@ -2234,135 +2234,40 @@ if (-not $SkipQualityMeasures) {
     Invoke-Step -StepName "Phase 5: CMS Quality Measures" `
         -Description "Claims materialization, quality measures, Power BI report" -Action {
 
-        function Get-FabricTokenLocal {
-            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
-            if ($t -is [System.Security.SecureString]) {
-                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
-                try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-            }
-            return $t
+        # Phase 5 has its own standalone deployer for cleanliness and so it
+        # can be re-run independently. It handles:
+        #   - Notebook creation/update with Lakehouse attachment + LRO
+        #   - Notebook execution + polling
+        #   - Semantic Model + Report PBIP publish (with SQL endpoint patching)
+        #   - Take-ownership + auto-bind credentials + trigger refresh
+        $phase5Script = Join-Path $ScriptDir "phase-5\Deploy-CmsQualityReport.ps1"
+        if (-not (Test-Path $phase5Script)) {
+            throw "Phase 5 deployer not found at: $phase5Script"
         }
 
-        $p5Token = Get-FabricTokenLocal
-        $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-        $p5Base = "https://api.fabric.microsoft.com/v1"
-
-        # Resolve workspace
-        $p5Ws = (Invoke-RestMethod -Uri "$p5Base/workspaces" -Headers $p5Headers).value |
-            Where-Object { $_.displayName -eq $FabricWorkspaceName }
-        if (-not $p5Ws) { throw "Workspace '$FabricWorkspaceName' not found" }
-        $p5WsId = $p5Ws.id
-        Write-Host "  Workspace: $FabricWorkspaceName ($p5WsId)" -ForegroundColor Green
-
-        # ── Step 10a: Upload and run materialization notebook ──
-        Write-Host ""
-        Write-Host "  --- Step 10a: Claims & Quality Materialization ---" -ForegroundColor Cyan
-
-        $qualityNotebookPath = Join-Path $ScriptDir "phase-5\materialize_claims_quality.py"
-        if (Test-Path $qualityNotebookPath) {
-            $pyContent = Get-Content $qualityNotebookPath -Raw
-
-            # Build a minimal ipynb from the Python source
-            $cellSource = ($pyContent -split "`n") | ForEach-Object { "$_`n" }
-            $ipynbJson = @{
-                nbformat = 4; nbformat_minor = 5
-                metadata = @{
-                    language_info = @{ name = "python" }
-                    kernel_info = @{ name = "synapse_pyspark" }
-                    "microsoft.fabric" = @{
-                        lakehouse = @{ known_lakehouses = @() }
-                    }
-                }
-                cells = @(
-                    @{
-                        cell_type = "code"; source = $cellSource
-                        metadata = @{}; outputs = @(); execution_count = $null
-                    }
-                )
-            } | ConvertTo-Json -Depth 10
-
-            $ipynbB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ipynbJson))
-
-            # Create or update the notebook in Fabric
-            $nbName = "NB_Materialize_Claims_Quality"
-            $p5Token = Get-FabricTokenLocal
-            $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-            $existingNbs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items?type=Notebook" -Headers $p5Headers).value
-            $existingNb = $existingNbs | Where-Object { $_.displayName -eq $nbName } | Select-Object -First 1
-
-            if ($existingNb) {
-                Write-Host "  Notebook '$nbName' exists — updating definition..." -ForegroundColor White
-                $updateBody = @{
-                    definition = @{
-                        format = "ipynb"
-                        parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
-                    }
-                } | ConvertTo-Json -Depth 10
-                Invoke-WebRequest -Method POST -Uri "$p5Base/workspaces/$p5WsId/items/$($existingNb.id)/updateDefinition" `
-                    -Headers $p5Headers -Body $updateBody -UseBasicParsing | Out-Null
-                $nbId = $existingNb.id
-            } else {
-                Write-Host "  Creating notebook '$nbName'..." -ForegroundColor White
-                $createBody = @{
-                    displayName = $nbName
-                    type = "Notebook"
-                    definition = @{
-                        format = "ipynb"
-                        parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
-                    }
-                } | ConvertTo-Json -Depth 10
-                $createResp = Invoke-RestMethod -Method POST -Uri "$p5Base/workspaces/$p5WsId/items" `
-                    -Headers $p5Headers -Body $createBody
-                $nbId = $createResp.id
-            }
-            Write-Host "  ✓ Notebook: $nbName ($nbId)" -ForegroundColor Green
-
-            # Run the notebook
-            Write-Host "  Running materialization notebook..." -ForegroundColor White
-            try {
-                $p5Token = Get-FabricTokenLocal
-                $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                Invoke-WebRequest -Method POST `
-                    -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/RunNotebook/instances?jobType=RunNotebook" `
-                    -Headers $p5Headers -Body '{}' -UseBasicParsing | Out-Null
-                Write-Host "  ✓ Notebook invoked — waiting for completion..." -ForegroundColor Green
-
-                $nbStart = Get-Date
-                while ((New-TimeSpan -Start $nbStart).TotalMinutes -lt 20) {
-                    Start-Sleep 20
-                    $p5Token = Get-FabricTokenLocal
-                    $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                    $nbJobs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/instances?limit=1" -Headers $p5Headers).value
-                    $nbElapsed = [math]::Round((New-TimeSpan -Start $nbStart).TotalMinutes, 1)
-                    if ($nbJobs -and $nbJobs[0].status -eq 'Completed') {
-                        Write-Host "  ✓ Materialization complete ($nbElapsed min)" -ForegroundColor Green
-                        break
-                    } elseif ($nbJobs -and $nbJobs[0].status -in @('Failed', 'Cancelled')) {
-                        Write-Host "  ⚠ Notebook $($nbJobs[0].status) after $nbElapsed min" -ForegroundColor Yellow
-                        break
-                    }
-                    Write-Host "    [$nbElapsed min] Status: $($nbJobs[0].status)" -ForegroundColor DarkGray
-                }
-            } catch {
-                Write-Host "  ⚠ Could not run notebook: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "  ⚠ Notebook source not found at: $qualityNotebookPath" -ForegroundColor Yellow
+        $p5Args = @{
+            FabricWorkspaceName = $FabricWorkspaceName
+            ReportSourcePath    = (Join-Path $ScriptDir "phase-5")
         }
 
-        # ── Step 10b: Deploy CMS Quality Scorecard report ──
-        Write-Host ""
-        Write-Host "  --- Step 10b: CMS Quality Scorecard Report ---" -ForegroundColor Cyan
-
-        $reportDir = Join-Path $ScriptDir "phase-5\cms-quality-report"
-        if (Test-Path $reportDir) {
-            Write-Host "  Report definition found at: $reportDir" -ForegroundColor White
-            Write-Host "  ✓ CMS Quality Scorecard report artifacts staged for deployment" -ForegroundColor Green
-            Write-Host "    (6 pages: Quality Overview, Measure Deep-Dive, Claims Analytics," -ForegroundColor DarkGray
-            Write-Host "     Medication Adherence, Care Gap Closure, Payer Performance)" -ForegroundColor DarkGray
-        } else {
-            Write-Host "  ⚠ Report directory not found at: $reportDir" -ForegroundColor Yellow
+        try {
+            $p5Result = & $phase5Script @p5Args
+            # Last line of stdout is the JSON summary
+            if ($p5Result) {
+                $p5Last = ($p5Result | Where-Object { $_ -match '^{.*"ReportUrl"' } | Select-Object -Last 1)
+                if ($p5Last) {
+                    try {
+                        $p5Json = $p5Last | ConvertFrom-Json
+                        if ($p5Json.ReportUrl) {
+                            Write-Host "  Report URL: $($p5Json.ReportUrl)" -ForegroundColor Cyan
+                        }
+                    } catch {}
+                }
+            }
+        } catch {
+            Write-Host "  ⚠ Phase 5 failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            try { Write-Host "    $($_.ErrorDetails.Message)" -ForegroundColor DarkRed } catch {}
+            throw
         }
 
         Write-Host ""

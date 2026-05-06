@@ -1,0 +1,56 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "chart_quality_by_year",
+  "position": {
+    "tabOrder": 2100,
+    "x": 600,
+    "y": 160,
+    "width": 560,
+    "height": 530,
+    "z": 2100
+  },
+  "visual": {
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "queryRef": "agg_quality_summary.measurement_year",
+              "field": {
+                "Column": {
+                  "Property": "measurement_year",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "agg_quality_summary"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "measurement_year"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "queryRef": "_Measures.Quality Rate",
+              "field": {
+                "Measure": {
+                  "Property": "Quality Rate",
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Measures"
+                    }
+                  }
+                }
+              },
+              "nativeQueryRef": "Quality Rate"
+            }
+          ]
+        }
+      }
+    },
+    "visualType": "columnChart",
+    "drillFilterOtherVisuals": true
+  }
+}
