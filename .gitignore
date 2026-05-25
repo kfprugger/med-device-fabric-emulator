@@ -5,6 +5,7 @@ state-tracking/
 .orchestrator-state.json.bak
 
 # Debug / log artifacts
+.pi-run/
 deploy-log*.txt
 schema-dump.txt
 _dicom_logs.txt

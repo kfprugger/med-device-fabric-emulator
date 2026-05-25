@@ -1,24 +1,12 @@
-# Phase 3 — Imaging Report & Cohorting
+# Stage 3 — Multimodal Cohorting & Imaging
 
-Phase 3 deploys the clinical imaging layer: a DICOM Viewer (OHIF), a Cohorting Data Agent for querying OMOP CDM tables via natural language, a materialization notebook that builds reporting tables, and a Power BI Direct Lake report — all from the companion [FabricDicomCohortingToolkit](../../FabricDicomCohortingToolkit/) repo.
-
-**Prerequisite:** [Phase 2](phase-2-hds-enrichment-and-agents.md) complete + Gold OMOP pipeline finished (Gold Lakehouse populated).
-
-**Typical duration:** ~4 minutes · **Step:** 7
+⏱️ **Typical Duration:** ~10 minutes | 🛠️ **Fabric Workloads:** Healthcare Data Solutions, Power BI, Data Agents | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
 ---
 
-## Prerequisites
-
-> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
-
-| Requirement | Detail |
-|-------------|--------|
-| Phase 2 complete | KQL shortcuts, enriched alerts, Data Agents deployed |
-| Gold OMOP pipeline finished | Gold Lakehouse populated with CDM v5.4 tables |
-| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+, Git (`setup-prereqs.ps1`) |
-| Logged in to Azure | `az login` |
-| FabricDicomCohortingToolkit cloned | Companion repo at `-DicomToolkitPath` (default: `C:\git\FabricDicomCohortingToolkit`) |
+> [!NOTE]
+> **Deployment Prerequisites:**
+> Before running this phase, ensure Stage 2 is complete, the companion `FabricDicomCohortingToolkit` repo is cloned locally, and the Gold OMOP Lakehouse tables are populated. Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
 
 ---
 
@@ -221,4 +209,20 @@ FabricDicomCohortingToolkit/
 
 ---
 
-**Previous:** [← Phase 2 — HDS Enrichment & Data Agents](phase-2-hds-enrichment-and-agents.md) · **Next:** [Phase 4 — Ontology & Activator →](phase-4-ontology-and-activator.md) · **Overview:** [← README](../README.md)
+### 🏁 Stage 3 Success Verification Checklist
+
+Ensure all of the following components are verified before moving on to Stage 4:
+
+> [!IMPORTANT]
+> **Stage 3 Verification Checkpoints:**
+> - [ ] **Cohorting Agent Deployed:** The HDS Multi-Layer Imaging Cohort Agent is successfully active in your Fabric workspace.
+> - [ ] **OHIF Static Web App Active:** The Azure Static Web App has deployed cleanly and its landing URL is active.
+> - [ ] **DICOMweb Proxy App Active:** The Container App hosting the proxy is running. Verify its Managed Identity has `Contributor` workspace access in Fabric.
+> - [ ] **Reporting Tables Materialized:** The `materialize_reporting.py` Spark notebook ran successfully and populated tables inside the `healthcare1_reporting_gold` lakehouse.
+> - [ ] **Power BI Direct Lake Active:** The Power BI Imaging Report has loaded into your workspace and leverages Direct Lake connections (no import queries).
+> - [ ] **DICOM Deep Linking:** Open the Power BI Imaging Report and click on a patient's study link. Verify it redirects to the OHIF Viewer and successfully fetches/renders the chest CT DICOM slices via the proxy.
+> - [ ] **Index Verification:** Send a `/health` HTTP request to the Container App proxy to verify that indexed studies count is greater than zero.
+
+---
+
+**Previous:** [← Stage 2 — Active Patient Telemetry](phase-2-hds-enrichment-and-agents.md) · **Next:** [Stage 4 & 5 — Connected Semantic Intelligence & Bedside Alerting →](phase-4-ontology-and-activator.md) · **Overview:** [← README](../README.md)

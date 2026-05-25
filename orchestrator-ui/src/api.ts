@@ -4,24 +4,109 @@
 
 const API_BASE = "/api";
 
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit = {},
-  timeoutMs = 15000
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+  retry?: number;
+  retryDelayMs?: number;
+}
 
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function parseResponseBody(resp: Response): Promise<unknown> {
+  const text = await resp.text();
+  if (!text) return null;
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
     }
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
   }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function errorMessageFromBody(body: unknown, fallback: string) {
+  if (!body) return fallback;
+  if (typeof body === "string") return body.slice(0, 500) || fallback;
+  if (typeof body === "object") {
+    const record = body as Record<string, unknown>;
+    const issues = Array.isArray(record.issues) ? record.issues.map(String) : [];
+    const detail = record.detail;
+    const detailMessages = Array.isArray(detail)
+      ? detail
+          .map((entry) => {
+            const value = entry as { loc?: unknown[]; msg?: string };
+            const path = Array.isArray(value?.loc) ? value.loc.slice(1).join(".") : "";
+            return path ? `${path}: ${value?.msg ?? "Invalid value"}` : value?.msg ?? "Invalid request";
+          })
+          .filter(Boolean)
+      : typeof detail === "string"
+        ? [detail]
+        : [];
+    const message = record.error || record.message || record.title;
+    return [typeof message === "string" ? message : fallback, ...issues, ...detailMessages]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return fallback;
+}
+
+export async function requestJson<T>(
+  input: string,
+  { timeoutMs = 15000, retry = 0, retryDelayMs = 500, signal, ...init }: ApiRequestOptions = {}
+): Promise<T> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt <= retry) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    try {
+      const resp = await fetch(input, { ...init, signal: controller.signal });
+      const body = await parseResponseBody(resp);
+      if (!resp.ok) {
+        throw new Error(errorMessageFromBody(body, `Request failed (${resp.status})`));
+      }
+      return body as T;
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = attempt < retry && !isAbortError(error) && (!signal || !signal.aborted);
+      if (!shouldRetry) {
+        if (isAbortError(error)) {
+          throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+        }
+        throw error;
+      }
+      await sleep(retryDelayMs * Math.pow(2, attempt));
+      attempt += 1;
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Request failed");
+}
+
+export async function requestVoid(input: string, options: ApiRequestOptions = {}): Promise<void> {
+  await requestJson<unknown>(input, options);
 }
 
 export interface DeploymentConfig {
@@ -41,7 +126,6 @@ export interface DeploymentConfig {
   capacity_name: string;
   pause_capacity_after_deploy: boolean;
   reuse_patients: boolean;
-  // ── Granular component toggles ──
   skip_synthea: boolean;
   skip_device_assoc: boolean;
   skip_fhir_export: boolean;
@@ -71,6 +155,9 @@ export interface DeploymentStatus {
     resources: Record<string, string>;
     workspaceName?: string;
     resourceGroupName?: string;
+    runType?: string;
+    logs?: Array<{ timestamp: string; level: string; message: string; phase?: number }>;
+    durationSeconds?: number;
   } | null;
   createdTime: string | null;
   lastUpdatedTime: string | null;
@@ -113,62 +200,49 @@ export interface AuthContext {
   issues: string[];
 }
 
+export interface Subscription {
+  id: string;
+  name: string;
+}
+
 export async function startDeployment(
   config: DeploymentConfig
 ): Promise<{ instanceId: string; statusUrl: string }> {
-  const resp = await fetch(`${API_BASE}/deploy/start`, {
+  return requestJson(`${API_BASE}/deploy/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
+    timeoutMs: 30000,
   });
-  if (!resp.ok) {
-    const err = await resp.json();
-    const issues = Array.isArray(err.issues) ? err.issues : [];
-    const detail = err.detail;
-    const detailMessages = Array.isArray(detail)
-      ? detail
-          .map((entry: { loc?: unknown[]; msg?: string }) => {
-            const path = Array.isArray(entry?.loc) ? entry.loc.slice(1).join(".") : "";
-            return path ? `${path}: ${entry?.msg ?? "Invalid value"}` : entry?.msg ?? "Invalid request";
-          })
-          .filter(Boolean)
-      : typeof detail === "string"
-        ? [detail]
-        : [];
-    const messageParts = [err.error || "Failed to start deployment", ...issues, ...detailMessages].filter(Boolean);
-    throw new Error(messageParts.join(" "));
-  }
-  return resp.json();
 }
 
-export async function getAuthContext(): Promise<AuthContext> {
-  const resp = await fetchWithTimeout(`${API_BASE}/auth/context`, {}, 8000);
-  if (!resp.ok) {
-    throw new Error("Failed to get auth context");
-  }
-  return resp.json();
+export async function getAuthContext(force = false): Promise<AuthContext> {
+  return requestJson(`${API_BASE}/auth/context${force ? "?force=1" : ""}`, { timeoutMs: 8000, retry: 1 });
 }
 
 export async function getDeploymentStatus(
-  instanceId: string
+  instanceId: string,
+  signal?: AbortSignal
 ): Promise<DeploymentStatus> {
-  const resp = await fetch(`${API_BASE}/deploy/${instanceId}/status`);
-  if (!resp.ok) throw new Error("Failed to get status");
-  return resp.json();
+  return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/status`, {
+    timeoutMs: 12000,
+    retry: 1,
+    signal,
+  });
 }
 
 export async function resumeAfterHds(instanceId: string): Promise<void> {
-  const resp = await fetch(`${API_BASE}/deploy/${instanceId}/resume-hds`, {
+  return requestVoid(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/resume-hds`, {
     method: "POST",
+    timeoutMs: 15000,
   });
-  if (!resp.ok) throw new Error("Failed to resume");
 }
 
 export async function cancelDeployment(instanceId: string): Promise<void> {
-  const resp = await fetch(`${API_BASE}/deploy/${instanceId}/cancel`, {
+  return requestVoid(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/cancel`, {
     method: "POST",
+    timeoutMs: 15000,
   });
-  if (!resp.ok) throw new Error("Failed to cancel");
 }
 
 export async function startTeardown(config: {
@@ -177,26 +251,23 @@ export async function startTeardown(config: {
   delete_workspace: boolean;
   delete_azure_rg: boolean;
 }): Promise<{ instanceId: string }> {
-  const resp = await fetch(`${API_BASE}/teardown/start`, {
+  return requestJson(`${API_BASE}/teardown/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
+    timeoutMs: 30000,
   });
-  if (!resp.ok) throw new Error("Failed to start teardown");
-  return resp.json();
 }
 
-export async function listDeployments(): Promise<DeploymentSummary[]> {
-  const resp = await fetch(`${API_BASE}/deployments`);
-  if (!resp.ok) throw new Error("Failed to list deployments");
-  return resp.json();
+export async function listDeployments(signal?: AbortSignal): Promise<DeploymentSummary[]> {
+  return requestJson(`${API_BASE}/deployments`, { timeoutMs: 12000, retry: 1, signal });
 }
 
 export async function deleteDeployment(instanceId: string): Promise<void> {
-  const resp = await fetch(`${API_BASE}/deploy/${instanceId}`, {
+  return requestVoid(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}`, {
     method: "DELETE",
+    timeoutMs: 15000,
   });
-  if (!resp.ok) throw new Error("Failed to delete");
 }
 
 export interface DeployedResource {
@@ -214,11 +285,14 @@ export interface DeployedResourcesResult {
 }
 
 export async function getDeployedResources(
-  instanceId: string
+  instanceId: string,
+  signal?: AbortSignal
 ): Promise<DeployedResourcesResult> {
-  const resp = await fetch(`${API_BASE}/deploy/${instanceId}/deployed-resources`);
-  if (!resp.ok) throw new Error("Failed to get deployed resources");
-  return resp.json();
+  return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/deployed-resources`, {
+    timeoutMs: 20000,
+    retry: 1,
+    signal,
+  });
 }
 
 export interface PhaseLogEntry {
@@ -232,18 +306,52 @@ export async function getPhaseLogs(
   instanceId: string,
   phaseName: string
 ): Promise<PhaseLogEntry[]> {
-  const resp = await fetch(
-    `${API_BASE}/deploy/${instanceId}/logs?phase=${encodeURIComponent(phaseName)}`
-  );
-  if (!resp.ok) return [];
-  return resp.json();
+  try {
+    return await requestJson(
+      `${API_BASE}/deploy/${encodeURIComponent(instanceId)}/logs?phase=${encodeURIComponent(phaseName)}`,
+      { timeoutMs: 10000, retry: 1 }
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function streamPhaseLogs(
+  instanceId: string,
+  phaseName: string,
+  onLog: (entry: PhaseLogEntry) => void,
+  onError?: (err: Event) => void
+): { close: () => void } {
+  const url = `${API_BASE}/deploy/${encodeURIComponent(instanceId)}/logs/stream?phase=${encodeURIComponent(phaseName)}`;
+  const eventSource = new EventSource(url);
+
+  eventSource.onmessage = (event) => {
+    try {
+      const entry = JSON.parse(event.data) as PhaseLogEntry;
+      onLog(entry);
+    } catch (e) {
+      console.error("Failed to parse streamed log line:", e);
+    }
+  };
+
+  if (onError) {
+    eventSource.onerror = (err) => {
+      onError(err);
+    };
+  }
+
+  return {
+    close: () => {
+      eventSource.close();
+    },
+  };
 }
 
 export async function clearAllDeployments(): Promise<void> {
-  const resp = await fetch(`${API_BASE}/deployments/clear`, {
+  return requestVoid(`${API_BASE}/deployments/clear`, {
     method: "POST",
+    timeoutMs: 15000,
   });
-  if (!resp.ok) throw new Error("Failed to clear");
 }
 
 export interface ExistingDeploymentInfo {
@@ -267,17 +375,22 @@ export async function checkExistingDeployment(
   workspaceName: string,
   resourceGroup: string,
   signal?: AbortSignal,
+  deep = false,
 ): Promise<ExistingDeploymentInfo | null> {
   const params = new URLSearchParams();
   if (workspaceName) params.set("workspace_name", workspaceName);
   if (resourceGroup) params.set("resource_group", resourceGroup);
-  const resp = await fetch(`${API_BASE}/deploy/check-existing?${params}`, { signal });
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  return data?.found ? data : null;
+  if (deep) params.set("deep", "1");
+  try {
+    const data = await requestJson<ExistingDeploymentInfo & { found?: boolean }>(
+      `${API_BASE}/deploy/check-existing?${params}`,
+      { timeoutMs: 12000, retry: 1, signal }
+    );
+    return data?.found ? data : null;
+  } catch {
+    return null;
+  }
 }
-
-// ── Fabric Capacity API ───────────────────────────────────────────────
 
 export interface FabricCapacity {
   name: string;
@@ -296,15 +409,15 @@ export async function listCapacities(
   const query = subscriptionId
     ? `?subscription_id=${encodeURIComponent(subscriptionId)}`
     : "";
-  // Capacity scan invokes `az` subprocesses; cold calls can take 10-30s when
-  // the Resource Graph fallback fans out across multiple subscriptions.
-  const resp = await fetchWithTimeout(
-    `${API_BASE}/scan/capacities${query}`,
-    {},
-    60000
-  );
-  if (!resp.ok) return [];
-  return resp.json();
+  try {
+    return await requestJson(`${API_BASE}/scan/capacities${query}`, {
+      timeoutMs: 60000,
+      retry: 1,
+      retryDelayMs: 1000,
+    });
+  } catch {
+    return [];
+  }
 }
 
 export async function resumeCapacity(
@@ -313,8 +426,7 @@ export async function resumeCapacity(
   name: string,
 ): Promise<void> {
   const params = new URLSearchParams({ subscription_id: subscriptionId, resource_group: resourceGroup, name });
-  const resp = await fetch(`${API_BASE}/capacity/resume?${params}`, { method: "POST" });
-  if (!resp.ok) throw new Error("Failed to resume capacity");
+  return requestVoid(`${API_BASE}/capacity/resume?${params}`, { method: "POST", timeoutMs: 20000 });
 }
 
 export interface DeploymentCapacityMapping {
@@ -327,22 +439,62 @@ export interface DeploymentCapacityMapping {
 export async function getDeploymentCapacity(
   rgName: string
 ): Promise<DeploymentCapacityMapping | null> {
-  const resp = await fetch(`${API_BASE}/deployment-capacity/${encodeURIComponent(rgName)}`);
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  return data || null;
+  try {
+    const data = await requestJson<DeploymentCapacityMapping | null>(
+      `${API_BASE}/deployment-capacity/${encodeURIComponent(rgName)}`,
+      { timeoutMs: 10000, retry: 1 }
+    );
+    return data || null;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Fetch Azure regions where Azure Health Data Services (AHDS) is available.
- * Returns normalised ARM location names (e.g. "eastus", "northcentralus").
- */
 export async function listAhdsRegions(): Promise<string[]> {
   try {
-    const resp = await fetch(`${API_BASE}/scan/ahds-regions`);
-    if (!resp.ok) return [];
-    return resp.json();
+    return await requestJson(`${API_BASE}/scan/ahds-regions`, { timeoutMs: 15000, retry: 1 });
   } catch {
     return [];
   }
+}
+
+export interface ResourceScanJob {
+  scanId: string;
+  status: "idle" | "running" | "completed" | "failed" | "missing";
+  phase?: string;
+  message?: string;
+  candidates?: unknown[];
+  counts?: { fabric: number; azure: number; spn: number };
+  startedAt?: string | null;
+  completedAt?: string | null;
+  error?: string;
+}
+
+export async function listSubscriptions(): Promise<Subscription[]> {
+  return requestJson(`${API_BASE}/scan/subscriptions`, { timeoutMs: 15000, retry: 1 });
+}
+
+export async function startResourceScan(subscriptionId: string): Promise<{ scanId: string }> {
+  return requestJson(`${API_BASE}/scan/resources/start?subscription_id=${encodeURIComponent(subscriptionId)}`, {
+    method: "POST",
+    timeoutMs: 20000,
+  });
+}
+
+export async function getResourceScan(scanId: string): Promise<ResourceScanJob> {
+  return requestJson(`${API_BASE}/scan/resources/${encodeURIComponent(scanId)}`, {
+    timeoutMs: 10000,
+    retry: 1,
+  });
+}
+
+export async function getLocks(): Promise<string[]> {
+  return requestJson(`${API_BASE}/locks`, { timeoutMs: 10000, retry: 1 });
+}
+
+export async function setLock(id: string, locked: boolean): Promise<void> {
+  return requestVoid(`${API_BASE}/locks/${id.replace(/^\//, "")}`, {
+    method: locked ? "POST" : "DELETE",
+    timeoutMs: 10000,
+  });
 }

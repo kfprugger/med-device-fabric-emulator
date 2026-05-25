@@ -50,35 +50,31 @@ $exportContainerName = "fhir-export"
 # HELPER FUNCTIONS
 # ============================================================================
 
+$script:AccessTokenCache = @{}
 function Get-AccessTokenForResource {
     <#
     .SYNOPSIS
-        Obtains a bearer token for the specified resource URL using the current Az context.
+        Obtains a cached bearer token for the specified resource URL using the current Az context.
         Handles both PowerShell 5.1 (plain text) and 7+ (SecureString) token formats.
     .PARAMETER ResourceUrl
         The audience/resource URL to request the token for.
     #>
     param ([string]$ResourceUrl)
-    $tokenObj = Get-AzAccessToken -ResourceUrl $ResourceUrl
-    $rawToken = $tokenObj.Token
+    $key = $ResourceUrl.ToLowerInvariant()
+    $cached = $script:AccessTokenCache[$key]
+    if ($cached -and $cached.ExpiresOn -gt (Get-Date).AddMinutes(5)) { return $cached.Token }
 
+    $tokenObj = Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop
+    $rawToken = $tokenObj.Token
     if ($rawToken -is [System.Security.SecureString]) {
-        # PowerShell 7+ returns SecureString
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($rawToken)
-        try {
-            return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-        } finally {
-            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-        }
+        try { $rawToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    } elseif ($rawToken -isnot [string]) {
+        $rawToken = $rawToken | ConvertFrom-SecureString -AsPlainText
     }
-    elseif ($rawToken -is [string]) {
-        # PowerShell 5.1 returns plain string
-        return $rawToken
-    }
-    else {
-        # Fallback: try ConvertFrom-SecureString
-        return $rawToken | ConvertFrom-SecureString -AsPlainText
-    }
+    $script:AccessTokenCache[$key] = @{ Token = $rawToken; ExpiresOn = $tokenObj.ExpiresOn }
+    return $rawToken
 }
 
 function Get-FabricAccessToken {
@@ -628,7 +624,7 @@ if ($Phase2) {
                 } else {
                     # Remove any conflicting directory at the shortcut path (OneLake folders block shortcut creation)
                     try {
-                        $onelakeToken = (Get-AzAccessToken -ResourceUrl "https://storage.azure.com").Token
+                        $onelakeToken = Get-AccessTokenForResource -ResourceUrl "https://storage.azure.com"
                         if ($onelakeToken -is [System.Security.SecureString]) {
                             $onelakeToken = $onelakeToken | ConvertFrom-SecureString -AsPlainText
                         }

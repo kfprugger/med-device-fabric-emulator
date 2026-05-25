@@ -1,34 +1,12 @@
-# Phase 1 — Azure Infrastructure & Data Ingestion
+# Stage 1 — Data Fabric Foundation
 
-Phase 1 deploys all Azure infrastructure, generates synthetic clinical data, loads it into FHIR & DICOM services, and stands up the Fabric Real-Time Intelligence pipeline. This is the foundational phase — everything else builds on it.
-
-**Typical duration:** ~25 minutes (50 patients) · **Steps:** 1 → 1b → 2 → 2b → 3 → 4
+⏱️ **Typical Duration:** ~25 minutes (50 patients) | 🛠️ **Fabric Workloads:** Real-Time Intelligence, Healthcare Data Solutions | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
 ---
 
-## Prerequisites
-
-> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** The setup script detects your OS and provides platform-specific install commands for anything that's missing.
-
-```powershell
-# Windows (PowerShell)
-.\setup-prereqs.ps1
-
-# macOS / Linux (bash — installs PowerShell Core if missing)
-chmod +x setup-prereqs.sh
-./setup-prereqs.sh
-```
-
-**Local tools:** PowerShell 7+, Azure CLI + Bicep, Az PowerShell module, Python 3.10+, Node.js 18+, Git
-
-**Azure/Fabric:**
-- Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
-- Logged in to Azure CLI (`az login`)
-- Logged in to Azure PowerShell (`Connect-AzAccount`)
-- Azure CLI and Az PowerShell contexts aligned to the same subscription/tenant
-- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions)
-
-To check without installing anything: `.\setup-prereqs.ps1 -CheckOnly`
+> [!NOTE]
+> **Deployment Prerequisites:**
+> Before running this phase, ensure your local environment and cloud subscription context meet all prerequisites. Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
 
 ---
 
@@ -322,4 +300,19 @@ After Phase 1 completes, HDS must be deployed manually in the Fabric portal:
 
 ---
 
-**Next:** [Phase 2 — HDS Enrichment & Data Agents →](phase-2-hds-enrichment-and-agents.md) · **Overview:** [← README](../README.md)
+### 🏁 Stage 1 Success Verification Checklist
+
+Ensure all of the following components are verified before moving on to Stage 2:
+
+> [!IMPORTANT]
+> **Stage 1 Verification Checkpoints:**
+> - [ ] **Azure base resources:** Key Vault, Event Hub, ACR, and oximeter emulator ACI are active in your Azure Resource Group.
+> - [ ] **ACR Container Images:** Verification via `az acr repository list` showing that `emulator`, `synthea`, `fhir-loader`, and `dicom-loader` images exist.
+> - [ ] **FHIR Service loaded:** Synthetic patient bundles have loaded cleanly into Azure Health Data Services (FHIR Service).
+> - [ ] **Fabric Workspace Active:** `MasimoEventhouse` KQL Database and `MasimoTelemetryStream` Eventstream are created in Fabric.
+> - [ ] **Active Ingestion:** Run a test KQL query `TelemetryRaw | take 10` in your Eventhouse KQL database to verify SpO2, Pulse Rate, and Perfusion vitals are streaming from the emulator.
+> - [ ] **Real-Time Dashboard:** Open the Masimo telemetry dashboard in Fabric to confirm vital trend panels are rendering dynamically.
+
+---
+
+**Next:** [Stage 2 — Active Patient Telemetry →](phase-2-hds-enrichment-and-agents.md) · **Overview:** [← README](../README.md)

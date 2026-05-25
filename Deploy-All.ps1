@@ -91,6 +91,23 @@ $ErrorActionPreference = "Stop"
 # See #fix-2.
 $null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
 
+$script:AccessTokenCache = @{}
+function Get-CachedAccessToken {
+    param([Parameter(Mandatory)][string]$ResourceUrl)
+    $key = $ResourceUrl.ToLowerInvariant()
+    $cached = $script:AccessTokenCache[$key]
+    if ($cached -and $cached.ExpiresOn -gt (Get-Date).AddMinutes(5)) { return $cached.Token }
+    $tokenObj = Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop
+    $token = $tokenObj.Token
+    if ($token -is [System.Security.SecureString]) {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+        try { $token = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    $script:AccessTokenCache[$key] = @{ Token = $token; ExpiresOn = $tokenObj.ExpiresOn }
+    return $token
+}
+
 # Validate conditionally-required parameters
 if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $AdminSecurityGroup) {
     throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, -Phase4, and -Phase5 can omit it."
@@ -98,6 +115,15 @@ if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -n
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
+
+# Fallback for cross-platform DicomToolkitPath on Mac
+if ($DicomToolkitPath -eq "C:\git\FabricDicomCohortingToolkit" -and -not (Test-Path $DicomToolkitPath)) {
+    $MacGitPath = "/Users/joey/git/FabricDicomCohortingToolkit"
+    if (Test-Path $MacGitPath) {
+        $DicomToolkitPath = $MacGitPath
+        Write-Host "  [PATH-FALLBACK] Mapping C:\git\FabricDicomCohortingToolkit to Mac path: $DicomToolkitPath" -ForegroundColor Green
+    }
+}
 
 # ── Granular flag reconciliation ──────────────────────────────────────
 # Fine-grained skip flags from the Orchestrator UI are translated into
@@ -230,7 +256,7 @@ function Test-Prerequisites {
 
     # 9. Fabric API reachable (tests token acquisition)
     try {
-        $fabToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        $fabToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
         if ($fabToken -is [System.Security.SecureString]) {
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabToken)
             try { $fabToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
@@ -577,26 +603,14 @@ function Write-Phase3Diagnostics {
     Write-Host "  │" -ForegroundColor DarkYellow
 
     try {
-        # Get a fresh Fabric token for API calls (self-contained, no dependency on Get-FabricTokenLocal)
-        $fabTokenObj = Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com"
-        $fabToken = $fabTokenObj.Token
-        if ($fabToken -is [System.Security.SecureString]) {
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabToken)
-            try { $fabToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-        }
+        # Get cached tokens for API calls.
+        $fabToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
 
-        # Get a fresh token for SQL access — try multiple resource URL formats
+        # Get a token for SQL access — try multiple resource URL formats
         $sqlToken = $null
         foreach ($sqlResource in @("https://database.windows.net/", "https://database.windows.net/.default", "https://database.windows.net")) {
             try {
-                $sqlTokenObj = Get-AzAccessToken -ResourceUrl $sqlResource -ErrorAction Stop
-                $sqlToken = $sqlTokenObj.Token
-                if ($sqlToken -is [System.Security.SecureString]) {
-                    $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sqlToken)
-                    try { $sqlToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr2) }
-                    finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2) }
-                }
+                $sqlToken = Get-CachedAccessToken $sqlResource
                 break
             } catch { continue }
         }
@@ -780,7 +794,7 @@ if ($Teardown) {
 # ============================================================================
 
 if ($Phase2) {
-    Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
+    Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 3
 
     if (-not $SkipRtiPhase2) {
     Invoke-Step -StepName "Phase 2: Fabric RTI" `
@@ -795,7 +809,7 @@ if ($Phase2) {
         if ($SilverLakehouseName) { $phase2Args['SilverLakehouseName'] = $SilverLakehouseName }
         if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
 
-        & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
+        & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
     }
     } # end if (-not $SkipRtiPhase2)
 
@@ -803,7 +817,7 @@ if ($Phase2) {
     if (-not $SkipDicom -and -not $SkipHdsPipelines) {
         Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines" `
             -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-            & "$ScriptDir\phase-2\storage-access-trusted-workspace.ps1" `
+            & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName `
                 -ResourceGroupName $ResourceGroupName
         }
@@ -855,14 +869,14 @@ if ($Phase4 -and -not $Phase2 -and -not $Phase3) {
 # STEP 1 — FABRIC WORKSPACE + IDENTITY (created first so HDS can be deployed during Azure steps)
 # ============================================================================
 
-Emit-PhaseTransition -Phase 1 -Label "Infrastructure & Data" -StepCount 6
+Emit-PhaseTransition -Phase 1 -Label "Data Fabric Foundation" -StepCount 6
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
     Invoke-Step -StepName "Phase 1: Fabric Workspace" `
         -Description "Create workspace '$FabricWorkspaceName' + assign capacity + provision identity" -Action {
 
         function Get-FabricToken {
-            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
             if ($t -is [System.Security.SecureString]) {
                 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
                 try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
@@ -1257,7 +1271,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
         if ($SkipFhirExport) { $fabricArgs['SkipFhirExport'] = $true }
         if ($Tags.Count -gt 0) { $fabricArgs['Tags'] = $Tags }
 
-        & "$ScriptDir\deploy-fabric-rti.ps1" @fabricArgs
+        & "$ScriptDir/deploy-fabric-rti.ps1" @fabricArgs
     }
 } else {
     Write-Host "  >>  Skipping Fabric RTI (--SkipFabric)" -ForegroundColor DarkGray
@@ -1281,91 +1295,103 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
     Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/deploy" -ForegroundColor DarkCyan
     Write-Host "    [4] Add the DICOM Data Transformation modality to HDS" -ForegroundColor DarkGray
     Write-Host "        https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/dicom-data-transformation-configure#deploy-dicom-data-transformation" -ForegroundColor DarkCyan
-    Write-Host "    [5] Wait for the modalities to finish deploying, then run Phase 2 below" -ForegroundColor DarkGray
+    Write-Host "    [5] Wait for the modalities to finish deploying, then resume Phase 2" -ForegroundColor DarkGray
     Write-Host ""
 
-    # Build the Phase 2 example command with pre-populated values from Phase 1
-    $phase2Cmd = "    .\Deploy-All.ps1 -Phase2 ``"
-    $phase2Cmd += "`n        -ResourceGroupName `"$ResourceGroupName`" ``"
-    $phase2Cmd += "`n        -Location `"$Location`" ``"
-    $phase2Cmd += "`n        -FabricWorkspaceName `"$FabricWorkspaceName`""
-    if ($Tags.Count -gt 0) {
-        $tagPairs = ($Tags.GetEnumerator() | ForEach-Object { "$($_.Key)='$($_.Value)'" }) -join ';'
-        $phase2Cmd += " ``"
-        $phase2Cmd += "`n        -Tags @{$tagPairs}"
+    # Build the resume check loop
+    $instanceId = $env:ORCHESTRATOR_INSTANCE_ID
+    $resumeFile = ""
+    if ($instanceId) {
+        $resumeFile = Join-Path $ScriptDir "orchestrator/logs/$instanceId.resume"
     }
 
-    Write-Host "  Once the Bronze and Silver Lakehouses are deployed, run Phase 2:" -ForegroundColor White
-    Write-Host $phase2Cmd -ForegroundColor Cyan
-    Write-Host ""
-
-    $script:stepResults += @{
-        Name     = "Phase 1: HDS Guidance"
-        Success  = $true
-        Duration = "—"
-        Detail   = "Manual step: deploy HDS, then run Phase 2"
+    Write-Host "[WAITING_FOR_HDS] Waiting for Healthcare Data Solutions (HDS) deployment. Please deploy it in the Fabric portal, then click Continue in the UI." -ForegroundColor Yellow
+    if ($resumeFile) {
+        Write-Host "  (Alternatively, you can touch/create the file: $resumeFile to resume)" -ForegroundColor DarkGray
     }
 
-    # ── Auto-detect if HDS is already deployed ──
-    # If Bronze and Silver lakehouses exist, the user already deployed HDS.
-    # Automatically proceed to Phase 2 + 3 without requiring a separate run.
-    try {
-        $autoToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
-        if ($autoToken -is [System.Security.SecureString]) {
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($autoToken)
-            try { $autoToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    $hdsDetected = $false
+    while ($true) {
+        # Check if Bronze and Silver lakehouses exist in the workspace
+        $hasBronze = $null
+        $hasSilver = $null
+        try {
+            $autoToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
+            if ($autoToken -is [System.Security.SecureString]) {
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($autoToken)
+                try { $autoToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+            $autoHeaders = @{ Authorization = "Bearer $autoToken"; "Content-Type" = "application/json" }
+            $autoWs = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $autoHeaders).value |
+                Where-Object { $_.displayName -eq $FabricWorkspaceName }
+            if ($autoWs) {
+                $autoItems = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$($autoWs.id)/items" -Headers $autoHeaders).value
+                $hasBronze = $autoItems | Where-Object { $_.displayName -match 'bronze' -and $_.type -eq 'Lakehouse' }
+                $hasSilver = $autoItems | Where-Object { $_.displayName -match 'silver' -and $_.type -eq 'Lakehouse' }
+            }
+        } catch {
+            # Silently ignore token/API errors during polling
         }
-        $autoHeaders = @{ Authorization = "Bearer $autoToken"; "Content-Type" = "application/json" }
-        $autoWs = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $autoHeaders).value |
-            Where-Object { $_.displayName -eq $FabricWorkspaceName }
-        if ($autoWs) {
-            $autoItems = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$($autoWs.id)/items" -Headers $autoHeaders).value
-            $hasBronze = $autoItems | Where-Object { $_.displayName -match 'bronze' -and $_.type -eq 'Lakehouse' }
-            $hasSilver = $autoItems | Where-Object { $_.displayName -match 'silver' -and $_.type -eq 'Lakehouse' }
 
-            if ($hasBronze -and $hasSilver) {
-                Write-Host ""
-                Write-Host "  ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-                Write-Host "  ║  HDS DETECTED — Bronze and Silver lakehouses already exist  ║" -ForegroundColor Green
-                Write-Host "  ║  The user has already performed the manual steps of          ║" -ForegroundColor Green
-                Write-Host "  ║  deploying HDS to the Fabric workspace.                     ║" -ForegroundColor Green
-                Write-Host "  ║  Proceeding on to Phases 2 and 3.                           ║" -ForegroundColor Green
-                Write-Host "  ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-                Write-Host ""
+        if ($hasBronze -and $hasSilver) {
+            Write-Host ""
+            Write-Host "  [AUTO-DETECT] Healthcare Data Solutions detected! Proceeding to Phase 2..." -ForegroundColor Green
+            $hdsDetected = $true
+            break
+        }
 
-                # Run Phase 2 inline
-                $Phase2 = $true
+        # Check if the UI resume flag file exists
+        if ($resumeFile -and (Test-Path $resumeFile)) {
+            Write-Host ""
+            Write-Host "  [UI-RESUME] Continue button clicked in the UI. Proceeding to Phase 2..." -ForegroundColor Green
+            $hdsDetected = $true
+            break
+        }
 
-                Emit-PhaseTransition -Phase 2 -Label "Analytics & AI Agents" -StepCount 3
+        Start-Sleep -Seconds 10
+    }
 
-                if (-not $SkipRtiPhase2) {
-                Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
-                    -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
-                    $phase2Args = @{
-                        Phase2              = $true
-                        FabricWorkspaceName = $FabricWorkspaceName
-                        ResourceGroupName   = $ResourceGroupName
-                        Location            = $Location
-                    }
-                    if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
-                    & "$ScriptDir\deploy-fabric-rti.ps1" @phase2Args
+    # Clean up the resume file if it exists
+    if ($resumeFile -and (Test-Path $resumeFile)) {
+        Remove-Item $resumeFile -ErrorAction SilentlyContinue
+    }
+
+    if ($hdsDetected) {
+        # Run Phase 2 inline
+        $Phase2 = $true
+
+        Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 3
+
+        if (-not $SkipRtiPhase2) {
+            Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
+                -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
+                $phase2Args = @{
+                    Phase2              = $true
+                    FabricWorkspaceName = $FabricWorkspaceName
+                    ResourceGroupName   = $ResourceGroupName
+                    Location            = $Location
                 }
-                } # end if (-not $SkipRtiPhase2)
-
-                if (-not $SkipDicom -and -not $SkipHdsPipelines) {
-                    Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
-                        -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-                        & "$ScriptDir\phase-2\storage-access-trusted-workspace.ps1" `
-                            -FabricWorkspaceName $FabricWorkspaceName `
-                            -ResourceGroupName $ResourceGroupName
-                    }
-                }
+                if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
+                & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
             }
         }
-    } catch {
-        # Non-fatal — if detection fails, just show the manual guidance as before
-        Write-Host "  (Could not auto-detect HDS status: $($_.Exception.Message))" -ForegroundColor DarkGray
+
+        if (-not $SkipDicom -and -not $SkipHdsPipelines) {
+            Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
+                -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
+                & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" `
+                    -FabricWorkspaceName $FabricWorkspaceName `
+                    -ResourceGroupName $ResourceGroupName
+            }
+        }
+
+        $script:stepResults += @{
+            Name     = "Phase 1: HDS Guidance"
+            Success  = $true
+            Duration = "—"
+            Detail   = "Auto-resumed: HDS deployed successfully"
+        }
     }
 }
 
@@ -1393,7 +1419,7 @@ if ($Phase2 -and -not $SkipDataAgents) {
 # Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
 # ============================================================================
 
-Emit-PhaseTransition -Phase 3 -Label "Imaging & Reporting" -StepCount 1
+Emit-PhaseTransition -Phase 3 -Label "Multimodal Cohorting & Imaging" -StepCount 1
 
 if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
@@ -1404,7 +1430,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             -Description "Cohorting Agent + DICOM Viewer (FabricDicomCohortingToolkit)" -Action {
 
             # Validate toolkit path
-            if (-not (Test-Path "$DicomToolkitPath\Deploy-DataAgent.ps1")) {
+            if (-not (Test-Path "$DicomToolkitPath/Deploy-DataAgent.ps1")) {
                 throw "FabricDicomCohortingToolkit not found at '$DicomToolkitPath'. Clone it: git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$DicomToolkitPath'"
             }
 
@@ -1417,7 +1443,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "  --- PREFLIGHT: Gold OMOP Lakehouse Check ---" -ForegroundColor Cyan
             try {
                 function Get-FabricTokenLocal {
-                    $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+                    $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
                     if ($t -is [System.Security.SecureString]) {
                         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
                         try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
@@ -1449,10 +1475,10 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host ""
             Write-Host "  --- Step 7a: Cohorting Data Agent ---" -ForegroundColor Cyan
             Write-Host "  Deploying HDS Multi-Layer Imaging Cohort Agent..." -ForegroundColor White
-            Write-Host "    Source: $DicomToolkitPath\Deploy-DataAgent.ps1" -ForegroundColor DarkGray
+            Write-Host "    Source: $DicomToolkitPath/Deploy-DataAgent.ps1" -ForegroundColor DarkGray
             Write-Host ""
 
-            & "$DicomToolkitPath\Deploy-DataAgent.ps1" `
+            & "$DicomToolkitPath/Deploy-DataAgent.ps1" `
                 -FabricWorkspaceName $FabricWorkspaceName
 
             Write-Host ""
@@ -1469,7 +1495,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "    Resource Group: $viewerRg (shared with Phase 1)" -ForegroundColor DarkGray
             Write-Host ""
 
-            & "$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" `
+            & "$DicomToolkitPath/dicom-viewer/Deploy-DicomViewer.ps1" `
                 -ResourceGroup $viewerRg `
                 -FabricWorkspaceName $FabricWorkspaceName `
                 -Location $Location
@@ -1512,7 +1538,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                 DicomViewerResourceGroup = $viewerRg
             }
             if ($ohifViewerBaseUrl) { $nbArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
-            & "$DicomToolkitPath\deploy-notebook.ps1" @nbArgs
+            & "$DicomToolkitPath/deploy-notebook.ps1" @nbArgs
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After notebook materialization ──
@@ -1623,14 +1649,14 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 #           Eventhouse with TelemetryRaw + AlertHistory tables
 # ============================================================================
 
-Emit-PhaseTransition -Phase 4 -Label "Semantic Layer & Alerts" -StepCount 2
+Emit-PhaseTransition -Phase 4 -Label "Connected Semantic Intelligence" -StepCount 2
 
 if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
     Invoke-Step -StepName "Phase 4: Ontology" `
         -Description "Clinical pipeline check, ontology deployment, agent binding" -Action {
 
         function Get-FabricTokenLocal {
-            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
             if ($t -is [System.Security.SecureString]) {
                 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
                 try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
@@ -1991,7 +2017,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
         -Description "Reflex item with KQL source and email alerting rule" -Action {
 
         function Get-FabricTokenLocal {
-            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
             if ($t -is [System.Security.SecureString]) {
                 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
                 try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
@@ -2203,14 +2229,14 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 #           MedicationRequest, Immunization tables)
 # ============================================================================
 
-Emit-PhaseTransition -Phase 5 -Label "CMS Quality & Claims" -StepCount 1
+Emit-PhaseTransition -Phase 5 -Label "CMS Quality & Performance" -StepCount 1
 
 if (-not $SkipQualityMeasures) {
     Invoke-Step -StepName "Phase 5: CMS Quality Measures" `
         -Description "Claims materialization, quality measures, Power BI report" -Action {
 
         function Get-FabricTokenLocal {
-            $t = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+            $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
             if ($t -is [System.Security.SecureString]) {
                 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($t)
                 try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }

@@ -101,18 +101,35 @@ function Resolve-TokenValue {
     return [string]$tokenProp.Value
 }
 
+$script:AccessTokenCache = @{}
+function Get-CachedTokenValue {
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [string]$ResourceUrl = '',
+        [string]$ResourceTypeName = ''
+    )
+    $cached = $script:AccessTokenCache[$Key]
+    if ($cached -and $cached.ExpiresOn -gt (Get-Date).AddMinutes(5)) { return $cached.Token }
+    if ($ResourceTypeName) {
+        $resp = Get-AzAccessToken -ResourceTypeName $ResourceTypeName -ErrorAction Stop
+    } else {
+        $resp = Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop
+    }
+    $token = Resolve-TokenValue -TokenResponse $resp
+    $script:AccessTokenCache[$Key] = @{ Token = $token; ExpiresOn = $resp.ExpiresOn }
+    return $token
+}
+
 function Get-OneLakeAccessToken {
     Write-Log 'Acquiring OneLake (storage) access token...' 'INFO'
-    $resp = Get-AzAccessToken -ResourceTypeName Storage -ErrorAction Stop
-    $token = Resolve-TokenValue -TokenResponse $resp
+    $token = Get-CachedTokenValue -Key 'storage' -ResourceTypeName Storage
     Write-Log 'OneLake access token acquired.' 'INFO'
     return $token
 }
 
 function Get-FabricApiAccessToken {
     Write-Log 'Acquiring Fabric API access token...' 'INFO'
-    $resp = Get-AzAccessToken -ResourceUrl $FabricManagementEndpoint -ErrorAction Stop
-    $token = Resolve-TokenValue -TokenResponse $resp
+    $token = Get-CachedTokenValue -Key 'fabric' -ResourceUrl $FabricManagementEndpoint
     Write-Log 'Fabric API access token acquired.' 'INFO'
     return $token
 }

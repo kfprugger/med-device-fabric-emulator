@@ -1,10 +1,16 @@
-# Phase 5 — CMS Quality & Claims
+# Stage 6 — CMS Quality & Performance
 
-> **Prerequisites**: Phase 1 + Phase 2 deployed (Silver Lakehouse with FHIR tables populated). Synthea must be configured to generate `Claim`, `ExplanationOfBenefit`, and `Coverage` resources.
+⏱️ **Typical Duration:** ~10 minutes | 🛠️ **Fabric Workloads:** Healthcare Data Solutions, Power BI | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
-## Overview
+---
 
-Phase 5 adds **claims analytics** and **CMS quality measurement** capabilities to the platform. It materializes Silver FHIR data into a Gold star schema, computes 7 CMS electronic Clinical Quality Measures (eCQMs) and 3 HEDIS medication adherence scores, and deploys a 6-page CMS Quality Scorecard Power BI report.
+> [!NOTE]
+> **Deployment Prerequisites:**
+> Before running this phase, ensure Stage 2 is complete, Synthea is configured to generate `Claim`, `ExplanationOfBenefit`, and `Coverage` resources, and the Silver Lakehouse tables are populated. Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
+
+---
+
+Stage 6 implements the CMS Quality & Performance standard, adding **claims analytics** and **CMS quality measurement** capabilities to the platform. It materializes Silver FHIR data into a Gold star schema, computes 7 CMS electronic Clinical Quality Measures (eCQMs) and 3 HEDIS medication adherence scores, and deploys a 6-page CMS Quality Scorecard Power BI report.
 
 ## Architecture
 
@@ -137,3 +143,24 @@ Toggle **Phase 5: CMS Quality & Claims** → "CMS Quality Scorecard" checkbox.
 ## Inspiration
 
 The claims data model and ontology entities are inspired by the [Fabric-Payer-Provider-HealthCare-Demo](https://github.com/rasgiza/Fabric-Payer-Provider-HealthCare-Demo) by Kwame Sefah, which implements a full payer/provider analytics solution with similar entities (Claim, Payer, Diagnosis, Prescription, MedicationAdherence, CommunityHealth).
+
+---
+
+### 🏁 Stage 6 Success Verification Checklist
+
+Ensure all of the following components are verified before finalizing your deployment:
+
+> [!IMPORTANT]
+> **Stage 6 Verification Checkpoints:**
+> - [ ] **Claims Data Loaded:** Confirm Silver Lakehouse contains raw claims tables, such as `ExplanationOfBenefit` and `Coverage`.
+> - [ ] **Star Schema Materialized:** Spark notebook ran successfully and populated the 8 Gold star schema reporting tables inside the Gold lakehouse.
+> - [ ] **Data Volume Check:** Run SQL queries to ensure `dbo.fact_claim` and chronic diagnoses in `dbo.dim_diagnosis` are populated.
+> - [ ] **Quality Metrics computed:** Confirm measure aggregation tables like `dbo.agg_quality_summary` show results for eCQMs (CMS122, CMS165, etc.).
+> - [ ] **PDC Medication Adherence calculated:** Verification that `dbo.agg_medication_adherence` contains computed values for statins, diabetes meds, and RAS antagonists.
+> - [ ] **CMS Quality Scorecard Live:** Power BI scorecard report is successfully deployed, using Direct Lake connections to Gold tables.
+> - [ ] **Payer Stratification Active:** Confirm Payer performance visuals compute stratified quality metrics correctly across Commercial, Medicare, and Medicaid.
+> - [ ] **Extended Ontology Online:** The Fabric IQ `ClinicalDeviceOntology` is extended to 14 total entities (including Claims, Payers, and Diagnoses) with successful bindings to your Data Agents.
+
+---
+
+**Previous:** [← Stage 4 & 5 — Connected Semantic Intelligence & Bedside Alerting](phase-4-ontology-and-activator.md) · **Overview:** [← README](../README.md)

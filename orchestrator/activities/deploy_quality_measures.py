@@ -1,4 +1,4 @@
-"""Phase 5: Deploy CMS Quality & Claims.
+"""Phase 5: Deploy CMS Quality & Performance.
 
 Materializes Gold star schema tables from Silver FHIR data,
 computes CMS eCQM quality measures, and stages the Power BI report.
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
-    """Execute Phase 5: CMS Quality & Claims.
+    """Execute Phase 5: CMS Quality & Performance.
 
     This phase invokes the phase-5/materialize_claims_quality.py notebook
     via the Fabric REST API, then stages the Power BI report definition
@@ -42,13 +42,13 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     if config.get("skip_quality_measures"):
         logger.info("Phase 5 skipped (skip_quality_measures=True)")
         return {
-            "phase": "Phase 5: CMS Quality & Claims",
+            "phase": "Phase 5: CMS Quality & Performance",
             "duration_seconds": time.time() - start,
             "status": "skipped",
             "resources": {},
         }
 
-    logger.info("Phase 5: CMS Quality & Claims — starting")
+    logger.info("Phase 5: CMS Quality & Performance — starting")
 
     # The actual notebook execution happens via Deploy-All.ps1
     # (invoke_powershell activity). This activity serves as the
@@ -68,10 +68,10 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     # HEDIS adherence classes:
     #   PDC-DR (Diabetes), PDC-RASA (RAS Antagonists), PDC-STA (Statins)
 
-    logger.info("Phase 5: CMS Quality & Claims — complete")
+    logger.info("Phase 5: CMS Quality & Performance — complete")
 
     return {
-        "phase": "Phase 5: CMS Quality & Claims",
+        "phase": "Phase 5: CMS Quality & Performance",
         "duration_seconds": time.time() - start,
         "resources": {
             "quality_measures": "CMS122,CMS165,CMS69,CMS127,CMS147,CMS134,CMS144",

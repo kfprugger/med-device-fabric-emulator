@@ -1,25 +1,12 @@
-# Phase 2 — HDS Enrichment & Data Agents
+# Stage 2 — Active Patient Telemetry
 
-Phase 2 bridges the real-time telemetry pipeline with FHIR clinical data by creating KQL shortcuts into the HDS Silver Lakehouse, deploying enriched clinical alert functions, and standing up AI Data Agents that federate queries across both data stores.
-
-**Prerequisite:** [Phase 1](phase-1-infrastructure-and-ingestion.md) complete + Healthcare Data Solutions deployed manually in the Fabric portal (Bronze & Silver lakehouses populated).
-
-**Typical duration:** ~35 minutes · **Steps:** 5 → 5b → 6
+⏱️ **Typical Duration:** ~35 minutes | 🛠️ **Fabric Workloads:** Real-Time Intelligence, Healthcare Data Solutions, Data Agents | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
 ---
 
-## Prerequisites
-
-> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
-
-| Requirement | Detail |
-|-------------|--------|
-| Phase 1 complete | Workspace, Eventhouse, Eventstream, FHIR data loaded |
-| HDS deployed (manual) | Bronze & Silver lakehouses exist in the workspace |
-| Clinical pipeline completed | Silver Lakehouse tables populated (Patient, Condition, Device, etc.) |
-| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
-| Logged in to Azure | `az login` |
-| Fabric capacity (paid F-SKU) | Required for HDS |
+> [!NOTE]
+> **Deployment Prerequisites:**
+> Before running this phase, ensure Stage 1 is complete and Healthcare Data Solutions (HDS) is deployed manually in the Fabric portal. Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
 
 ---
 
@@ -295,4 +282,20 @@ Rapid triage decisions with alert prioritization:
 
 ---
 
-**Previous:** [← Phase 1 — Infrastructure & Ingestion](phase-1-infrastructure-and-ingestion.md) · **Next:** [Phase 3 — Imaging & Cohorting →](phase-3-imaging-and-cohorting.md) · **Overview:** [← README](../README.md)
+### 🏁 Stage 2 Success Verification Checklist
+
+Ensure all of the following components are verified before moving on to Stage 3:
+
+> [!IMPORTANT]
+> **Stage 2 Verification Checkpoints:**
+> - [ ] **Bronze Lakehouse Shortcut:** A OneLake shortcut named `FHIR-HDS` exists in the Bronze Lakehouse pointing to the FHIR `$export` folder in your ADLS Gen2 storage.
+> - [ ] **HDS Lakehouse Tables:** Verify that HDS clinical pipelines successfully flattened FHIR JSON and populated `dbo.Patient`, `dbo.Condition`, `dbo.Basic`, `dbo.Device`, `dbo.Location`, and `dbo.Encounter` in the Silver Lakehouse.
+> - [ ] **KQL External Shortcuts:** Verify the 6 `Silver*` external tables are queryable in `MasimoEventhouse` (e.g., `SilverPatient | take 5` returns records).
+> - [ ] **Enriched Alerting:** The `fn_ClinicalAlerts` function successfully resolves and blends patient metadata with live telemetry vitals (warning, urgent, critical severity tiers).
+> - [ ] **Alerts Map Dashboard:** The 4-tile clinical map dashboard successfully loads and visualizes alerts geolocated to care facilities.
+> - [ ] **Data Agents Deployed:** Both the **Patient 360** and **Clinical Triage** Data Agents are deployed to the Fabric workspace.
+> - [ ] **Agent Federation:** Send a test query to the Patient 360 Agent asking *"Show vitals and conditions for the patient associated with device MASIMO-RADIUS7-0033"*. Verify it federates across KQL vitals and SQL Silver tables.
+
+---
+
+**Previous:** [← Stage 1 — Data Fabric Foundation](phase-1-infrastructure-and-ingestion.md) · **Next:** [Stage 3 — Multimodal Cohorting & Imaging →](phase-3-imaging-and-cohorting.md) · **Overview:** [← README](../README.md)

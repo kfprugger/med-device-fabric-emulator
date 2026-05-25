@@ -1,10 +1,12 @@
-# Phase 4 — Ontology & Data Activator
+# Stage 4 & 5 — Connected Semantic Intelligence & Bedside Alerting
 
-Phase 4 adds the semantic layer and proactive alerting: a **Fabric IQ Ontology** (`ClinicalDeviceOntology`) that provides unified vocabulary across the Eventhouse and Silver Lakehouse, ontology binding to all three Data Agents, and a **Data Activator** (Reflex) that sends clinical alert emails when SpO2 drops are detected.
+⏱️ **Typical Duration:** ~5 minutes | 🛠️ **Fabric Workloads:** Fabric IQ, Data Activator, Data Agents | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
-**Prerequisite:** [Phase 3](phase-3-imaging-and-cohorting.md) complete + Clinical pipeline finished (Silver Lakehouse populated). Ontology and Data Activator tenant previews must be enabled.
+---
 
-**Typical duration:** ~5 minutes · **Steps:** 8 → 9
+> [!NOTE]
+> **Deployment Prerequisites:**
+> Before running this phase, ensure Stage 3 is complete, the Fabric tenant previews for Ontology & Data Activator are enabled, and the HDS Silver Lakehouse has OneLake security disabled (ontology limitation). Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
 
 ---
 
@@ -212,24 +214,6 @@ The Reflex is created in two API calls due to a Fabric limitation:
 
 > **Requires:** `-AlertEmail` parameter. If omitted, the Activator step is skipped with a warning.
 
----
-
-## Prerequisites
-
-> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** Run `setup-prereqs.ps1` from the repo root to check all local tools.
-
-| Requirement | Detail |
-|-------------|--------|
-| Phase 1 + 2 + 3 deployed | Eventhouse, Silver Lakehouse, Data Agents must exist |
-| Clinical pipeline completed | Silver Lakehouse tables populated (Patient, Device, Condition, etc.) |
-| Local tools installed | PowerShell 7+, Azure CLI, Az module, Python 3.10+ (`setup-prereqs.ps1`) |
-| Logged in to Azure | `az login` |
-| Ontology item (preview) enabled | Fabric tenant admin setting |
-| Graph (preview) enabled | Fabric tenant admin setting |
-| Data Activator enabled | Fabric tenant admin setting |
-| Copilot + Azure OpenAI enabled | Required for agent ontology binding |
-| Silver Lakehouse: OneLake security **disabled** | Ontology limitation |
-| Silver Lakehouse tables: **managed** (not external) | Ontology limitation |
 
 ---
 
@@ -286,4 +270,20 @@ The Reflex is created in two API calls due to a Fabric limitation:
 
 ---
 
-**Previous:** [← Phase 3 — Imaging & Cohorting](phase-3-imaging-and-cohorting.md) · **Overview:** [← README](../README.md)
+### 🏁 Stage 4 & 5 Success Verification Checklist
+
+Ensure all of the following components are verified before moving on to Stage 6:
+
+> [!IMPORTANT]
+> **Stage 4 & 5 Verification Checkpoints:**
+> - [ ] **DeviceAssociation Table Active:** Verify that the Spark notebook successfully parsed the Silver Lakehouse `Basic` table and populated the `DeviceAssociation` table.
+> - [ ] **Fabric IQ Ontology Online:** Verify that the `ClinicalDeviceOntology` semantic layer is visible and active in your Fabric workspace under the Fabric IQ tab.
+> - [ ] **9 Entities & 8 Relations Validated:** Inspect the ontology in the Fabric portal to ensure it correctly binds `dbo.Patient`, `dbo.Device`, `TelemetryRaw` (time-series), `AlertHistory`, and others with active relationships.
+> - [ ] **Agent Bindings Applied:** The draft definitions of **Patient 360**, **Clinical Triage**, and **Cohorting Agent** are updated to list the `ClinicalDeviceOntology` as an active datasource in their configurations.
+> - [ ] **Reflex Alert Activator Created:** The `ClinicalAlertActivator` Reflex is visible and successfully maps dynamic fields from `fn_ClinicalAlerts`.
+> - [ ] **Email Rule Configured:** The Reflex includes an active `EventTrigger` rule directed to your alert email with the requested cooldown window.
+> - [ ] **E2E Alert Sim:** Let the Masimo oximeter emulator trigger a SpO2 drop (below 90% or 85%). Verify that a beautifully formatted clinical alert notification is successfully delivered to your designated email inbox.
+
+---
+
+**Previous:** [← Stage 3 — Multimodal Cohorting & Imaging](phase-3-imaging-and-cohorting.md) · **Overview:** [← README](../README.md)

@@ -50,6 +50,22 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$script:AccessTokenCache = @{}
+function Get-CachedAccessToken {
+    param([Parameter(Mandatory)][string]$ResourceUrl)
+    $key = $ResourceUrl.ToLowerInvariant()
+    $cached = $script:AccessTokenCache[$key]
+    if ($cached -and $cached.ExpiresOn -gt (Get-Date).AddMinutes(5)) { return $cached.Token }
+    $tokenObj = Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop
+    $token = $tokenObj.Token
+    if ($token -is [System.Security.SecureString]) {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+        try { $token = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    $script:AccessTokenCache[$key] = @{ Token = $token; ExpiresOn = $tokenObj.ExpiresOn }
+    return $token
+}
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -143,7 +159,7 @@ $rgNotFound = $false
 # --- Validate Fabric workspace ---
 if (-not $SkipFabric) {
     try {
-        $fabricToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+        $fabricToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
         if ($fabricToken -is [System.Security.SecureString]) {
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabricToken)
             $fabricToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)

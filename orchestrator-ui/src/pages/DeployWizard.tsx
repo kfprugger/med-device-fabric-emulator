@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -6,6 +6,12 @@ import {
   Card,
   CardHeader,
   Checkbox,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Dropdown,
   Field,
   InfoLabel,
@@ -19,8 +25,8 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular, ChevronDownRegular, ChevronUpRegular, CheckmarkCircleRegular, CircleRegular, SettingsRegular } from "@fluentui/react-icons";
-import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, listAhdsRegions, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
+import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular, ChevronDownRegular, ChevronUpRegular, CheckmarkCircleRegular, CircleRegular, SettingsRegular, ClipboardRegular, FlashRegular } from "@fluentui/react-icons";
+import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, listAhdsRegions, listSubscriptions, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions, getMockCapacities } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -172,6 +178,25 @@ function TagHistoryPanel({ onSelect }: { onSelect: (tags: Record<string, string>
   );
 }
 
+function getRectIntersection(rx: number, ry: number, rw: number, rh: number, tx: number, ty: number) {
+  const cx = rx + rw / 2;
+  const cy = ry + rh / 2;
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const txLimit = rw / (2 * absDx);
+  const tyLimit = rh / (2 * absDy);
+  const t = Math.min(txLimit, tyLimit);
+
+  return {
+    x: cx + t * dx,
+    y: cy + t * dy,
+  };
+}
+
 export function DeployWizard() {
   const styles = useStyles();
   const reducedMotion = useReducedMotion();
@@ -191,7 +216,95 @@ export function DeployWizard() {
   const [showSummary] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [loadWarning, setLoadWarning] = useState("");
+  const [showResourcePreview, setShowResourcePreview] = useState(false);
+  const [resourcePreviewMode, setResourcePreviewMode] = useState<"cards" | "graph">("cards");
+  const [resourceGraphZoom, setResourceGraphZoom] = useState(1);
+  const [graphNodeOffsets, setGraphNodeOffsets] = useState<Record<string, { x: number; y: number }>>({});
+  const [graphLabelOffsets, setGraphLabelOffsets] = useState<Record<string, { x: number; y: number }>>({});
+  const [graphDrag, setGraphDrag] = useState<{
+    kind: "node" | "label";
+    id: string;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+  const [deepCheckingExisting, setDeepCheckingExisting] = useState(false);
   const [ahdsRegions, setAhdsRegions] = useState<string[] | null>(null); // null = not loaded yet
+  const [skipGroup1Collapsed, setSkipGroup1Collapsed] = useState(false);
+  const [skipGroup2Collapsed, setSkipGroup2Collapsed] = useState(false);
+  const [skipGroup3Collapsed, setSkipGroup3Collapsed] = useState(false);
+
+  const graphContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollState, setScrollState] = useState({
+    scrollLeft: 0,
+    scrollTop: 0,
+    clientWidth: 0,
+    clientHeight: 0,
+  });
+  const [miniMapDragging, setMiniMapDragging] = useState(false);
+  const [miniMapCollapsed, setMiniMapCollapsed] = useState(false);
+
+  const handleGraphScroll = () => {
+    const el = graphContainerRef.current;
+    if (el) {
+      setScrollState({
+        scrollLeft: el.scrollLeft,
+        scrollTop: el.scrollTop,
+        clientWidth: el.clientWidth,
+        clientHeight: el.clientHeight,
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (showResourcePreview) {
+      const timer = setTimeout(() => {
+        handleGraphScroll();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showResourcePreview, resourceGraphZoom]);
+
+  const handleMiniMapPointer = (event: React.PointerEvent<SVGSVGElement> | ReactPointerEvent) => {
+    const el = graphContainerRef.current;
+    if (!el) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickX = ((event.clientX - rect.left) / rect.width) * GRAPH_WIDTH;
+    const clickY = ((event.clientY - rect.top) / rect.height) * GRAPH_HEIGHT;
+
+    const nextLeft = clickX * resourceGraphZoom - el.clientWidth / 2;
+    const nextTop = clickY * resourceGraphZoom - el.clientHeight / 2;
+
+    el.scrollTo({
+      left: Math.max(0, nextLeft),
+      top: Math.max(0, nextTop),
+      behavior: "auto",
+    });
+    setScrollState({
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+      clientWidth: el.clientWidth,
+      clientHeight: el.clientHeight,
+    });
+  };
+
+  const handleMiniMapPointerDown = (event: ReactPointerEvent) => {
+    setMiniMapDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    handleMiniMapPointer(event);
+  };
+
+  const handleMiniMapPointerMove = (event: ReactPointerEvent) => {
+    if (miniMapDragging) {
+      handleMiniMapPointer(event);
+    }
+  };
+
+  const handleMiniMapPointerUp = (event: ReactPointerEvent) => {
+    setMiniMapDragging(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   const getCapacitySelectionValue = (capacity: FabricCapacity) => {
     return capacity.id || `${capacity.subscription}:${capacity.resourceGroup}:${capacity.name}`;
@@ -308,8 +421,7 @@ export function DeployWizard() {
       if (!selectedSubscription) setSelectedSubscription(ctxSubscriptions[0].id);
       return;
     }
-    fetch("/api/scan/subscriptions")
-      .then((r) => r.json())
+    listSubscriptions()
       .then((subs: Array<{ id: string; name: string }>) => {
         if (subs.length > 0) {
           setSubscriptions(subs);
@@ -344,6 +456,7 @@ export function DeployWizard() {
       setCapacities(ctxCapacities);
       setLoadWarning("");
       setInitializing(false);
+      return;
     }
     setCapacityRefreshing(true);
     // Scan all accessible subscriptions since the capacity may live outside the currently selected Azure context.
@@ -447,7 +560,7 @@ export function DeployWizard() {
   };
 
   // Calculate estimated duration
-  const getEstimatedDuration = (): string => {
+  const getEstimatedDurationMinutes = (): number => {
     let minutes = 5; // Base infrastructure
     if (!config.skip_fhir && !config.skip_synthea) minutes += Math.ceil(config.patient_count / 10);
     if (!config.skip_dicom) minutes += 20;
@@ -455,7 +568,308 @@ export function DeployWizard() {
     if (!config.skip_hds_pipelines) minutes += 10;
     if (!config.skip_data_agents) minutes += 5;
     if (!config.skip_imaging) minutes += 5;
+    return minutes;
+  };
+
+  const getEstimatedDuration = (): string => {
+    const minutes = getEstimatedDurationMinutes();
     return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+  };
+
+  const applyPreset = (preset: "demo" | "full" | "infra" | "repair" | "data") => {
+    setShowAdvanced(preset !== "demo");
+    setConfig((prev) => {
+      const base: DeploymentConfig = {
+        ...prev,
+        patient_count: preset === "demo" ? Math.min(prev.patient_count || 25, 25) : preset === "full" ? Math.max(prev.patient_count || 100, 100) : prev.patient_count,
+        skip_base_infra: false,
+        skip_fhir: false,
+        skip_dicom: false,
+        skip_fabric: false,
+        skip_synthea: false,
+        skip_device_assoc: false,
+        skip_fhir_export: false,
+        skip_rti_phase2: false,
+        skip_hds_pipelines: false,
+        skip_data_agents: false,
+        skip_imaging: false,
+        skip_ontology: false,
+        skip_activator: !prev.alert_email,
+        skip_quality_measures: false,
+      };
+      if (preset === "demo") {
+        return { ...base, skip_imaging: true, skip_quality_measures: true };
+      }
+      if (preset === "infra") {
+        return {
+          ...base,
+          skip_fhir: true,
+          skip_dicom: true,
+          skip_fabric: true,
+          skip_synthea: true,
+          skip_device_assoc: true,
+          skip_fhir_export: true,
+          skip_rti_phase2: true,
+          skip_hds_pipelines: true,
+          skip_data_agents: true,
+          skip_imaging: true,
+          skip_ontology: true,
+          skip_activator: true,
+          skip_quality_measures: true,
+        };
+      }
+      if (preset === "repair") {
+        return { ...base, reuse_patients: true, skip_synthea: true, skip_device_assoc: true };
+      }
+      if (preset === "data") {
+        return { ...base, skip_base_infra: true, skip_fhir: true, skip_dicom: true, skip_synthea: true, skip_device_assoc: true };
+      }
+      return base;
+    });
+  };
+
+  const enabledComponents = [
+    [!config.skip_base_infra, "Infrastructure"],
+    [!config.skip_fhir, "FHIR"],
+    [!config.skip_synthea, "Synthea"],
+    [!config.skip_dicom, "DICOM"],
+    [!config.skip_fabric, "Fabric RTI"],
+    [!config.skip_hds_pipelines, "HDS Pipelines"],
+    [!config.skip_data_agents, "Data Agents"],
+    [!config.skip_imaging, "Imaging"],
+    [!config.skip_ontology, "Ontology"],
+    [!config.skip_activator && !!config.alert_email, "Alerts"],
+    [!config.skip_quality_measures, "Quality"],
+  ].filter(([enabled]) => enabled).map(([, label]) => label as string);
+
+  const uniqueSuffix = selectedSubscription && config.resource_group_name
+    ? "{uniqueString(resourceGroup().id)}"
+    : "{uniqueString(rg)}";
+  const appName = `masimo${uniqueSuffix}`;
+  const hdsWorkspaceName = `hdws${uniqueSuffix}`;
+  const fhirServiceName = `fhir${uniqueSuffix}`;
+  const dicomServiceName = `dicom${uniqueSuffix}`;
+  const storageAccountName = `stfhir${uniqueSuffix}`;
+
+  const prospectiveAzureAssets = [
+    { enabled: true, type: "Resource group", name: config.resource_group_name || "rg-<deployment>" },
+    { enabled: !config.skip_base_infra, type: "Event Hubs namespace", name: `${appName}-eh-ns` },
+    { enabled: !config.skip_base_infra, type: "Event Hub", name: "telemetry-stream" },
+    { enabled: !config.skip_base_infra, type: "Authorization rule", name: "emulator-access" },
+    { enabled: !config.skip_base_infra, type: "Container Registry", name: `${appName}acr` },
+    { enabled: !config.skip_base_infra, type: "Key Vault", name: `${appName}-kv` },
+    { enabled: !config.skip_base_infra, type: "ACI container group", name: "masimo-emulator-grp" },
+    { enabled: !config.skip_fhir, type: "Health Data Services workspace", name: hdsWorkspaceName },
+    { enabled: !config.skip_fhir, type: "FHIR service", name: fhirServiceName },
+    { enabled: !config.skip_fhir, type: "Storage account / ADLS Gen2", name: storageAccountName },
+    { enabled: !config.skip_fhir, type: "Blob container", name: "synthea-output" },
+    { enabled: !config.skip_fhir, type: "Blob container", name: "fhir-export" },
+    { enabled: !config.skip_dicom, type: "Blob container", name: "dicom-output" },
+    { enabled: !config.skip_fhir, type: "User-assigned managed identity", name: "id-aci-fhir-jobs" },
+    { enabled: !config.skip_synthea, type: "ACI job", name: "synthea-generator-job" },
+    { enabled: !config.skip_fhir && !config.skip_synthea, type: "ACI job", name: "fhir-loader-job" },
+    { enabled: !config.skip_dicom, type: "DICOM service", name: dicomServiceName },
+    { enabled: !config.skip_dicom, type: "ACI job", name: "dicom-loader-job" },
+    { enabled: !config.skip_imaging, type: "Container App", name: "hds-dicom-proxy" },
+    { enabled: !config.skip_imaging, type: "Static Web App", name: "OHIF DICOM viewer" },
+  ].filter((asset) => asset.enabled);
+
+  const prospectiveFabricAssets = [
+    { enabled: true, type: "Fabric workspace", name: config.fabric_workspace_name || "<workspace>" },
+    { enabled: true, type: "Workspace managed identity", name: `${config.fabric_workspace_name || "<workspace>"} identity` },
+    { enabled: !config.skip_fabric, type: "Eventhouse", name: "MasimoEventhouse" },
+    { enabled: !config.skip_fabric, type: "KQL Database", name: "MasimoKQLDB" },
+    { enabled: !config.skip_fabric, type: "KQL table", name: "TelemetryRaw" },
+    { enabled: !config.skip_fabric, type: "KQL table", name: "AlertHistory" },
+    { enabled: !config.skip_fabric, type: "Eventstream", name: "MasimoTelemetryStream" },
+    { enabled: !config.skip_fhir_export, type: "OneLake shortcut", name: `FHIR export → ${storageAccountName}/fhir-export` },
+    { enabled: !config.skip_hds_pipelines, type: "Lakehouse", name: "Healthcare Bronze Lakehouse (HDS)" },
+    { enabled: !config.skip_hds_pipelines, type: "Lakehouse", name: "Healthcare Silver Lakehouse (HDS)" },
+    { enabled: !config.skip_hds_pipelines, type: "Pipeline", name: "Clinical pipeline" },
+    { enabled: !config.skip_hds_pipelines, type: "Pipeline", name: "Imaging pipeline" },
+    { enabled: !config.skip_hds_pipelines, type: "Pipeline", name: "OMOP pipeline" },
+    { enabled: !config.skip_hds_pipelines, type: "Shortcut", name: "DICOM-HDS" },
+    { enabled: !config.skip_data_agents, type: "Data Agent", name: "Patient 360 / Clinical Triage agents" },
+    { enabled: !config.skip_imaging, type: "Data Agent", name: "DICOM Cohorting Agent" },
+    { enabled: !config.skip_imaging, type: "Lakehouse", name: "healthcare1_reporting_gold" },
+    { enabled: !config.skip_ontology, type: "Notebook", name: "create_device_association_table" },
+    { enabled: !config.skip_ontology, type: "Ontology", name: "ClinicalDeviceOntology" },
+    { enabled: !config.skip_activator && !!config.alert_email, type: "Reflex", name: "ClinicalAlertActivator" },
+    { enabled: !config.skip_quality_measures, type: "Notebook / report", name: "CMS Quality Scorecard" },
+  ].filter((asset) => asset.enabled);
+
+  const graphNodes = [
+    { id: "synthea", label: "Synthea\nPatient generator", group: "External", x: 25, y: 70, enabled: !config.skip_synthea },
+    { id: "tcia", label: "TCIA\nDICOM studies", group: "External", x: 25, y: 260, enabled: !config.skip_dicom },
+    { id: "emulator", label: "Masimo Emulator\nACI", group: "Azure", x: 25, y: 505, enabled: !config.skip_base_infra },
+    { id: "fhir", label: `FHIR Service\n${fhirServiceName}`, group: "Azure", x: 220, y: 70, enabled: !config.skip_fhir },
+    { id: "dicom", label: `DICOM Service\n${dicomServiceName}`, group: "Azure", x: 220, y: 260, enabled: !config.skip_dicom },
+    { id: "eventhub", label: "Event Hub\ntelemetry-stream", group: "Azure", x: 220, y: 505, enabled: !config.skip_base_infra },
+    { id: "adls", label: `ADLS Gen2\n${storageAccountName}`, group: "Azure", x: 415, y: 165, enabled: !config.skip_fhir || !config.skip_dicom },
+    { id: "eventstream", label: "Eventstream\nMasimoTelemetryStream", group: "Fabric", x: 415, y: 505, enabled: !config.skip_fabric },
+    { id: "bronze", label: "Bronze Lakehouse\nHDS", group: "Fabric", x: 615, y: 85, enabled: !config.skip_hds_pipelines },
+    { id: "eventhouse", label: "Eventhouse / KQL\nMasimoKQLDB", group: "Fabric", x: 615, y: 385, enabled: !config.skip_fabric },
+    { id: "silver", label: "Silver Lakehouse\nHDS", group: "Fabric", x: 815, y: 85, enabled: !config.skip_hds_pipelines },
+    { id: "gold", label: "Gold OMOP Lakehouse", group: "Fabric", x: 1015, y: 85, enabled: !config.skip_hds_pipelines },
+    { id: "agents", label: "Data Agents\nPatient 360 / Triage", group: "Fabric", x: 1015, y: 290, enabled: !config.skip_data_agents },
+    { id: "reporting", label: "Reporting LH\nPower BI / OHIF", group: "Fabric+Azure", x: 1015, y: 505, enabled: !config.skip_imaging },
+    { id: "quality", label: "CMS Quality\nScorecard", group: "Fabric", x: 1215, y: 85, enabled: !config.skip_quality_measures },
+    { id: "ontology", label: "ClinicalDeviceOntology", group: "Fabric", x: 1215, y: 290, enabled: !config.skip_ontology },
+    { id: "activator", label: "Data Activator\nClinicalAlertActivator", group: "Fabric", x: 1215, y: 505, enabled: !config.skip_activator && !!config.alert_email },
+  ].filter((node) => node.enabled);
+
+  const positionedGraphNodes = graphNodes.map((node) => {
+    const offset = graphNodeOffsets[node.id] ?? { x: 0, y: 0 };
+    return { ...node, x: node.x + offset.x, y: node.y + offset.y };
+  });
+  const graphNodeIds = new Set(positionedGraphNodes.map((node) => node.id));
+  const graphEdges = [
+    { id: "synthea-fhir", from: "synthea", to: "fhir", label: "FHIR bundles", lx: 0, ly: -36 },
+    { id: "fhir-adls", from: "fhir", to: "adls", label: "$export NDJSON", lx: -18, ly: -54 },
+    { id: "tcia-dicom", from: "tcia", to: "dicom", label: "re-tag/upload", lx: 0, ly: -36 },
+    { id: "dicom-adls", from: "dicom", to: "adls", label: "dicom-output", lx: 8, ly: 45 },
+    { id: "emulator-eventhub", from: "emulator", to: "eventhub", label: "telemetry", lx: 0, ly: -36 },
+    { id: "eventhub-eventstream", from: "eventhub", to: "eventstream", label: "source", lx: 0, ly: 35 },
+    { id: "eventstream-eventhouse", from: "eventstream", to: "eventhouse", label: "TelemetryRaw", lx: -18, ly: 58, curvature: 35 },
+    { id: "adls-bronze", from: "adls", to: "bronze", label: "OneLake shortcut", lx: -18, ly: -60 },
+    { id: "bronze-silver", from: "bronze", to: "silver", label: "HDS pipelines", lx: 0, ly: -38 },
+    { id: "silver-gold", from: "silver", to: "gold", label: "OMOP", lx: 0, ly: -38 },
+    { id: "silver-eventhouse", from: "silver", to: "eventhouse", label: "KQL shortcuts", lx: -70, ly: 0, curvature: -70 },
+    { id: "eventhouse-agents", from: "eventhouse", to: "agents", label: "alerts", lx: -18, ly: 62, curvature: 60 },
+    { id: "silver-agents", from: "silver", to: "agents", label: "clinical data", lx: -55, ly: -72, curvature: -75 },
+    { id: "gold-reporting", from: "gold", to: "reporting", label: "cohorts", lx: 120, ly: -8, curvature: -200 },
+    { id: "silver-reporting", from: "silver", to: "reporting", label: "Direct Lake", lx: -108, ly: 78, curvature: -110 },
+    { id: "ontology-agents", from: "ontology", to: "agents", label: "semantic binding", lx: 0, ly: -76, curvature: -45 },
+    { id: "ontology-reporting", from: "ontology", to: "reporting", label: "semantic binding", lx: 42, ly: 72, curvature: -35 },
+    { id: "eventhouse-activator", from: "eventhouse", to: "activator", label: "fn_ClinicalAlerts", lx: 28, ly: 80, curvature: -70 },
+    { id: "silver-quality", from: "silver", to: "quality", label: "FHIR/claims", lx: 40, ly: -20, curvature: -110 },
+    { id: "gold-quality", from: "gold", to: "quality", label: "quality measures", lx: 0, ly: -38 },
+  ].filter((edge) => graphNodeIds.has(edge.from) && graphNodeIds.has(edge.to));
+
+  const graphNodeById = new Map(positionedGraphNodes.map((node) => [node.id, node]));
+  const GRAPH_WIDTH = 1410;
+  const GRAPH_HEIGHT = 670;
+  const NODE_WIDTH = 165;
+  const NODE_HEIGHT = 74;
+
+  const getEdgeGeom = (edge: typeof graphEdges[0]) => {
+    const from = graphNodeById.get(edge.from)!;
+    const to = graphNodeById.get(edge.to)!;
+
+    const fromCenterX = from.x + NODE_WIDTH / 2;
+    const fromCenterY = from.y + NODE_HEIGHT / 2;
+    const toCenterX = to.x + NODE_WIDTH / 2;
+    const toCenterY = to.y + NODE_HEIGHT / 2;
+
+    const startPt = getRectIntersection(from.x, from.y, NODE_WIDTH, NODE_HEIGHT, toCenterX, toCenterY);
+    const endPt = getRectIntersection(to.x, to.y, NODE_WIDTH, NODE_HEIGHT, fromCenterX, fromCenterY);
+
+    const dx = endPt.x - startPt.x;
+    const dy = endPt.y - startPt.y;
+    const len = Math.hypot(dx, dy) || 1;
+
+    const startGap = 6;
+    const endGap = 10;
+
+    const x1 = startPt.x + (dx / len) * startGap;
+    const y1 = startPt.y + (dy / len) * startGap;
+    const x2 = endPt.x - (dx / len) * endGap;
+    const y2 = endPt.y - (dy / len) * endGap;
+
+    const curvature = (edge as any).curvature ?? 0;
+    let cx = (x1 + x2) / 2;
+    let cy = (y1 + y2) / 2;
+
+    if (curvature !== 0) {
+      const lineDx = x2 - x1;
+      const lineDy = y2 - y1;
+      const lineLen = Math.hypot(lineDx, lineDy) || 1;
+      const nx = -lineDy / lineLen;
+      const ny = lineDx / lineLen;
+      cx = cx + nx * curvature;
+      cy = cy + ny * curvature;
+    }
+
+    const labelOffset = graphLabelOffsets[edge.id] ?? { x: 0, y: 0 };
+    const midX = 0.25 * x1 + 0.5 * cx + 0.25 * x2 + (edge.lx ?? 0) + labelOffset.x;
+    const midY = 0.25 * y1 + 0.5 * cy + 0.25 * y2 + (edge.ly ?? 0) + labelOffset.y;
+    const labelWidth = Math.max(132, edge.label.length * 7.5 + 28);
+
+    return {
+      pathD: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`,
+      midX,
+      midY,
+      labelWidth,
+    };
+  };
+  const graphLabelVisible = resourceGraphZoom >= 0.85;
+  const graphColor = (group: string) => group === "Azure"
+    ? tokens.colorPaletteBlueBackground2
+    : group === "External"
+      ? tokens.colorNeutralBackground3
+      : group === "Fabric+Azure"
+        ? tokens.colorPalettePurpleBackground2
+        : tokens.colorBrandBackground2;
+
+  const getGraphPointer = (event: ReactPointerEvent, svg: SVGSVGElement) => {
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * GRAPH_WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * GRAPH_HEIGHT,
+    };
+  };
+
+  const startGraphNodeDrag = (event: ReactPointerEvent<SVGGElement>, nodeId: string) => {
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    event.preventDefault();
+    const point = getGraphPointer(event, svg);
+    const base = graphNodeOffsets[nodeId] ?? { x: 0, y: 0 };
+    setGraphDrag({ kind: "node", id: nodeId, startX: point.x, startY: point.y, baseX: base.x, baseY: base.y });
+  };
+
+  const startGraphLabelDrag = (event: ReactPointerEvent<SVGGElement>, edgeId: string) => {
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = getGraphPointer(event, svg);
+    const base = graphLabelOffsets[edgeId] ?? { x: 0, y: 0 };
+    setGraphDrag({ kind: "label", id: edgeId, startX: point.x, startY: point.y, baseX: base.x, baseY: base.y });
+  };
+
+  const updateGraphDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!graphDrag) return;
+    const point = getGraphPointer(event, event.currentTarget);
+    const next = { x: graphDrag.baseX + point.x - graphDrag.startX, y: graphDrag.baseY + point.y - graphDrag.startY };
+    if (graphDrag.kind === "node") {
+      setGraphNodeOffsets((prev) => ({ ...prev, [graphDrag.id]: next }));
+    } else {
+      setGraphLabelOffsets((prev) => ({ ...prev, [graphDrag.id]: next }));
+    }
+  };
+
+  const resetGraphLayout = () => {
+    setGraphNodeOffsets({});
+    setGraphLabelOffsets({});
+    setGraphDrag(null);
+  };
+
+  const copyDeploymentPlan = () => {
+    const plan = {
+      resourceGroup: config.resource_group_name,
+      workspace: config.fabric_workspace_name,
+      subscription: selectedSubscription,
+      location: config.location,
+      capacity: selectedCapacity ? formatSelectedCapacityLabel(selectedCapacity) : "",
+      patientCount: config.patient_count,
+      estimatedDuration: getEstimatedDuration(),
+      components: enabledComponents,
+      azureAssets: prospectiveAzureAssets,
+      fabricAssets: prospectiveFabricAssets,
+      tags: config.tags,
+    };
+    navigator.clipboard?.writeText(JSON.stringify(plan, null, 2)).catch(() => undefined);
   };
 
   const update = (field: keyof DeploymentConfig, value: unknown) => {
@@ -644,11 +1058,8 @@ export function DeployWizard() {
     });
   };
 
-  const handleSubmit = async () => {
-    if (validationErrors.length > 0) {
-      setError(validationErrors[0]);
-      return;
-    }
+  const startActualDeployment = async () => {
+    setShowResourcePreview(false);
     setLoading(true);
     setError("");
 
@@ -673,6 +1084,25 @@ export function DeployWizard() {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (validationErrors.length > 0) {
+      setError(validationErrors[0]);
+      return;
+    }
+    setShowResourcePreview(true);
+  };
+
+  const runLiveExistingValidation = async () => {
+    if (!config.fabric_workspace_name && !config.resource_group_name) return;
+    setDeepCheckingExisting(true);
+    try {
+      const info = await checkExistingDeployment(config.fabric_workspace_name, config.resource_group_name, undefined, true);
+      if (info) setExistingDeploy(info);
+    } finally {
+      setDeepCheckingExisting(false);
     }
   };
 
@@ -736,7 +1166,7 @@ export function DeployWizard() {
   ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{ display: "flex", gap: "24px", position: "relative" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalXXL, position: "relative" }}>
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {usingMock && <MockDataBanner />}
@@ -778,33 +1208,23 @@ export function DeployWizard() {
           to   { opacity: 1; transform: translateY(0); }
         }
         .deploy-card-active {
-          outline: 3px solid #0f6cbd !important;
+          outline: 3px solid ${tokens.colorBrandStroke1} !important;
           outline-offset: 4px;
           animation: deploy-card-in 0.5s ease both, deploy-card-pulse 2s ease-in-out 0.6s infinite !important;
         }
         @keyframes deploy-card-pulse {
-          0%, 100% { box-shadow: 0 0 16px rgba(15, 108, 189, 0.3); outline-color: #0f6cbd; }
-          50%      { box-shadow: 0 0 36px rgba(15, 108, 189, 0.6); outline-color: #78b9eb; }
+          0%, 100% { box-shadow: 0 0 16px ${tokens.colorBrandBackground2}; outline-color: ${tokens.colorBrandStroke1}; }
+          50%      { box-shadow: 0 0 36px ${tokens.colorBrandBackground2Hover}; outline-color: ${tokens.colorBrandStroke2}; }
         }
-        /* Masonry layout on wide screens to avoid empty holes between variable-height cards */
         @media (min-width: 1200px) {
           .deploy-form-grid {
-            display: block;
-            column-count: 2;
-            column-gap: 20px;
-          }
-          .deploy-form-grid > * {
-            display: inline-block;
-            width: 100%;
-            margin-bottom: 20px;
-            break-inside: avoid;
-            -webkit-column-break-inside: avoid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            align-items: start;
           }
         }
-        /* 3-column layout for extra-wide screens to maximize space usage */
         @media (min-width: 1800px) {
           .deploy-form-grid {
-            column-count: 3;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
           }
         }
         /* Compact padding on wide screens */
@@ -826,7 +1246,7 @@ export function DeployWizard() {
           top: 0;
           z-index: 5;
           background-color: inherit;
-          border-bottom: 1px solid #e0e0e0;
+          border-bottom: 1px solid ${tokens.colorNeutralStroke2};
         }
         /* Collapsible section animation */
         .deploy-collapsible-content {
@@ -886,6 +1306,31 @@ export function DeployWizard() {
       ) : (
 
       <div className={`${styles.form} deploy-form-grid deploy-compact-padding`}>
+        {/* Deployment Presets */}
+        <Card className={`${styles.section} ${styles.sectionFullWidth}`} style={{ overflow: "visible" }}>
+          <CardHeader
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Subtitle1>Deployment Presets</Subtitle1>
+                <Badge color="brand" size="small" icon={<FlashRegular />}>Fast start</Badge>
+              </div>
+            }
+            description="Choose a safe default profile, then fine-tune individual components below."
+          />
+          <div className={styles.fieldGroup}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: tokens.spacingHorizontalS }}>
+              <Button appearance="outline" onClick={() => applyPreset("demo")}>Demo / fastest</Button>
+              <Button appearance="outline" onClick={() => applyPreset("full")}>Full platform</Button>
+              <Button appearance="outline" onClick={() => applyPreset("infra")}>Infra only</Button>
+              <Button appearance="outline" onClick={() => applyPreset("repair")}>Resume / repair</Button>
+              <Button appearance="outline" onClick={() => applyPreset("data")}>Data pipeline only</Button>
+            </div>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              Current plan enables {enabledComponents.length} component(s): {enabledComponents.slice(0, 8).join(", ")}{enabledComponents.length > 8 ? ` +${enabledComponents.length - 8} more` : ""}.
+            </Text>
+          </div>
+        </Card>
+
         {/* Naming Convention */}
         <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
@@ -1394,7 +1839,7 @@ export function DeployWizard() {
                 gap: tokens.spacingHorizontalS,
               }}>
                 <Badge color="informative" size="small">Checking</Badge>
-                <Text size={200}>Querying Azure...</Text>
+                <Text size={200}>Checking local deployment history...</Text>
               </div>
             )}
 
@@ -1422,6 +1867,9 @@ export function DeployWizard() {
                   Workspace <strong>{existingDeploy.workspaceName}</strong> was deployed on{" "}
                   {new Date(existingDeploy.createdTime).toLocaleString()}
                 </Text>
+                <Button size="small" appearance="outline" onClick={runLiveExistingValidation} disabled={deepCheckingExisting} style={{ marginTop: tokens.spacingVerticalS }}>
+                  {deepCheckingExisting ? "Validating live Azure/FHIR state…" : "Run live Azure/FHIR validation"}
+                </Button>
                 {existingDeploy.azureRgExists && (
                   <>
                   <Text size={200} block style={{ marginTop: 4 }}>
@@ -1511,7 +1959,7 @@ export function DeployWizard() {
                 field="alert-email"
                 value={config.alert_email}
                 onChange={(v) => update("alert_email", v)}
-                placeholder="joey@example.com"
+                placeholder="operator@example.com"
                 type="email"
               />
             </Field>
@@ -1537,141 +1985,188 @@ export function DeployWizard() {
             }
           />
           <div className={styles.checkboxGroup}>
-            {/* ── Phase 1: Infrastructure & Data ── */}
-            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalS, color: tokens.colorBrandForeground1 }}>
-              Phase 1: Infrastructure &amp; Data
-            </Text>
-            <Tooltip content="Skip Event Hub, ACR, emulator ACI, Storage, and Bicep infra" relationship="description" positioning="after">
-              <Checkbox
-                label={`Azure Emulator Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
-                checked={!config.skip_base_infra}
-                onChange={(_, d) => update("skip_base_infra", !d.checked)}
-              />
-            </Tooltip>
-            <Tooltip content="Skip FHIR R4 service deployment and data loading" relationship="description" positioning="after">
-              <Checkbox
-                label={`FHIR Service + Data Loading${existingDeploy ? " (already deployed)" : ""}`}
-                checked={!config.skip_fhir}
-                onChange={(_, d) => update("skip_fhir", !d.checked)}
-                disabled={config.skip_base_infra}
-              />
-            </Tooltip>
-            <div style={{ paddingLeft: 24 }}>
-              <Tooltip content="Skip Synthea patient generation — use existing patients" relationship="description" positioning="after">
+            {/* ── Group 1: Infrastructure & Data Ingestion (Phase 1) ── */}
+            <div
+              onClick={() => setSkipGroup1Collapsed(!skipGroup1Collapsed)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "8px 12px",
+                backgroundColor: tokens.colorNeutralBackground3,
+                borderRadius: tokens.borderRadiusMedium,
+                cursor: "pointer",
+                userSelect: "none",
+                marginTop: tokens.spacingVerticalXS,
+                borderLeft: `4px solid ${tokens.colorBrandStroke1}`
+              }}
+            >
+              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                1. Data Fabric Foundation
+              </Text>
+              {skipGroup1Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+            </div>
+            <div className={`deploy-collapsible-content ${skipGroup1Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+              <Tooltip content="Skip Event Hub, ACR, emulator ACI, Storage, and Bicep infra" relationship="description" positioning="after">
                 <Checkbox
-                  label="Synthea Patient Generation"
-                  checked={!config.skip_synthea}
-                  onChange={(_, d) => update("skip_synthea", !d.checked)}
-                  disabled={config.skip_fhir}
+                  label={`Azure Emulator Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
+                  checked={!config.skip_base_infra}
+                  onChange={(_, d) => update("skip_base_infra", !d.checked)}
                 />
               </Tooltip>
-              <Tooltip content="Skip Device resource creation + patient associations" relationship="description" positioning="after">
+              <Tooltip content="Skip FHIR R4 service deployment and data loading" relationship="description" positioning="after">
                 <Checkbox
-                  label="Device Associations"
-                  checked={!config.skip_device_assoc}
-                  onChange={(_, d) => update("skip_device_assoc", !d.checked)}
-                  disabled={config.skip_synthea || config.skip_fhir}
+                  label={`FHIR Service + Data Loading${existingDeploy ? " (already deployed)" : ""}`}
+                  checked={!config.skip_fhir}
+                  onChange={(_, d) => update("skip_fhir", !d.checked)}
+                  disabled={config.skip_base_infra}
+                />
+              </Tooltip>
+              <div style={{ paddingLeft: 24, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
+                <Tooltip content="Skip Synthea patient generation — use existing patients" relationship="description" positioning="after">
+                  <Checkbox
+                    label="Synthea Patient Generation"
+                    checked={!config.skip_synthea}
+                    onChange={(_, d) => update("skip_synthea", !d.checked)}
+                    disabled={config.skip_fhir}
+                  />
+                </Tooltip>
+                <Tooltip content="Skip Device resource creation + patient associations" relationship="description" positioning="after">
+                  <Checkbox
+                    label="Device Associations"
+                    checked={!config.skip_device_assoc}
+                    onChange={(_, d) => update("skip_device_assoc", !d.checked)}
+                    disabled={config.skip_synthea || config.skip_fhir}
+                  />
+                </Tooltip>
+              </div>
+              <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
+                <Checkbox
+                  label="DICOM Download + Upload"
+                  checked={!config.skip_dicom}
+                  onChange={(_, d) => update("skip_dicom", !d.checked)}
+                  disabled={config.skip_base_infra}
+                />
+              </Tooltip>
+              <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
+                <Checkbox
+                  label="Fabric RTI (Eventhouse + Eventstream)"
+                  checked={!config.skip_fabric}
+                  onChange={(_, d) => update("skip_fabric", !d.checked)}
+                />
+              </Tooltip>
+              <div style={{ paddingLeft: 24 }}>
+                <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
+                  <Checkbox
+                    label="FHIR $export to ADLS"
+                    checked={!config.skip_fhir_export}
+                    onChange={(_, d) => update("skip_fhir_export", !d.checked)}
+                    disabled={config.skip_fabric || config.skip_fhir}
+                  />
+                </Tooltip>
+              </div>
+            </div>
+
+            {/* ── Group 2: Enrichment & Clinical Triage (Phase 2) ── */}
+            <div
+              onClick={() => setSkipGroup2Collapsed(!skipGroup2Collapsed)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "8px 12px",
+                backgroundColor: tokens.colorNeutralBackground3,
+                borderRadius: tokens.borderRadiusMedium,
+                cursor: "pointer",
+                userSelect: "none",
+                marginTop: tokens.spacingVerticalS,
+                borderLeft: `4px solid ${tokens.colorPalettePurpleBorderActive}`
+              }}
+            >
+              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                2. Active Patient Telemetry
+              </Text>
+              {skipGroup2Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+            </div>
+            <div className={`deploy-collapsible-content ${skipGroup2Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+              <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
+                <Checkbox
+                  label="RTI Phase 2 (Shortcuts + Enrichment)"
+                  checked={!config.skip_rti_phase2}
+                  onChange={(_, d) => update("skip_rti_phase2", !d.checked)}
+                  disabled={config.skip_fabric}
+                />
+              </Tooltip>
+              <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
+                <Checkbox
+                  label="DICOM Shortcut + HDS Pipelines"
+                  checked={!config.skip_hds_pipelines}
+                  onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
+                  disabled={config.skip_dicom}
+                />
+              </Tooltip>
+              <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
+                <Checkbox
+                  label="Data Agents (Patient 360 + Clinical Triage)"
+                  checked={!config.skip_data_agents}
+                  onChange={(_, d) => update("skip_data_agents", !d.checked)}
                 />
               </Tooltip>
             </div>
-            <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
-              <Checkbox
-                label="DICOM Download + Upload"
-                checked={!config.skip_dicom}
-                onChange={(_, d) => update("skip_dicom", !d.checked)}
-                disabled={config.skip_base_infra}
-              />
-            </Tooltip>
-            <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
-              <Checkbox
-                label="Fabric RTI (Eventhouse + Eventstream)"
-                checked={!config.skip_fabric}
-                onChange={(_, d) => update("skip_fabric", !d.checked)}
-              />
-            </Tooltip>
-            <div style={{ paddingLeft: 24 }}>
-              <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
+
+            {/* ── Group 3: Downstream Analytics & Intelligence (Phases 3, 4, 5) ── */}
+            <div
+              onClick={() => setSkipGroup3Collapsed(!skipGroup3Collapsed)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "8px 12px",
+                backgroundColor: tokens.colorNeutralBackground3,
+                borderRadius: tokens.borderRadiusMedium,
+                cursor: "pointer",
+                userSelect: "none",
+                marginTop: tokens.spacingVerticalS,
+                borderLeft: `4px solid ${tokens.colorPaletteTealBorderActive}`
+              }}
+            >
+              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                3. Advanced Imaging &amp; Value-Based Analytics (Phases 3-6)
+              </Text>
+              {skipGroup3Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+            </div>
+            <div className={`deploy-collapsible-content ${skipGroup3Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+              <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
                 <Checkbox
-                  label="FHIR $export to ADLS"
-                  checked={!config.skip_fhir_export}
-                  onChange={(_, d) => update("skip_fhir_export", !d.checked)}
-                  disabled={config.skip_fabric || config.skip_fhir}
+                  label="Imaging Toolkit (Cohorting, Viewer, Report)"
+                  checked={!config.skip_imaging}
+                  onChange={(_, d) => update("skip_imaging", !d.checked)}
+                  disabled={config.skip_dicom}
+                />
+              </Tooltip>
+              <Tooltip content="Skip ClinicalDeviceOntology (9 entities), DeviceAssociation table, agent binding" relationship="description" positioning="after">
+                <Checkbox
+                  label="Ontology + Agent Binding"
+                  checked={!config.skip_ontology}
+                  onChange={(_, d) => update("skip_ontology", !d.checked)}
+                />
+              </Tooltip>
+              <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
+                <Checkbox
+                  label="Data Activator (Email Alerts)"
+                  checked={!config.skip_activator}
+                  onChange={(_, d) => update("skip_activator", !d.checked)}
+                  disabled={config.skip_fabric || !config.alert_email}
+                />
+              </Tooltip>
+              <Tooltip content="Skip CMS Quality Scorecard — claims materialization, quality measures computation, and Power BI report" relationship="description" positioning="after">
+                <Checkbox
+                  label="CMS Quality Scorecard (Claims + Measures + Report)"
+                  checked={!config.skip_quality_measures}
+                  onChange={(_, d) => update("skip_quality_measures", !d.checked)}
                 />
               </Tooltip>
             </div>
-
-            {/* ── Phase 2: Enrichment & Agents ── */}
-            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
-              Phase 2: Enrichment &amp; Agents
-            </Text>
-            <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
-              <Checkbox
-                label="RTI Phase 2 (Shortcuts + Enrichment)"
-                checked={!config.skip_rti_phase2}
-                onChange={(_, d) => update("skip_rti_phase2", !d.checked)}
-                disabled={config.skip_fabric}
-              />
-            </Tooltip>
-            <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
-              <Checkbox
-                label="DICOM Shortcut + HDS Pipelines"
-                checked={!config.skip_hds_pipelines}
-                onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
-                disabled={config.skip_dicom}
-              />
-            </Tooltip>
-            <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
-              <Checkbox
-                label="Data Agents (Patient 360 + Clinical Triage)"
-                checked={!config.skip_data_agents}
-                onChange={(_, d) => update("skip_data_agents", !d.checked)}
-              />
-            </Tooltip>
-
-            {/* ── Phase 3: Imaging & Reporting ── */}
-            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
-              Phase 3: Imaging &amp; Reporting
-            </Text>
-            <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
-              <Checkbox
-                label="Imaging Toolkit (Cohorting, Viewer, Report)"
-                checked={!config.skip_imaging}
-                onChange={(_, d) => update("skip_imaging", !d.checked)}
-                disabled={config.skip_dicom}
-              />
-            </Tooltip>
-
-            {/* ── Phase 4: Semantic Layer & Alerts ── */}
-            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
-              Phase 4: Semantic Layer &amp; Alerts
-            </Text>
-            <Tooltip content="Skip ClinicalDeviceOntology (9 entities), DeviceAssociation table, agent binding" relationship="description" positioning="after">
-              <Checkbox
-                label="Ontology + Agent Binding"
-                checked={!config.skip_ontology}
-                onChange={(_, d) => update("skip_ontology", !d.checked)}
-              />
-            </Tooltip>
-            <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
-              <Checkbox
-                label="Data Activator (Email Alerts)"
-                checked={!config.skip_activator}
-                onChange={(_, d) => update("skip_activator", !d.checked)}
-                disabled={config.skip_fabric || !config.alert_email}
-              />
-            </Tooltip>
-
-            {/* ── Phase 5: CMS Quality & Claims ── */}
-            <Text weight="semibold" size={300} style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorBrandForeground1 }}>
-              Phase 5: CMS Quality &amp; Claims
-            </Text>
-            <Tooltip content="Skip CMS Quality Scorecard — claims materialization, quality measures computation, and Power BI report" relationship="description" positioning="after">
-              <Checkbox
-                label="CMS Quality Scorecard (Claims + Measures + Report)"
-                checked={!config.skip_quality_measures}
-                onChange={(_, d) => update("skip_quality_measures", !d.checked)}
-              />
-            </Tooltip>
           </div>
         </Card>
 
@@ -1695,7 +2190,17 @@ export function DeployWizard() {
         </div>
       )}
       <div className={styles.actions}>
-        <Tooltip content="Launch the full deployment pipeline" relationship="description">
+        <Tooltip content="Preview the Azure and Fabric assets that this configuration will deploy" relationship="description">
+          <Button
+            appearance="outline"
+            icon={<ClipboardRegular />}
+            onClick={() => setShowResourcePreview(true)}
+            disabled={validationErrors.length > 0}
+          >
+            Preview resources
+          </Button>
+        </Tooltip>
+        <Tooltip content="Review the resource graph, then launch the full deployment pipeline" relationship="description">
           <Button
             appearance="primary"
             icon={<RocketRegular />}
@@ -1724,19 +2229,21 @@ export function DeployWizard() {
           className={styles.summarySidebar}
           style={{
             width: "280px",
-            display: "none",
           }}
         >
           <style>{`
-            @media (min-width: 1800px) {
+            @media (max-width: 1199px) {
               .${styles.summarySidebar} {
-                display: block !important;
+                width: 100% !important;
+                position: static !important;
+                max-height: none !important;
               }
             }
           `}</style>
           <Card>
             <CardHeader
-              header={<Subtitle1>Deployment Summary</Subtitle1>}
+              header={<Subtitle1>Deployment Review</Subtitle1>}
+              action={<Button size="small" appearance="subtle" icon={<ClipboardRegular />} onClick={copyDeploymentPlan}>Copy plan</Button>}
             />
             <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
@@ -1770,6 +2277,20 @@ export function DeployWizard() {
                 </Text>
               </div>
               <div>
+                <Text size={200} weight="semibold" block>Risk / readiness</Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+                  {validationErrors.length === 0 ? (
+                    <Badge color="success">Required fields complete</Badge>
+                  ) : (
+                    <Badge color="warning">{validationErrors.length} required field(s) missing</Badge>
+                  )}
+                  {locationUnsupported && <Badge color="danger">Unsupported AHDS region</Badge>}
+                  {config.patient_count > 500 && <Badge color="warning">Large patient load</Badge>}
+                  {existingDeploy && !overridePriorSettings && <Badge color="informative">Existing deployment detected</Badge>}
+                  {pauseAfterDeploy && <Badge color="informative">Capacity pause after deploy</Badge>}
+                </div>
+              </div>
+              <div>
                 <Text size={200} weight="semibold" block style={{ marginBottom: 4 }}>Components</Text>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {!config.skip_base_infra && <Text size={100}>✓ Infrastructure</Text>}
@@ -1781,6 +2302,7 @@ export function DeployWizard() {
                   {!config.skip_imaging && <Text size={100}>✓ Imaging Toolkit</Text>}
                   {!config.skip_ontology && <Text size={100}>✓ Ontology</Text>}
                   {!config.skip_activator && config.alert_email && <Text size={100}>✓ Alerts</Text>}
+                  {!config.skip_quality_measures && <Text size={100}>✓ CMS Quality</Text>}
                 </div>
               </div>
               {Object.keys(config.tags).length > 0 && (
@@ -1800,6 +2322,238 @@ export function DeployWizard() {
           </Card>
         </div>
       )}
+
+      <Dialog open={showResourcePreview} onOpenChange={(_, data) => setShowResourcePreview(data.open)}>
+        <DialogSurface style={{ maxWidth: "1520px", width: "96vw" }}>
+          <DialogBody>
+            <DialogTitle>Prospective deployment resources</DialogTitle>
+            <DialogContent>
+              <Text block style={{ color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalM }}>
+                This preview is generated from the current wizard settings before anything is deployed. Names with <code>{uniqueSuffix}</code> are ARM/Bicep deterministic names based on the target resource group id.
+              </Text>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: tokens.spacingHorizontalM, marginBottom: tokens.spacingVerticalM, flexWrap: "wrap" }}>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                  Based on the architecture docs: emulator → Event Hub → Eventstream/Eventhouse, FHIR/DICOM → ADLS → HDS Lakehouses, then agents/ontology/alerts/reports.
+                </Text>
+                <div style={{ display: "flex", gap: tokens.spacingHorizontalXS, alignItems: "center", flexWrap: "wrap" }}>
+                  <Button size="small" appearance={resourcePreviewMode === "cards" ? "primary" : "secondary"} onClick={() => setResourcePreviewMode("cards")}>Resource boxes</Button>
+                  <Button size="small" appearance={resourcePreviewMode === "graph" ? "primary" : "secondary"} onClick={() => setResourcePreviewMode("graph")}>Interconnection graph</Button>
+                  {resourcePreviewMode === "graph" && (
+                    <>
+                      <Button size="small" appearance="subtle" onClick={() => setResourceGraphZoom((z) => Math.max(0.75, Math.round((z - 0.15) * 100) / 100))}>−</Button>
+                      <Badge color="subtle">{Math.round(resourceGraphZoom * 100)}%</Badge>
+                      <Button size="small" appearance="subtle" onClick={() => setResourceGraphZoom((z) => Math.min(2.25, Math.round((z + 0.15) * 100) / 100))}>+</Button>
+                      <Button size="small" appearance="subtle" onClick={() => setResourceGraphZoom(1)}>Reset zoom</Button>
+                      <Button size="small" appearance="subtle" onClick={resetGraphLayout}>Reset layout</Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {resourcePreviewMode === "cards" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: tokens.spacingHorizontalL }}>
+                <div style={{ border: `2px solid ${tokens.colorPaletteBlueBorderActive}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
+                    <Subtitle1>Azure resource group</Subtitle1>
+                    <Badge color="informative">{prospectiveAzureAssets.length} assets</Badge>
+                  </div>
+                  <Text weight="semibold" block>{config.resource_group_name || "rg-<deployment>"}</Text>
+                  <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
+                    {prospectiveAzureAssets.map((asset) => (
+                      <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                        <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
+                        <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ border: `2px solid ${tokens.colorBrandStroke1}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
+                    <Subtitle1>Fabric workspace</Subtitle1>
+                    <Badge color="brand">{prospectiveFabricAssets.length} assets</Badge>
+                  </div>
+                  <Text weight="semibold" block>{config.fabric_workspace_name || "<workspace>"}</Text>
+                  <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
+                    {prospectiveFabricAssets.map((asset) => (
+                      <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                        <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
+                        <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              ) : (
+              <div style={{ display: "grid", gap: tokens.spacingVerticalXS }}>
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                Tip: drag resource boxes or arrow labels to separate overlaps, then zoom in for detailed reading. Arrows stay connected as boxes move.
+              </Text>
+              <div
+                ref={graphContainerRef}
+                onScroll={handleGraphScroll}
+                style={{ border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2, overflow: "auto", padding: tokens.spacingHorizontalS, maxHeight: "62vh", position: "relative" }}
+              >
+                <svg
+                  viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
+                  width={GRAPH_WIDTH * resourceGraphZoom}
+                  height={GRAPH_HEIGHT * resourceGraphZoom}
+                  role="img"
+                  aria-label="Prospective deployment interconnection graph"
+                  style={{ display: "block", cursor: graphDrag ? "grabbing" : "default", touchAction: "none" }}
+                  onPointerMove={updateGraphDrag}
+                  onPointerUp={() => setGraphDrag(null)}
+                  onPointerLeave={() => setGraphDrag(null)}
+                >
+                  <defs>
+                    <marker id="resource-preview-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L0,6 L9,3 z" fill={tokens.colorNeutralForeground3} />
+                    </marker>
+                  </defs>
+                  <rect x="205" y="20" width="385" height="620" rx="18" fill={tokens.colorPaletteBlueBackground2} opacity="0.28" />
+                  <text x="225" y="48" fill={tokens.colorPaletteBlueForeground2} fontSize="18" fontWeight="700">Azure resource group: {config.resource_group_name || "rg-<deployment>"}</text>
+                  <rect x="600" y="20" width="790" height="620" rx="18" fill={tokens.colorBrandBackground2} opacity="0.35" />
+                  <text x="620" y="48" fill={tokens.colorBrandForeground1} fontSize="18" fontWeight="700">Fabric workspace: {config.fabric_workspace_name || "<workspace>"}</text>
+                  
+                  {/* Fabric Workspace Inner Sub-Group Lanes */}
+                  <rect x="610" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="625" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>STREAMING &amp; KQL</text>
+
+                  <rect x="810" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="825" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>DELTA LAKE</text>
+
+                  <rect x="1010" y="62" width="370" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="1025" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>SEMANTIC &amp; APPLICATIONS</text>
+                  {/* 1. Render all edge paths */}
+                  {graphEdges.map((edge) => {
+                    const { pathD } = getEdgeGeom(edge);
+                    return (
+                      <path
+                        key={`path-${edge.id}`}
+                        d={pathD}
+                        stroke={tokens.colorNeutralForeground3}
+                        strokeWidth="2.25"
+                        fill="none"
+                        markerEnd="url(#resource-preview-arrow)"
+                        opacity="0.7"
+                      />
+                    );
+                  })}
+
+                  {/* 2. Render all node boxes */}
+                  {positionedGraphNodes.map((node) => (
+                    <g key={node.id} onPointerDown={(event) => startGraphNodeDrag(event, node.id)} style={{ cursor: "move" }}>
+                      <rect x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="14" fill={graphColor(node.group)} stroke={tokens.colorNeutralStroke1} strokeWidth="1.7" />
+                      <foreignObject x={node.x + 10} y={node.y + 8} width={NODE_WIDTH - 20} height={NODE_HEIGHT - 14}>
+                        <div style={{ fontSize: 13, lineHeight: "16px", fontWeight: 750, color: tokens.colorNeutralForeground1, textAlign: "center", overflow: "hidden", wordBreak: "break-word", userSelect: "none" }}>
+                          {node.label.split("\n").map((part) => <div key={part}>{part}</div>)}
+                        </div>
+                      </foreignObject>
+                    </g>
+                  ))}
+
+                  {/* 3. Render all edge labels on top of everything */}
+                  {graphLabelVisible && graphEdges.map((edge) => {
+                    const { midX, midY, labelWidth } = getEdgeGeom(edge);
+                    return (
+                      <g key={`label-${edge.id}`} onPointerDown={(event) => startGraphLabelDrag(event, edge.id)} style={{ cursor: "move" }}>
+                        <rect x={midX - labelWidth / 2} y={midY - 14} width={labelWidth} height="28" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorBrandStroke1} strokeWidth="1.25" opacity="0.98" />
+                        <text x={midX} y={midY + 5} textAnchor="middle" fill={tokens.colorNeutralForeground1} fontSize="13" fontWeight="700" style={{ userSelect: "none" }}>{edge.label}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
+
+                {/* Floating Interconnection Mini-Map */}
+                {miniMapCollapsed ? (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setMiniMapCollapsed(false)}
+                    style={{
+                      position: "absolute",
+                      bottom: 16,
+                      right: 16,
+                      zIndex: 10,
+                      backgroundColor: tokens.colorNeutralBackground1,
+                      border: `1px solid ${tokens.colorNeutralStroke2}`,
+                      boxShadow: tokens.shadow16,
+                      backdropFilter: "blur(8px)",
+                      opacity: 0.95,
+                      padding: "6px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 10,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Show Mini-Map
+                  </Button>
+                ) : (
+                  <div style={{ position: "absolute", bottom: 16, right: 16, width: 200, height: 110, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, boxShadow: tokens.shadow16, padding: 6, display: "flex", flexDirection: "column", gap: 4, zIndex: 10, pointerEvents: "auto", backdropFilter: "blur(8px)", opacity: 0.95 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                      <Text size={100} weight="semibold" style={{ color: tokens.colorNeutralForeground3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Interconnection Mini-Map</Text>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<DismissRegular style={{ fontSize: 10 }} />}
+                        onClick={() => setMiniMapCollapsed(true)}
+                        style={{ minWidth: "auto", padding: 2, height: 16, width: 16 }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, position: "relative", border: `1px dashed ${tokens.colorNeutralStroke3}`, borderRadius: tokens.borderRadiusSmall, overflow: "hidden", backgroundColor: tokens.colorNeutralBackground2 }}>
+                      <svg
+                        viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
+                        style={{ width: "100%", height: "100%", cursor: "crosshair", touchAction: "none" }}
+                        onPointerDown={handleMiniMapPointerDown}
+                        onPointerMove={handleMiniMapPointerMove}
+                        onPointerUp={handleMiniMapPointerUp}
+                      >
+                        <rect x="290" y="20" width="520" height="660" rx="35" fill={tokens.colorPaletteBlueBackground2} opacity="0.25" />
+                        <rect x="820" y="20" width="1070" height="660" rx="35" fill={tokens.colorBrandBackground2} opacity="0.3" />
+                        {graphEdges.map((edge) => {
+                          const { pathD } = getEdgeGeom(edge);
+                          return <path key={`mini-path-${edge.id}`} d={pathD} stroke={tokens.colorNeutralForeground3} strokeWidth="12" fill="none" opacity="0.45" />;
+                        })}
+                        {positionedGraphNodes.map((node) => (
+                          <rect key={`mini-node-${node.id}`} x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="25" fill={graphColor(node.group)} opacity="0.85" />
+                        ))}
+                        {/* Active Viewport Tracking Indicator */}
+                        <rect
+                          x={resourceGraphZoom > 0 ? scrollState.scrollLeft / resourceGraphZoom : 0}
+                          y={resourceGraphZoom > 0 ? scrollState.scrollTop / resourceGraphZoom : 0}
+                          width={Math.min(GRAPH_WIDTH, resourceGraphZoom > 0 ? scrollState.clientWidth / resourceGraphZoom : GRAPH_WIDTH)}
+                          height={Math.min(GRAPH_HEIGHT, resourceGraphZoom > 0 ? scrollState.clientHeight / resourceGraphZoom : GRAPH_HEIGHT)}
+                          fill="rgba(98, 100, 167, 0.1)"
+                          stroke={tokens.colorBrandStroke1}
+                          strokeWidth="20"
+                          rx="18"
+                          style={{ transition: "stroke 0.25s, fill 0.25s" }}
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+              </div>
+              </div>
+              )}
+            </DialogContent>
+            <DialogActions>
+              {existingDeploy && (
+                <Button appearance="subtle" onClick={runLiveExistingValidation} disabled={deepCheckingExisting}>
+                  {deepCheckingExisting ? "Validating live state…" : "Run live validation"}
+                </Button>
+              )}
+              <Button appearance="subtle" onClick={copyDeploymentPlan}>Copy plan</Button>
+              <Button appearance="secondary" onClick={() => setShowResourcePreview(false)}>Cancel</Button>
+              <Button appearance="primary" icon={<RocketRegular />} onClick={startActualDeployment} disabled={loading || validationErrors.length > 0}>
+                {loading ? "Starting…" : "Deploy these resources"}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

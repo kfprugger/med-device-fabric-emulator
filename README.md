@@ -27,13 +27,14 @@ The entire solution deploys in under 2 hours via the **Orchestrator UI** (browse
 
 ## 📑 Table of Contents
 
-| Phase | Description | Guide |
+| Stage | Description | Guide |
 |-------|-------------|-------|
-| **Phase 1** | Azure infrastructure, FHIR + DICOM data generation, Fabric RTI pipeline, manual HDS deployment | [Phase 1 — Infrastructure & Data](docs/phase-1-infrastructure-and-ingestion.md) |
-| **Phase 2** | HDS Silver Lakehouse shortcuts, enriched clinical alerts, HDS pipelines, Data Agents | [Phase 2 — Analytics & AI Agents](docs/phase-2-hds-enrichment-and-agents.md) |
-| **Phase 3** | Cohorting Agent, OHIF DICOM Viewer, materialization notebook, Power BI report | [Phase 3 — Imaging & Reporting](docs/phase-3-imaging-and-cohorting.md) |
-| **Phase 4** | Ontology deployment, agent ontology binding, Data Activator (email alerts) | [Phase 4 — Semantic Layer & Alerts](docs/phase-4-ontology-and-activator.md) |
-| **Phase 5** | Claims materialization, CMS quality measures (7 eCQMs), medication adherence (PDC), Power BI Quality Scorecard | [Phase 5 — CMS Quality & Claims](docs/phase-5-cms-quality-and-claims.md) |
+| **Stage 1: Data Fabric Foundation** | Azure base infra, FHIR + DICOM data generation, HDS workspace managed identity | [Stage 1 — Data Fabric Foundation](docs/phase-1-infrastructure-and-ingestion.md) |
+| **Stage 2: Active Patient Telemetry** | Masimo real-time pulse oximetry streaming, Eventstream, Eventhouse KQL alert policies | [Stage 2 — Active Patient Telemetry](docs/phase-2-hds-enrichment-and-agents.md) |
+| **Stage 3: Multimodal Cohorting & Imaging** | Healthcare Data Solutions (HDS) pipelines, DICOM shortcuts, OHIF Viewer, cohorting agent | [Stage 3 — Multimodal Cohorting & Imaging](docs/phase-3-imaging-and-cohorting.md) |
+| **Stage 4: Connected Semantic Intelligence** | ClinicalDeviceOntology semantic layer, conversational data agents (Patient 360, Triage) | [Stage 4 — Connected Semantic Intelligence](docs/phase-4-ontology-and-activator.md) |
+| **Stage 5: Bedside Alerting & Action** | Data Activator Reflex engine, real-time alert attribute routing, email rules and cooldowns | [Stage 5 — Bedside Alerting & Action](docs/phase-4-ontology-and-activator.md) |
+| **Stage 6: CMS Quality & Performance** | Claims star schema tables, eCQM clinical quality measures, Power BI Quality Scorecard | [Stage 6 — CMS Quality & Performance](docs/phase-5-cms-quality-and-claims.md) |
 
 **Additional guides:**
 - [Orchestrator UI](orchestrator/README.md) — Setup and usage for the browser-based deployment dashboard
@@ -84,17 +85,23 @@ flowchart LR
 
     subgraph FAB["🟢 Microsoft Fabric Workspace"]
         direction TB
-        subgraph P1["Phase 1 · Real-Time Intelligence"]
-            F1["⚡ Eventstream → Eventhouse<br/>KQL Clinical Alerts"]
+        subgraph P1["Stage 1 · Data Fabric Foundation"]
+            F1["🥉→🥈→🥇 Medallion Lakehouses<br/>(Bronze, Silver, Gold OMOP)"]
         end
-        subgraph P2["Phase 2 · HDS & AI Agents"]
-            F2["🥉→🥈→🥇 Medallion Lakehouses"]
+        subgraph P2["Stage 2 · Active Patient Telemetry"]
+            F2["⚡ Eventstream → Eventhouse<br/>KQL Clinical Alerts"]
         end
-        subgraph P3["Phase 3 · Imaging & Cohorting"]
-            F3["🖼️ Reporting Lakehouse"]
+        subgraph P3["Stage 3 · Multimodal Cohorting & Imaging"]
+            F3["🖼️ Reporting Lakehouse<br/>+ DICOM Cohorting & Viewer"]
         end
-        subgraph P4["Phase 4 · Semantic Layer"]
-            F4["🧠 Fabric IQ Ontology<br/>+ Data Activator"]
+        subgraph P4["Stage 4 · Connected Semantic Intelligence"]
+            F4["🧠 Fabric IQ Ontology<br/>+ Patient 360 & Triage Agents"]
+        end
+        subgraph P5["Stage 5 · Bedside Alerting & Action"]
+            F5["📧 Data Activator Reflex alerts"]
+        end
+        subgraph P6["Stage 6 · CMS Quality & Performance"]
+            F6["📊 CMS Quality Scorecard PBI Report"]
         end
     end
 
@@ -166,30 +173,37 @@ flowchart TB
     subgraph FAB["Microsoft Fabric Workspace"]
         direction TB
 
-        subgraph P1["Phase 1 — Real-Time Intelligence"]
-            ES["Eventstream"]
-            EVH["Eventhouse\n(MasimoKQLDB)"]
-            DASH1["Real-Time Dashboard"]
-        end
-
-        subgraph P2["Phase 2 — HDS Enrichment"]
+        subgraph P1["Stage 1 — Data Fabric Foundation"]
             BZ["Bronze Lakehouse"]
             SLV["Silver Lakehouse"]
             GOLD["Gold OMOP Lakehouse"]
             SC["KQL Shortcuts\n(6 Silver tables)"]
-            MAP["Clinical Alerts Map"]
-            DA["Data Agents\n(Patient 360 +\nClinical Triage)"]
         end
 
-        subgraph P3["Phase 3 — Imaging"]
+        subgraph P2["Stage 2 — Active Patient Telemetry"]
+            ES["Eventstream"]
+            EVH["Eventhouse\n(MasimoKQLDB)"]
+            DASH1["Real-Time Dashboard"]
+            MAP["Clinical Alerts Map"]
+        end
+
+        subgraph P3["Stage 3 — Multimodal Cohorting & Imaging"]
             RPT["Reporting Lakehouse"]
             PBI["Power BI Report\n(Direct Lake)"]
             COHORT["Cohorting Agent"]
         end
 
-        subgraph P4["Phase 4 — Ontology & Activator"]
+        subgraph P4["Stage 4 — Connected Semantic Intelligence"]
             ONT["ClinicalDeviceOntology\n(9 entity types)"]
+            DA["Data Agents\n(Patient 360 +\nClinical Triage)"]
+        end
+
+        subgraph P5["Stage 5 — Bedside Alerting & Action"]
             ACT["Data Activator\n(Email Alerts)"]
+        end
+
+        subgraph P6["Stage 6 — CMS Quality & Performance"]
+            PBI_CMS["CMS Quality Scorecard\nPower BI Report"]
         end
     end
 
@@ -212,15 +226,18 @@ flowchart TB
     ONT -.-> DA
     ONT -.-> COHORT
     EVH --> ACT
+    SLV -.-> PBI_CMS
 
     style EXT fill:#f5f5f5,stroke:#999,stroke-dasharray:5
     style AZ fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
     style FAB fill:#f0e6ff,stroke:#8000d4,stroke-width:2px
     style VIEWER fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
-    style P1 fill:#fff3e6,stroke:#ff8c00
-    style P2 fill:#e6ffe6,stroke:#00a000
-    style P3 fill:#ffe6e6,stroke:#d40000
-    style P4 fill:#e6e6ff,stroke:#4040d4
+    style P1 fill:#FFF4E5,stroke:#FF8C00,stroke-width:1.5px
+    style P2 fill:#E2F0D9,stroke:#385723,stroke-width:1.5px
+    style P3 fill:#FDE7E9,stroke:#D13438,stroke-width:1.5px
+    style P4 fill:#E8E8FF,stroke:#5C2D91,stroke-width:1.5px
+    style P5 fill:#FFF2CC,stroke:#D6B656,stroke-width:1.5px
+    style P6 fill:#E1F5FE,stroke:#0288D1,stroke-width:1.5px
 ```
 
 ### Deployment Sequence
@@ -312,38 +329,60 @@ graph LR
 
 > **The Orchestrator UI is the supported, recommended path for every deployment.** The CLI scripts exist for automation, CI/CD, and advanced scenarios — but interactive deployments, monitoring, and teardown should all go through the browser-based wizard.
 
-### Prerequisites
+### 📋 Prerequisites & Requirements
 
-> **These prerequisites are required for both the Orchestrator UI and command-line (`Deploy-All.ps1`) deployments.** The setup script detects your OS and provides platform-specific install commands for anything that's missing.
->
-> **Authentication requirement (mandatory):** On the machine running deployment, you must be logged in to both Azure CLI and Azure PowerShell:
-> - `az login`
-> - `Connect-AzAccount`
-> - Keep both contexts on the same subscription/tenant (`az account show`, `Get-AzContext`)
+Before deploying the platform, ensure you meet the requirements below. For a seamless setup, the local requirements are automatically checked and installed by our preflight script.
 
-Run the setup script to check and install all dependencies:
+> [!IMPORTANT]
+> **Local Requirements Auto-Installation:**
+> Any missing local dependencies (PowerShell, Azure CLI, Python, Node.js, etc.) will be **automatically installed and configured** by the preflight script (`setup-prereqs.ps1` or `setup-prereqs.sh`) if they are not detected on your machine. You do not need to install them manually.
 
-```powershell
-# Windows (PowerShell)
-.\setup-prereqs.ps1
+---
 
-# macOS / Linux (bash — installs PowerShell Core if missing)
-chmod +x setup-prereqs.sh
-./setup-prereqs.sh
-```
+#### 💻 1. Local Machine Requirements
 
-This checks and installs: PowerShell 7+, Azure CLI + Bicep, Az PowerShell module, Python 3.10+, Node.js 18+, Git, plus it creates the Python virtual environment and installs both backend and frontend dependencies.
+These tools are needed to run the deployment scripts and host the Orchestrator UI:
 
-To check without installing anything: `.\setup-prereqs.ps1 -CheckOnly`
+*   **PowerShell 7+** (Core) — Used to run the cross-platform deployment orchestration scripts.
+*   **Azure CLI (with Bicep)** — Handles resource deployment in Azure.
+*   **Azure PowerShell module (`Az`)** — Automates Azure Health Data Services and resource group operations.
+*   **Python 3.10+** — Powers the FastAPI backend for the Orchestrator UI.
+*   **Node.js 18+** — Builds and serves the React-based Vite frontend.
+*   **Git** — Clones and pulls solution updates.
 
-**Required Azure/Fabric:**
-- Azure subscription with permissions to create resource groups, Health Data Services, ACR, ACI, Storage, and Managed Identities
-- Azure CLI authenticated (`az login`)
-- Azure PowerShell authenticated (`Connect-AzAccount`)
-- Azure CLI + Az PowerShell on the same subscription/tenant context
-- Microsoft Fabric capacity (**paid F-SKU** such as F2 or F64 — trial capacities cannot deploy Healthcare Data Solutions)
-- **NOTE:** If you do not use a paid F-SKU, you will not be able to deploy Healthcare Data Solutions which is core to the entire solution
-- Fabric tenant settings enabled: **Data Activator**, **Copilot**, and **Azure OpenAI Service**
+> [!TIP]
+> **How to run the preflight setup script:**
+> ```powershell
+> # Windows (Run as Administrator in PowerShell)
+> .\setup-prereqs.ps1
+> 
+> # macOS / Linux (Terminal)
+> chmod +x setup-prereqs.sh
+> ./setup-prereqs.sh
+> ```
+> *To only check status without installing missing tools, run: `.\setup-prereqs.ps1 -CheckOnly`*
+
+---
+
+#### ☁️ 2. Azure & Microsoft Fabric Requirements
+
+These cloud permissions and settings must be configured prior to running the deployment:
+
+*   **Azure Subscription Context:**
+    *   An active Azure subscription with owner or contributor permissions to create: Resource Groups, Health Data Services (FHIR/DICOM), Azure Container Registry (ACR), Azure Container Instances (ACI), Storage Accounts (ADLS Gen2), and User-Assigned Managed Identities.
+*   **Active Cloud Session Authentication (Mandatory):**
+    *   You must be signed into the same tenant and subscription context on both command-line tools:
+        *   `az login`
+        *   `Connect-AzAccount`
+    *   Verify both contexts match: `az account show` and `Get-AzContext`.
+*   **Microsoft Fabric Capacity:**
+    *   A **Paid Fabric Capacity (F-SKU, e.g., F2 or F64)**.
+    *   > [!WARNING]
+        > **Fabric Trial Capacities are not supported:** Microsoft Fabric trial environments cannot deploy or host Healthcare Data Solutions (HDS) workspaces and pipelines, which are core to this solution.
+*   **Fabric Tenant Settings:**
+    *   The following tenant settings must be enabled by your Fabric administrator:
+        *   **Data Activator** (for real-time oximeter alerting)
+        *   **Copilot and Azure OpenAI Service** (for the AI Patient 360 & Triage Data Agents)
 
 ### Deploy with the Orchestrator UI
 
@@ -406,8 +445,23 @@ npm run dev
 
 ### CLI & Automation (Advanced)
 
+For DevOps, automation, and advanced CI/CD scripting pipelines, the entire platform lifecycle can be managed via command-line PowerShell scripts.
+
+#### 🛠️ Command-Line Interface (CLI) Cheatsheet
+
+| Operational Objective | Command Syntax | Key Flags & Use Cases |
+| :--- | :--- | :--- |
+| **Check & Install Prerequisites** | `.\setup-prereqs.ps1` | Detects and automatically installs all missing local toolchains |
+| **Prerequisites Dry-Run (Check-Only)** | `.\setup-prereqs.ps1 -CheckOnly` | Runs diagnostic validation without installing any software |
+| **Deploy Complete Platform** | `.\Deploy-All.ps1 -ResourceGroupName "rg-med" -Location "eastus" -FabricWorkspaceName "ws-med" -AdminSecurityGroup "admins" -PatientCount 100 -AlertEmail "nurse@hospital.com"` | Automates the deployment of all four platform phases in sequence |
+| **Bypass Base Azure Infra** | `.\Deploy-All.ps1 -SkipBaseInfra [other params]` | Reuses existing base Azure container registries and oximeter resources |
+| **Rebuild Container Images** | `.\Deploy-All.ps1 -RebuildContainers [other params]` | Rebuilds and pushes fresh Docker images to Azure Container Registry |
+| **Run Specific Stage / Phase** | `.\Deploy-All.ps1 -Phase2 [other params]` or `-Phase3`, `-Phase4` | Executes targeted deployment steps (e.g., agents, ontology, or cohorting) |
+| **Quick Start Orchestrator Web UI** | `.\Start-WebUI.ps1` | Launches both backend API (7071) and React dashboard (5173) |
+| **Teardown Platform Infrastructure** | `.\Teardown-All.ps1 -FabricWorkspaceName "ws-med" -ResourceGroupName "rg-med" -Force` | Performs teardown of workspace managed identities, cloud resources, and RG |
+
 <details>
-<summary><strong>Click to expand — PowerShell-only deployment for CI/CD or headless scenarios</strong></summary>
+<summary><strong>Click to expand — PowerShell-only deployment details and examples</strong></summary>
 
 The UI calls the same underlying scripts shown below. Use these directly only if you are scripting deployments, embedding in a pipeline, or debugging a specific phase.
 

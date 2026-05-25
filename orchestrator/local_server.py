@@ -113,6 +113,47 @@ from shared.database import (
 migrate_from_json(STATE_FILE)
 mark_stale_as_terminated()
 
+CACHE_FILE = Path(__file__).parent / ".orchestrator-cache.json"
+
+# Cache for resource scan results to avoid redundant Azure/Fabric API calls
+# Used by both teardown scanner and deployment check-existing endpoint
+_scan_cache: dict[str, dict] = {}  # key → {result, timestamp}
+_SCAN_CACHE_TTL = 120  # seconds
+
+# General short-lived backend cache for expensive CLI/tooling reads.
+_timed_cache: dict[str, dict] = {}  # key → {result, timestamp}
+
+
+def _load_persistent_cache():
+    global _scan_cache, _timed_cache
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "r") as f:
+                data = json.load(f)
+                _scan_cache = data.get("scan_cache", {})
+                _timed_cache = data.get("timed_cache", {})
+                logger.info("Loaded persistent cache from %s", CACHE_FILE)
+        except Exception as e:
+            logger.warning("Failed to load persistent cache: %s", e)
+            _scan_cache = {}
+            _timed_cache = {}
+
+
+def _save_persistent_cache():
+    try:
+        temp_file = CACHE_FILE.with_suffix(".tmp")
+        with open(temp_file, "w") as f:
+            json.dump({
+                "scan_cache": _scan_cache,
+                "timed_cache": _timed_cache
+            }, f, indent=2)
+        temp_file.replace(CACHE_FILE)
+    except Exception as e:
+        logger.warning("Failed to save persistent cache: %s", e)
+
+
+_load_persistent_cache()
+
 # In-memory cache for active deployments (for real-time log streaming)
 deployments: dict[str, dict] = {}
 for dep in db_list_deployments():
@@ -125,10 +166,17 @@ active_processes: dict[str, int] = {}  # instance_id → PID
 # Track active teardown scans for incremental UI updates
 scan_jobs: dict[str, dict] = {}
 
-# Cache for resource scan results to avoid redundant Azure/Fabric API calls
-# Used by both teardown scanner and deployment check-existing endpoint
-_scan_cache: dict[str, dict] = {}  # key → {result, timestamp}
-_SCAN_CACHE_TTL = 120  # seconds
+
+def _get_timed_cached(key: str, ttl_seconds: int):
+    entry = _timed_cache.get(key)
+    if entry and (datetime.now(timezone.utc).timestamp() - entry["timestamp"]) < ttl_seconds:
+        return entry["result"]
+    return None
+
+
+def _set_timed_cached(key: str, result):
+    _timed_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
+    _save_persistent_cache()
 
 
 def _get_cached(key: str) -> dict | None:
@@ -140,6 +188,7 @@ def _get_cached(key: str) -> dict | None:
 
 def _set_cached(key: str, result: dict):
     _scan_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
+    _save_persistent_cache()
 
 
 def _scan_counts(candidates: list[dict]) -> dict[str, int]:
@@ -199,78 +248,87 @@ def save_state():
 
 def _get_auth_context_sync() -> dict:
     """Inspect local Azure CLI and Az PowerShell auth/tooling context."""
-    cli = {
-        "installed": False,
-        "loggedIn": False,
-        "user": "",
-        "subscriptionName": "",
-        "subscriptionId": "",
-        "tenantId": "",
-        "error": "",
-    }
-    pwsh = {
-        "installed": False,
-        "loggedIn": False,
-        "user": "",
-        "subscriptionName": "",
-        "subscriptionId": "",
-        "tenantId": "",
-        "error": "",
-    }
+    from concurrent.futures import ThreadPoolExecutor
 
-    # Azure CLI context
-    try:
-        ver = _az_run(["az", "version", "-o", "json"])
-        cli["installed"] = ver.returncode == 0
-        if ver.returncode == 0:
-            acct = _az_run([
-                "az", "account", "show",
-                "--query", "{user:user.name, subscriptionName:name, subscriptionId:id, tenantId:tenantId}",
-                "-o", "json",
-            ])
-            if acct.returncode == 0 and acct.stdout.strip():
-                data = json.loads(acct.stdout)
-                cli["loggedIn"] = bool(data.get("subscriptionId"))
-                cli["user"] = data.get("user", "") or ""
-                cli["subscriptionName"] = data.get("subscriptionName", "") or ""
-                cli["subscriptionId"] = data.get("subscriptionId", "") or ""
-                cli["tenantId"] = data.get("tenantId", "") or ""
+    def get_cli():
+        cli = {
+            "installed": False,
+            "loggedIn": False,
+            "user": "",
+            "subscriptionName": "",
+            "subscriptionId": "",
+            "tenantId": "",
+            "error": "",
+        }
+        try:
+            ver = _az_run(["az", "version", "-o", "json"])
+            cli["installed"] = ver.returncode == 0
+            if ver.returncode == 0:
+                acct = _az_run([
+                    "az", "account", "show",
+                    "--query", "{user:user.name, subscriptionName:name, subscriptionId:id, tenantId:tenantId}",
+                    "-o", "json",
+                ])
+                if acct.returncode == 0 and acct.stdout.strip():
+                    data = json.loads(acct.stdout)
+                    cli["loggedIn"] = bool(data.get("subscriptionId"))
+                    cli["user"] = data.get("user", "") or ""
+                    cli["subscriptionName"] = data.get("subscriptionName", "") or ""
+                    cli["subscriptionId"] = data.get("subscriptionId", "") or ""
+                    cli["tenantId"] = data.get("tenantId", "") or ""
+                else:
+                    cli["error"] = (acct.stderr or "Not logged in to Azure CLI").strip()[:400]
             else:
-                cli["error"] = (acct.stderr or "Not logged in to Azure CLI").strip()[:400]
-        else:
-            cli["error"] = (ver.stderr or "Azure CLI not installed").strip()[:400]
-    except Exception as e:
-        cli["error"] = str(e)[:400]
+                cli["error"] = (ver.stderr or "Azure CLI not installed").strip()[:400]
+        except Exception as e:
+            cli["error"] = str(e)[:400]
+        return cli
 
-    # Az PowerShell context
-    ps_cmd = (
-        "$ErrorActionPreference='Stop'; "
-        "if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { "
-        "  [PSCustomObject]@{installed=$false;loggedIn=$false;user='';subscriptionName='';subscriptionId='';tenantId='';error='Az.Accounts module not installed'} | ConvertTo-Json -Compress; exit 0 "
-        "}; "
-        "try { "
-        "  $ctx = Get-AzContext -ErrorAction Stop; "
-        "  if ($null -eq $ctx -or $null -eq $ctx.Subscription) { throw 'No active Az context' }; "
-        "  [PSCustomObject]@{installed=$true;loggedIn=$true;user=$ctx.Account.Id;subscriptionName=$ctx.Subscription.Name;subscriptionId=$ctx.Subscription.Id;tenantId=$ctx.Tenant.Id;error=''} | ConvertTo-Json -Compress "
-        "} catch { "
-        "  [PSCustomObject]@{installed=$true;loggedIn=$false;user='';subscriptionName='';subscriptionId='';tenantId='';error=$_.Exception.Message} | ConvertTo-Json -Compress "
-        "}"
-    )
-    try:
-        ps = _az_run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", ps_cmd])
-        if ps.returncode == 0 and ps.stdout.strip():
-            data = json.loads(ps.stdout.strip())
-            pwsh["installed"] = bool(data.get("installed", False))
-            pwsh["loggedIn"] = bool(data.get("loggedIn", False))
-            pwsh["user"] = data.get("user", "") or ""
-            pwsh["subscriptionName"] = data.get("subscriptionName", "") or ""
-            pwsh["subscriptionId"] = data.get("subscriptionId", "") or ""
-            pwsh["tenantId"] = data.get("tenantId", "") or ""
-            pwsh["error"] = data.get("error", "") or ""
-        else:
-            pwsh["error"] = (ps.stderr or "Unable to inspect Az PowerShell context").strip()[:400]
-    except Exception as e:
-        pwsh["error"] = str(e)[:400]
+    def get_pwsh():
+        pwsh = {
+            "installed": False,
+            "loggedIn": False,
+            "user": "",
+            "subscriptionName": "",
+            "subscriptionId": "",
+            "tenantId": "",
+            "error": "",
+        }
+        ps_cmd = (
+            "$ErrorActionPreference='Stop'; "
+            "if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { "
+            "  [PSCustomObject]@{installed=$false;loggedIn=$false;user='';subscriptionName='';subscriptionId='';tenantId='';error='Az.Accounts module not installed'} | ConvertTo-Json -Compress; exit 0 "
+            "}; "
+            "try { "
+            "  $ctx = Get-AzContext -ErrorAction Stop; "
+            "  if ($null -eq $ctx -or $null -eq $ctx.Subscription) { throw 'No active Az context' }; "
+            "  [PSCustomObject]@{installed=$true;loggedIn=$true;user=$ctx.Account.Id;subscriptionName=$ctx.Subscription.Name;subscriptionId=$ctx.Subscription.Id;tenantId=$ctx.Tenant.Id;error=''} | ConvertTo-Json -Compress "
+            "} catch { "
+            "  [PSCustomObject]@{installed=$true;loggedIn=$false;user='';subscriptionName='';subscriptionId='';tenantId='';error=$_.Exception.Message} | ConvertTo-Json -Compress "
+            "}"
+        )
+        try:
+            ps = _az_run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", ps_cmd])
+            if ps.returncode == 0 and ps.stdout.strip():
+                data = json.loads(ps.stdout.strip())
+                pwsh["installed"] = bool(data.get("installed", False))
+                pwsh["loggedIn"] = bool(data.get("loggedIn", False))
+                pwsh["user"] = data.get("user", "") or ""
+                pwsh["subscriptionName"] = data.get("subscriptionName", "") or ""
+                pwsh["subscriptionId"] = data.get("subscriptionId", "") or ""
+                pwsh["tenantId"] = data.get("tenantId", "") or ""
+                pwsh["error"] = data.get("error", "") or ""
+            else:
+                pwsh["error"] = (ps.stderr or "Unable to inspect Az PowerShell context").strip()[:400]
+        except Exception as e:
+            pwsh["error"] = str(e)[:400]
+        return pwsh
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        cli_future = executor.submit(get_cli)
+        pwsh_future = executor.submit(get_pwsh)
+        cli = cli_future.result()
+        pwsh = pwsh_future.result()
 
     sub_aligned = False
     tenant_aligned = False
@@ -649,17 +707,17 @@ async def start_deploy(req: DeployRequest):
 
     # Build descriptive instance ID: P<milestones>-<datetime>
     # Milestone numbers encode which progress-bar milestones are active:
-    #   1 = Infra & Ingestion, 2 = Enrichment & Agents,
-    #   3 = Imaging Toolkit,   4 = Ontology & Activator,
-    #   5 = CMS Quality & Claims
+    #   1 = Data Fabric Foundation, 2 = Active Patient Telemetry,
+    #   3 = Multimodal Cohorting & Imaging, 4 = Connected Semantic Intelligence,
+    #   5 = Bedside Alerting & Action, 6 = CMS Quality & Performance
     now_local = datetime.now()
     timestamp = now_local.strftime("%Y%m%d-%H%M%S")
 
     # Determine active milestones from config flags
-    # From the UI, skip_* flags only skip sub-steps — all 4 milestones remain.
+    # From the UI, skip_* flags only skip sub-steps — all 6 milestones remain.
     # Phase-only flags (phase2_only, etc.) would restrict to specific milestones,
     # but the UI doesn't expose these currently.
-    milestones = [1, 2, 3, 4, 5]  # Default: all milestones active
+    milestones = [1, 2, 3, 4, 5, 6]  # Default: all milestones active
     phase_label = "P" + "".join(str(m) for m in milestones)
 
     instance_id = f"{phase_label}-{timestamp}"
@@ -706,10 +764,21 @@ async def start_deploy(req: DeployRequest):
 
 
 @app.get("/api/auth/context")
-async def get_auth_context():
-    """Return local Azure CLI + Az PowerShell authentication context."""
+async def get_auth_context(force: bool = False):
+    """Return local Azure CLI + Az PowerShell authentication context.
+
+    PowerShell startup is materially slower than Azure CLI context reads, so the
+    default UI path uses a short TTL cache. Pass force=1 from Preflight Refresh
+    or deployment start gates when a fresh two-tool validation is required.
+    """
+    cache_key = "auth_context"
+    if not force:
+      cached = _get_timed_cached(cache_key, 45)
+      if cached is not None:
+          return cached
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _get_auth_context_sync)
+    _set_timed_cached(cache_key, result)
     return result
 
 
@@ -742,6 +811,9 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             deploy_logs.append(entry)
             deployment["customStatus"]["logs"] = deploy_logs[-100:]
             deployment["customStatus"]["detail"] = msg
+            if "WAITING_FOR_HDS" in msg:
+                deployment["customStatus"]["status"] = "waiting_for_input"
+                save_state()
             parsed_links = _extract_deployment_links(msg)
             if parsed_links:
                 link_map = deployment["customStatus"].setdefault("links", {})
@@ -824,6 +896,7 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
         from activities.invoke_powershell import run_deploy
 
         config = req.model_dump()
+        config["instance_id"] = instance_id
         deploy_start = datetime.now(timezone.utc)
         deployment["customStatus"]["currentPhase"] = "Starting Deploy-All.ps1"
         deployment["customStatus"]["status"] = "running"
@@ -943,6 +1016,80 @@ async def get_phase_logs(instance_id: str, phase: str = ""):
     except Exception:
         pass
     return logs
+
+
+from fastapi.responses import StreamingResponse
+
+
+@app.get("/api/deploy/{instance_id}/logs/stream")
+async def stream_phase_logs(instance_id: str, phase: str = ""):
+    """Stream logs for a deployment in real-time using SSE (EventSource)."""
+    if instance_id not in deployments:
+        raise HTTPException(404, "Instance not found")
+
+    async def log_generator():
+        log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
+
+        # Wait for log file to be created up to 10 seconds
+        for _ in range(20):
+            if log_file.exists():
+                break
+            await asyncio.sleep(0.5)
+
+        if not log_file.exists():
+            yield "data: {\"message\": \"Log file not found yet.\", \"level\": \"info\"}\n\n"
+            return
+
+        # Keep track of file read position
+        position = 0
+        while True:
+            # Check deployment current status
+            deployment = deployments.get(instance_id)
+            is_finished = deployment and deployment.get("runtimeStatus") in ["Completed", "Failed", "Terminated"]
+
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    f.seek(position)
+                    lines = f.readlines()
+                    position = f.tell()
+
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if not phase or entry.get("phase", "") == phase:
+                            yield f"data: {json.dumps(entry)}\n\n"
+                    except Exception:
+                        pass
+            except Exception as e:
+                yield f"data: {json.dumps({'message': f'Error reading logs: {e}', 'level': 'error'})}\n\n"
+                break
+
+            if is_finished:
+                # One last check for any trailing lines written after our last check
+                try:
+                    with open(log_file, "r", encoding="utf-8") as f:
+                        f.seek(position)
+                        lines = f.readlines()
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            if not phase or entry.get("phase", "") == phase:
+                                yield f"data: {json.dumps(entry)}\n\n"
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                break
+
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 
 def _backfill_links_from_logs(instance_id: str, deployment: dict) -> None:
@@ -1079,6 +1226,22 @@ def _get_deployed_resources_sync(ws_name: str, rg_name: str) -> dict:
 
 @app.post("/api/deploy/{instance_id}/resume-hds")
 async def resume_hds(instance_id: str):
+    if instance_id in deployments:
+        dep = deployments[instance_id]
+        dep["customStatus"]["status"] = "running"
+        dep["customStatus"]["detail"] = "Resuming deployment..."
+        save_state()
+        
+        # Touch resume flag file in logs directory
+        resume_dir = Path(__file__).parent / "logs"
+        resume_dir.mkdir(exist_ok=True)
+        resume_file = resume_dir / f"{instance_id}.resume"
+        try:
+            resume_file.touch()
+            logger.info("Touched HDS resume file: %s", resume_file)
+        except Exception as e:
+            logger.warning("Failed to touch HDS resume file: %s", e)
+            
     return {"message": "HDS resume acknowledged"}
 
 
@@ -1185,25 +1348,37 @@ async def dismiss_teardown_endpoint(instance_id: str):
 
 
 @app.get("/api/scan/subscriptions")
-async def list_subscriptions():
+async def list_subscriptions(force: bool = False):
     """List Azure subscriptions available to the current user."""
     try:
-        subs = _list_subscriptions_sync()
+        cache_key = "subscriptions"
+        if not force:
+            cached = _get_timed_cached(cache_key, 180)
+            if cached is not None:
+                return cached
+        subs = _list_subscriptions_sync(force=force)
         # Sort so default subscription comes first
         subs.sort(key=lambda s: not s.get("isDefault", False))
-        return [{"id": s["id"], "name": s["name"]} for s in subs]
+        result = [{"id": s["id"], "name": s["name"]} for s in subs]
+        _set_timed_cached(cache_key, result)
+        return result
     except Exception as e:
         logger.error("Failed to list subscriptions: %s", e)
         return []
 
 
-def _list_subscriptions_sync() -> list[dict]:
+def _list_subscriptions_sync(force: bool = False) -> list[dict]:
+    if not force:
+        cached = _get_timed_cached("subscriptions_raw", 180)
+        if cached is not None:
+            return cached
     result = _az_run(
         ["az", "account", "list", "--query", "[].{id:id, name:name, isDefault:isDefault}", "-o", "json"],
         check=True,
     )
     subs = json.loads(result.stdout)
     subs.sort(key=lambda s: not s.get("isDefault", False))
+    _set_timed_cached("subscriptions_raw", subs)
     return subs
 
 
@@ -1284,236 +1459,241 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
     if previously_deployed_ws_names:
         logger.info("Previously deployed workspaces from DB: %s", previously_deployed_ws_names)
 
-    # ── Scan Fabric workspaces ─────────────────────────────────────
-    try:
-        emit_status("fabric", "Scanning Fabric workspaces...")
-        from shared.fabric_client import FabricClient
-        fabric = FabricClient()
+    from concurrent.futures import ThreadPoolExecutor
 
-        ws_result = fabric.call("GET", "/workspaces")
-        workspaces = ws_result.get("value", []) if ws_result else []
+    # Helper for Fabric scanning
+    def scan_fabric_workspaces():
+        fabric_results = []
+        try:
+            emit_status("fabric", "Scanning Fabric workspaces...")
+            from shared.fabric_client import FabricClient
+            fabric = FabricClient()
 
-        for ws in workspaces:
-            name = ws.get("displayName", "")
-            ws_id = ws.get("id", "")
+            ws_result = _get_timed_cached("fabric:workspaces", 120)
+            if ws_result is None:
+                ws_result = fabric.call("GET", "/workspaces")
+                _set_timed_cached("fabric:workspaces", ws_result)
+            workspaces = ws_result.get("value", []) if ws_result else []
 
-            try:
-                items = fabric.list_items(ws_id)
-                item_count = len(items)
-                item_types: dict[str, int] = {}
-                for item in items:
-                    t = item.get("type", "Unknown")
-                    item_types[t] = item_types.get(t, 0) + 1
+            def check_workspace(ws):
+                name = ws.get("displayName", "")
+                ws_id = ws.get("id", "")
+                try:
+                    items_cache_key = f"fabric:items:{ws_id}"
+                    items = _get_timed_cached(items_cache_key, 120)
+                    if items is None:
+                        items = fabric.list_items(ws_id)
+                        _set_timed_cached(items_cache_key, items)
+                    item_count = len(items)
+                    item_types: dict[str, int] = {}
+                    for item in items:
+                        t = item.get("type", "Unknown")
+                        item_types[t] = item_types.get(t, 0) + 1
 
-                # Criterion 1: HDS deployed
-                has_hds = any(i.get("type") == "Healthcaredatasolution" for i in items)
+                    has_hds = any(i.get("type") == "Healthcaredatasolution" for i in items)
+                    is_previously_deployed = name in previously_deployed_ws_names
 
-                # Check if this workspace was previously deployed via the orchestrator
-                is_previously_deployed = name in previously_deployed_ws_names
+                    if not has_hds and not is_previously_deployed:
+                        return None
 
-                # OR condition: include if HDS detected OR previously deployed
-                if not has_hds and not is_previously_deployed:
-                    continue
+                    eventhouse_item = next(
+                        (i for i in items
+                         if i.get("type") == "Eventhouse" and "masimo" in i.get("displayName", "").lower()),
+                        None,
+                    )
+                    has_eventhouse = eventhouse_item is not None
 
-                # Criterion 2: MasimoEventhouse present
-                eventhouse_item = next(
-                    (i for i in items
-                     if i.get("type") == "Eventhouse" and "masimo" in i.get("displayName", "").lower()),
-                    None,
-                )
-                has_eventhouse = eventhouse_item is not None
+                    artifact_list = []
+                    for t in sorted(item_types.keys()):
+                        count = item_types[t]
+                        if count > 3:
+                            artifact_list.append(f"{t}: (×{count})")
+                        else:
+                            matching_names = [i.get("displayName", "") for i in items if i.get("type") == t]
+                            artifact_list.append(f"{t}: {', '.join(matching_names)}")
 
-                # Build artifact list early so the UI can show the workspace immediately
-                artifact_list = []
-                for t in sorted(item_types.keys()):
-                    count = item_types[t]
-                    if count > 3:
-                        artifact_list.append(f"{t}: (×{count})")
-                    else:
-                        matching_names = [i.get("displayName", "") for i in items if i.get("type") == t]
-                        artifact_list.append(f"{t}: {', '.join(matching_names)}")
-
-                provisional_missing = []
-                if not has_eventhouse:
-                    provisional_missing.append("MasimoEventhouse")
-
-                provisional_candidate = {
-                    "type": "fabric",
-                    "name": name,
-                    "id": ws_id,
-                    "status": "partial",
-                    "detail": (
-                        f"Discovered workspace — checking fn_ClinicalAlerts ({item_count} Fabric items)"
-                        if has_eventhouse
-                        else f"Partial deployment — missing: {', '.join(provisional_missing)}"
-                    ),
-                    "resourceCount": item_count,
-                    "expectedCount": item_count,
-                    "matchedArtifacts": artifact_list,
-                    "qualified": False,
-                    "previouslyDeployed": is_previously_deployed,
-                    "detectedArtifacts": {
-                        "hasHDS": has_hds,
-                        "hasEventhouse": has_eventhouse,
-                        "hasFnClinicalAlerts": False,
-                    },
-                }
-                emit_candidate(provisional_candidate, "fabric", f"Discovered Fabric workspace: {name}")
-
-                # Criterion 3: fn_ClinicalAlerts exists in MasimoKQLDB
-                has_fn_clinical_alerts = False
-                if has_eventhouse and eventhouse_item:
-                    try:
-                        kql_db_item = next(
-                            (i for i in items if i.get("type") == "KQLDatabase"),
-                            None,
-                        )
-                        if kql_db_item:
-                            db_detail = fabric.call(
-                                "GET",
-                                f"/workspaces/{ws_id}/kqlDatabases/{kql_db_item['id']}",
+                    has_fn_clinical_alerts = False
+                    if has_eventhouse and eventhouse_item:
+                        try:
+                            kql_db_item = next(
+                                (i for i in items if i.get("type") == "KQLDatabase"),
+                                None,
                             )
-                            kusto_uri = ""
-                            if db_detail:
-                                props = db_detail.get("properties", {})
-                                kusto_uri = props.get("queryServiceUri", "") or props.get("kustoUri", "")
-                            if kusto_uri:
-                                from shared.kusto_client import KustoClient
-                                kusto = KustoClient(kusto_uri, kql_db_item.get("displayName", "MasimoKQLDB"))
-                                rows = kusto.execute_query(".show functions | where Name == 'fn_ClinicalAlerts'")
-                                has_fn_clinical_alerts = len(rows) > 0
-                    except Exception as kql_e:
-                        logger.warning("Could not check fn_ClinicalAlerts in '%s': %s", name, kql_e)
+                            if kql_db_item:
+                                db_detail = fabric.call(
+                                    "GET",
+                                    f"/workspaces/{ws_id}/kqlDatabases/{kql_db_item['id']}",
+                                )
+                                kusto_uri = ""
+                                if db_detail:
+                                    props = db_detail.get("properties", {})
+                                    kusto_uri = props.get("queryServiceUri", "") or props.get("kustoUri", "")
+                                if kusto_uri:
+                                    kql_cache_key = f"fabric:kqlfn:{ws_id}:{kql_db_item.get('id', '')}"
+                                    cached_fn_check = _get_timed_cached(kql_cache_key, 120)
+                                    if cached_fn_check is None:
+                                        from shared.kusto_client import KustoClient
+                                        kusto = KustoClient(kusto_uri, kql_db_item.get("displayName", "MasimoKQLDB"))
+                                        rows = kusto.execute_query(".show functions | where Name == 'fn_ClinicalAlerts'")
+                                        has_fn_clinical_alerts = len(rows) > 0
+                                        _set_timed_cached(kql_cache_key, has_fn_clinical_alerts)
+                                    else:
+                                        has_fn_clinical_alerts = bool(cached_fn_check)
+                        except Exception as kql_e:
+                            logger.warning("Could not check fn_ClinicalAlerts in '%s': %s", name, kql_e)
 
-                # Fully qualified = all 3 detection criteria met OR previously deployed
-                detection_qualified = has_hds and has_eventhouse and has_fn_clinical_alerts
-                qualified = detection_qualified or is_previously_deployed
+                    detection_qualified = has_hds and has_eventhouse and has_fn_clinical_alerts
+                    qualified = detection_qualified or is_previously_deployed
 
-                missing = []
-                if not has_eventhouse:
-                    missing.append("MasimoEventhouse")
-                if not has_fn_clinical_alerts:
-                    missing.append("fn_ClinicalAlerts")
-                if not has_hds:
-                    missing.append("HDS")
+                    missing = []
+                    if not has_eventhouse:
+                        missing.append("MasimoEventhouse")
+                    if not has_fn_clinical_alerts:
+                        missing.append("fn_ClinicalAlerts")
+                    if not has_hds:
+                        missing.append("HDS")
 
-                if detection_qualified:
-                    detail = f"Full deployment — {item_count} Fabric items"
-                elif is_previously_deployed and not detection_qualified:
-                    detail = f"Previously deployed workspace — {item_count} Fabric items"
-                    if missing:
-                        detail += f" (missing: {', '.join(missing)})"
-                else:
-                    detail = f"Partial deployment — missing: {', '.join(missing)}"
+                    if detection_qualified:
+                        detail = f"Full deployment — {item_count} Fabric items"
+                    elif is_previously_deployed and not detection_qualified:
+                        detail = f"Previously deployed workspace — {item_count} Fabric items"
+                        if missing:
+                            detail += f" (missing: {', '.join(missing)})"
+                    else:
+                        detail = f"Partial deployment — missing: {', '.join(missing)}"
 
-                status = "full" if detection_qualified else "partial"
+                    status = "full" if detection_qualified else "partial"
 
-                candidate = {
-                    "type": "fabric",
-                    "name": name,
-                    "id": ws_id,
-                    "status": status,
-                    "detail": detail,
-                    "resourceCount": item_count,
-                    "expectedCount": item_count,
-                    "matchedArtifacts": artifact_list,
-                    "qualified": qualified,
-                    "previouslyDeployed": is_previously_deployed,
-                    "detectedArtifacts": {
-                        "hasHDS": has_hds,
-                        "hasEventhouse": has_eventhouse,
-                        "hasFnClinicalAlerts": has_fn_clinical_alerts,
-                    },
-                }
-                emit_candidate(candidate, "fabric", f"Discovered Fabric workspace: {name}")
-                logger.info(
-                    "Workspace '%s' — qualified=%s (HDS=%s, Eventhouse=%s, fn_ClinicalAlerts=%s, previouslyDeployed=%s)",
-                    name, qualified, has_hds, has_eventhouse, has_fn_clinical_alerts, is_previously_deployed,
-                )
-            except Exception as e:
-                logger.warning("Failed to scan workspace '%s': %s", name, e)
-    except Exception as e:
-        logger.error("Fabric scan failed: %s", e)
+                    return {
+                        "type": "fabric",
+                        "name": name,
+                        "id": ws_id,
+                        "status": status,
+                        "detail": detail,
+                        "resourceCount": item_count,
+                        "expectedCount": item_count,
+                        "matchedArtifacts": artifact_list,
+                        "qualified": qualified,
+                        "previouslyDeployed": is_previously_deployed,
+                        "detectedArtifacts": {
+                            "hasHDS": has_hds,
+                            "hasEventhouse": has_eventhouse,
+                            "hasFnClinicalAlerts": has_fn_clinical_alerts,
+                        },
+                    }
+                except Exception as ex:
+                    logger.warning("Failed to check workspace '%s': %s", name, ex)
+                    return None
 
-    # ── Scan Azure resource groups ─────────────────────────────────
-    try:
-        emit_status("azure", "Scanning Azure resource groups...")
-        import subprocess, sys
+            with ThreadPoolExecutor(max_workers=6) as ws_executor:
+                fabric_results = [r for r in ws_executor.map(check_workspace, workspaces) if r is not None]
+        except Exception as e:
+            logger.error("Fabric scan failed: %s", e)
+        return fabric_results
 
-        sub_arg = ["--subscription", subscription_id] if subscription_id else []
-        result = _az_run(
-            ["az", "group", "list", "--query",
-             "[?starts_with(name, 'rg-med') || starts_with(name, 'rg-medtech')].{name:name, id:id}",
-             "-o", "json"] + sub_arg,
-            check=True,
-        )
-        rgs = json.loads(result.stdout)
+    # Helper for Azure RG scanning
+    def scan_azure_rgs():
+        azure_results = []
+        try:
+            emit_status("azure", "Scanning Azure resource groups with Azure Resource Graph...")
+            safe_subscription = subscription_id.replace("'", "''")
+            query = (
+                "Resources "
+                "| where resourceGroup startswith 'rg-med' or resourceGroup startswith 'rg-medtech' "
+            )
+            if safe_subscription:
+                query += f"| where subscriptionId =~ '{safe_subscription}' "
+            query += (
+                "| summarize resourceCount=count(), artifacts=make_list(pack('name', name, 'type', type), 200) "
+                "  by resourceGroup, subscriptionId "
+                "| order by resourceGroup asc"
+            )
 
-        for rg in rgs:
-            rg_name = rg["name"]
-            try:
-                res_result = _az_run(
-                    ["az", "resource", "list", "-g", rg_name,
-                     "--query", "[].{name:name, type:type}", "-o", "json"] + sub_arg,
-                    check=True,
-                )
-                resources = json.loads(res_result.stdout)
-                res_count = len(resources)
+            graph_args = ["az", "graph", "query", "-q", query, "--first", "1000", "-o", "json"]
+            if subscription_id:
+                graph_args += ["--subscriptions", subscription_id]
+            result = _az_run(graph_args, check=True, timeout=30)
+            rows = json.loads(result.stdout or "{}").get("data", [])
 
-                artifact_list = [f"{r['type'].split('/')[-1]}: {r['name']}" for r in resources]
+            for row in rows:
+                rg_name = row.get("resourceGroup", "")
+                sub_id = row.get("subscriptionId", subscription_id)
+                resources = row.get("artifacts", []) or []
+                res_count = int(row.get("resourceCount", len(resources)) or 0)
+                artifact_list = [f"{str(r.get('type', '')).split('/')[-1]}: {r.get('name', '')}" for r in resources]
                 status = "full" if res_count >= 10 else "partial"
-
-                candidate = {
+                azure_results.append({
                     "type": "azure",
                     "name": rg_name,
-                    "id": rg.get("id", ""),
+                    "id": f"/subscriptions/{sub_id}/resourceGroups/{rg_name}",
                     "status": status,
                     "detail": f"{'Full' if status == 'full' else 'Partial'} Azure deployment — {res_count} resources",
                     "resourceCount": res_count,
                     "expectedCount": 12,
                     "matchedArtifacts": artifact_list,
-                    "subscription": subscription_id,
-                }
-                emit_candidate(candidate, "azure", f"Discovered Azure resource group: {rg_name}")
-            except Exception as e:
-                logger.warning("Failed to scan RG '%s': %s", rg_name, e)
-    except Exception as e:
-        logger.error("Azure scan failed: %s", e)
+                    "subscription": sub_id,
+                })
+        except Exception as e:
+            logger.error("Azure Resource Graph scan failed: %s", e)
+        return azure_results
+
+    # Run Fabric and Azure scans concurrently!
+    with ThreadPoolExecutor(max_workers=2) as main_executor:
+        fabric_future = main_executor.submit(scan_fabric_workspaces)
+        azure_future = main_executor.submit(scan_azure_rgs)
+        fabric_candidates = fabric_future.result()
+        azure_candidates = azure_future.result()
+
+    # Emit all results sequentially to keep callback and candidates array clean and thread-safe
+    for fc in fabric_candidates:
+        emit_candidate(fc, "fabric", f"Discovered Fabric workspace: {fc['name']}")
+
+    for ac in azure_candidates:
+        emit_candidate(ac, "azure", f"Discovered Azure resource group: {ac['name']}")
 
     # ── Scan for SPNs matching workspace names ─────────────────────
     emit_status("spn", "Scanning Entra workspace identities...")
     fabric_names = {c["name"] for c in candidates if c["type"] == "fabric"}
-    seen_spn_ids: set = set()
-    for ws_name in fabric_names:
+    seen_spn_ids = set()
+
+    def check_spn(ws_name):
         try:
-            import subprocess, sys
-            result = _az_run(
-                ["az", "ad", "sp", "list", "--display-name", ws_name,
-                 "--query", "[].{appId:appId, displayName:displayName, id:id}", "-o", "json"],
-                check=True,
-            )
-            spns = json.loads(result.stdout)
-            for spn in spns:
-                spn_id = spn.get("id", "")
-                if spn_id in seen_spn_ids:
-                    continue  # Deduplicate
-                seen_spn_ids.add(spn_id)
-
-                # Check if matching workspace still exists
-                ws_exists = spn.get("displayName", "") in fabric_names
-                status = "active" if ws_exists else "orphaned"
-
-                candidate = {
-                    "type": "spn",
-                    "name": spn.get("displayName", ws_name),
-                    "id": spn_id,
-                    "status": status,
-                    "detail": f"Workspace identity SPN ({'workspace exists' if ws_exists else 'workspace deleted'}) — appId: {spn.get('appId', 'unknown')}",
-                    "matchedArtifacts": [f"App Registration: {spn.get('displayName', '')} (appId: {spn.get('appId', '')})"],
-                }
-                emit_candidate(candidate, "spn", f"Discovered Entra identity: {candidate['name']}")
+            spn_cache_key = f"spn:{ws_name.lower()}"
+            spns = _get_timed_cached(spn_cache_key, 600)
+            if spns is None:
+                result = _az_run(
+                    ["az", "ad", "sp", "list", "--display-name", ws_name,
+                     "--query", "[].{appId:appId, displayName:displayName, id:id}", "-o", "json"],
+                    check=True,
+                )
+                spns = json.loads(result.stdout)
+                _set_timed_cached(spn_cache_key, spns)
+            return spns
         except Exception:
-            pass
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as spn_executor:
+        spn_map_results = list(spn_executor.map(check_spn, fabric_names))
+
+    for spns in spn_map_results:
+        for spn in spns:
+            spn_id = spn.get("id", "")
+            if spn_id in seen_spn_ids:
+                continue
+            seen_spn_ids.add(spn_id)
+
+            ws_exists = spn.get("displayName", "") in fabric_names
+            status = "active" if ws_exists else "orphaned"
+
+            candidate = {
+                "type": "spn",
+                "name": spn.get("displayName", ws_name),
+                "id": spn_id,
+                "status": status,
+                "detail": f"Workspace identity SPN ({'workspace exists' if ws_exists else 'workspace deleted'}) — appId: {spn.get('appId', 'unknown')}",
+                "matchedArtifacts": [f"App Registration: {spn.get('displayName', '')} (appId: {spn.get('appId', '')})"],
+            }
+            emit_candidate(candidate, "spn", f"Discovered Entra identity: {candidate['name']}")
 
     emit_status("complete", f"Scan complete — {len(candidates)} candidates discovered")
     return candidates
@@ -1530,6 +1710,9 @@ async def list_ahds_regions():
 
 def _list_ahds_regions_sync() -> list[str]:
     """Query ARM for AHDS workspace locations."""
+    cached = _get_timed_cached("ahds_regions", 86400)
+    if cached is not None:
+        return cached
     try:
         proc = _az_run(
             ["az", "provider", "show", "--namespace", "Microsoft.HealthcareApis",
@@ -1539,7 +1722,9 @@ def _list_ahds_regions_sync() -> list[str]:
         )
         regions = json.loads(proc.stdout)
         # Normalise display names ("East US") → ARM names ("eastus")
-        return sorted(set(r.replace(" ", "").lower() for r in regions))
+        result = sorted(set(r.replace(" ", "").lower() for r in regions))
+        _set_timed_cached("ahds_regions", result)
+        return result
     except Exception as e:
         logger.warning("Failed to query AHDS regions: %s", e)
         return []
@@ -1557,6 +1742,10 @@ async def list_capacities(subscription_id: str = ""):
 
 def _list_capacities_sync(subscription_id: str) -> list:
     """Query Fabric capacities across all accessible subscriptions or a specific one."""
+    cache_key = f"capacities:{subscription_id or 'all'}"
+    cached = _get_timed_cached(cache_key, 120)
+    if cached is not None:
+        return cached
     try:
         subscriptions = _list_subscriptions_sync()
         subscription_names = {sub.get("id", ""): sub.get("name", "") for sub in subscriptions}
@@ -1657,6 +1846,7 @@ def _list_capacities_sync(subscription_id: str) -> list:
                 capacity.get("name", "").lower(),
             )
         )
+        _set_timed_cached(cache_key, capacities)
         return capacities
     except Exception as e:
         logger.warning("Failed to list Fabric capacities across subscriptions: %s", e)
@@ -1725,8 +1915,13 @@ async def get_deployment_capacity(rg_name: str):
 
 
 @app.get("/api/deploy/check-existing")
-async def check_existing_deployment(workspace_name: str = "", resource_group: str = ""):
-    """Check if a deployment already exists and return its status + patient count from FHIR."""
+async def check_existing_deployment(workspace_name: str = "", resource_group: str = "", deep: bool = False):
+    """Check if a deployment already exists.
+
+    The default path is intentionally cheap for keystroke/debounce UI checks and
+    only reads local deployment history. Pass deep=1 to run live Azure/FHIR/
+    storage inspections before final review/deploy.
+    """
     if not workspace_name and not resource_group:
         return None
 
@@ -1765,7 +1960,11 @@ async def check_existing_deployment(workspace_name: str = "", resource_group: st
         "priorConfig": prior_config,
     }
 
-    # Check Azure RG existence
+    if not deep:
+        result["liveValidated"] = False
+        return result
+
+    # Check Azure RG existence and live resource counts only when explicitly requested.
     rg_name = prior_cs.get("resourceGroupName", "")
     if rg_name:
         loop = asyncio.get_event_loop()
@@ -1784,7 +1983,7 @@ async def check_existing_deployment(workspace_name: str = "", resource_group: st
             result["fhirDeviceCount"] = fhir_counts.get("devices", 0)
             result["exportedFiles"] = fhir_counts.get("exportedFiles", 0)
             result["dicomStudies"] = fhir_counts.get("dicomStudies", 0)
-
+    result["liveValidated"] = True
     return result
 
 

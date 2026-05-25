@@ -1,10 +1,14 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { getAuthContext, listCapacities, type AuthContext, type FabricCapacity } from "./api";
-
-interface Subscription {
-  id: string;
-  name: string;
-}
+import {
+  getAuthContext,
+  getResourceScan,
+  listCapacities,
+  listSubscriptions,
+  startResourceScan,
+  type AuthContext,
+  type FabricCapacity,
+  type Subscription,
+} from "./api";
 
 interface BackgroundScanState {
   // Teardown resource scan — kicked off at app-mount so the Teardown tab
@@ -15,6 +19,8 @@ interface BackgroundScanState {
   counts: { fabric: number; azure: number; spn: number };
   startedAt: string | null;
   completedAt: string | null;
+  phase: string;
+  message: string;
   error: string;
 }
 
@@ -27,6 +33,7 @@ interface AppState {
   capacities: FabricCapacity[];
   authContext: AuthContext | null;
   authContextLoading: boolean;
+  refreshAuthContext: () => Promise<void>;
   teardownScan: BackgroundScanState;
   // Force a new teardown scan (used by the Teardown page refresh button).
   refreshTeardownScan: (subscriptionId?: string) => void;
@@ -39,6 +46,8 @@ const defaultScan: BackgroundScanState = {
   counts: { fabric: 0, azure: 0, spn: 0 },
   startedAt: null,
   completedAt: null,
+  phase: "",
+  message: "",
   error: "",
 };
 
@@ -49,6 +58,7 @@ const AppStateContext = createContext<AppState>({
   capacities: [],
   authContext: null,
   authContextLoading: true,
+  refreshAuthContext: async () => {},
   teardownScan: defaultScan,
   refreshTeardownScan: () => {},
 });
@@ -72,51 +82,86 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   const startTeardownScan = (subscriptionId: string) => {
+    if (!subscriptionId) {
+      setTeardownScan((s) => ({ ...s, status: "failed", error: "Select a subscription before scanning." }));
+      return;
+    }
+
     stopPolling();
     setTeardownScan({
       ...defaultScan,
       status: "running",
       startedAt: new Date().toISOString(),
     });
-    fetch(`/api/scan/resources/start?subscription_id=${encodeURIComponent(subscriptionId)}`, {
-      method: "POST",
-    })
-      .then((r) => r.json())
-      .then((data: { scanId: string }) => {
+
+    startResourceScan(subscriptionId)
+      .then((data) => {
+        let transientFailures = 0;
         activeScanIdRef.current = data.scanId;
         setTeardownScan((s) => ({ ...s, scanId: data.scanId }));
 
         const poll = () => {
           if (activeScanIdRef.current !== data.scanId) { stopPolling(); return; }
-          fetch(`/api/scan/resources/${encodeURIComponent(data.scanId)}`)
-            .then((r) => r.json())
+          getResourceScan(data.scanId)
             .then((job) => {
+              transientFailures = 0;
               if (activeScanIdRef.current !== data.scanId) return;
+              const status = job.status ?? "running";
               setTeardownScan({
                 scanId: data.scanId,
-                status: job.status ?? "running",
+                status,
                 candidates: job.candidates ?? [],
                 counts: job.counts ?? { fabric: 0, azure: 0, spn: 0 },
                 startedAt: job.startedAt ?? null,
                 completedAt: job.completedAt ?? null,
+                phase: job.phase ?? "",
+                message: job.message ?? "",
                 error: job.error ?? "",
               });
-              if (job.status === "completed" || job.status === "failed" || job.status === "missing") {
+              if (status === "completed" || status === "failed" || status === "missing") {
                 stopPolling();
               }
             })
-            .catch(() => { /* transient — let next tick retry */ });
+            .catch((error) => {
+              transientFailures += 1;
+              if (transientFailures >= 5) {
+                stopPolling();
+                setTeardownScan((s) => ({
+                  ...s,
+                  status: "failed",
+                  error: error instanceof Error ? error.message : "Background scan polling failed.",
+                }));
+              }
+            });
         };
         pollTimerRef.current = window.setInterval(poll, 3000);
         poll();
       })
-      .catch(() => {
-        setTeardownScan((s) => ({ ...s, status: "failed", error: "Background scan unavailable" }));
+      .catch((error) => {
+        setTeardownScan((s) => ({
+          ...s,
+          status: "failed",
+          error: error instanceof Error ? error.message : "Background scan unavailable",
+        }));
       });
   };
 
   const refreshTeardownScan = (subscriptionId?: string) => {
     startTeardownScan(subscriptionId ?? selectedSubscription);
+  };
+
+  const refreshAuthContext = async () => {
+    setAuthContextLoading(true);
+    try {
+      const context = await getAuthContext(true);
+      setAuthContext(context);
+      const preferredSubscriptionId = context?.cli.subscriptionId || context?.pwsh.subscriptionId || "";
+      if (preferredSubscriptionId && subscriptions.some((subscription) => subscription.id === preferredSubscriptionId)) {
+        setSelectedSubscription(preferredSubscriptionId);
+      }
+    } finally {
+      setAuthContextLoading(false);
+    }
   };
 
   // Bootstrap on app mount: load subscriptions, capacities, and kick off
@@ -125,29 +170,36 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (hasBootstrappedRef.current) return;
     hasBootstrappedRef.current = true;
 
-    getAuthContext()
-      .then((context) => setAuthContext(context))
-      .catch(() => setAuthContext(null))
-      .finally(() => setAuthContextLoading(false));
+    Promise.allSettled([getAuthContext(), listSubscriptions()])
+      .then(([authResult, subsResult]) => {
+        const context = authResult.status === "fulfilled" ? authResult.value : null;
+        setAuthContext(context);
+        setAuthContextLoading(false);
 
-    fetch("/api/scan/subscriptions")
-      .then((r) => r.json())
-      .then((subs: Subscription[]) => {
-        if (!Array.isArray(subs) || subs.length === 0) return;
+        const subs = subsResult.status === "fulfilled" && Array.isArray(subsResult.value)
+          ? subsResult.value
+          : [];
+        if (subs.length === 0) return;
+
         setSubscriptions(subs);
-        const initialSub = selectedSubscription || subs[0].id;
-        if (!selectedSubscription) setSelectedSubscription(subs[0].id);
+        const preferredSubscriptionId = context?.cli.subscriptionId || context?.pwsh.subscriptionId || "";
+        const preferred = subs.find((subscription) => subscription.id === preferredSubscriptionId);
+        const initialSub = selectedSubscription || preferred?.id || subs[0].id;
+        if (!selectedSubscription) setSelectedSubscription(initialSub);
 
         // Start Fabric capacity scan across all accessible subscriptions.
         listCapacities()
           .then((results) => setCapacities(results))
           .catch(() => { /* non-fatal */ });
 
-        // Start the teardown resource scan eagerly so the Teardown tab is
-        // immediately populated if the user clicks on it.
-        startTeardownScan(initialSub);
+        // Teardown scans are intentionally lazy because they can enumerate
+        // Fabric workspaces, KQL functions, Azure resources, and Entra SPNs.
+        // The Teardown page starts the scan when the user opens it.
       })
-      .catch(() => { /* backend unavailable — individual pages fall back to mocks */ });
+      .catch(() => {
+        setAuthContext(null);
+        setAuthContextLoading(false);
+      });
 
     return () => stopPolling();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,6 +225,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         capacities,
         authContext,
         authContextLoading,
+        refreshAuthContext,
         teardownScan,
         refreshTeardownScan,
       }}

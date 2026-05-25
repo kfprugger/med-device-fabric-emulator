@@ -64,7 +64,8 @@ def run_deploy(config: dict[str, Any], step_callback: Any = None, pid_callback: 
     start = time.time()
     args = _build_deploy_args(config)
     logger.info("Invoking Deploy-All.ps1 with args: %s", " ".join(args[2:]))
-    exit_code = _run_powershell(args, step_callback, pid_callback)
+    instance_id = config.get("instance_id", "")
+    exit_code = _run_powershell(args, step_callback, pid_callback, instance_id=instance_id)
     duration = time.time() - start
 
     if exit_code != 0:
@@ -181,6 +182,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append(f"-PatientCount {config['patient_count']}")
         if config.get("alert_email"):
             params.append(f"-AlertEmail '{config['alert_email']}'")
+        if config.get("dicom_toolkit_path"):
+            params.append(f"-DicomToolkitPath '{config['dicom_toolkit_path']}'")
         if config.get("skip_base_infra"):
             params.append("-SkipBaseInfra")
         if config.get("skip_fhir"):
@@ -238,6 +241,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args += ["-PatientCount", str(config["patient_count"])]
     if config.get("alert_email"):
         args += ["-AlertEmail", config["alert_email"]]
+    if config.get("dicom_toolkit_path"):
+        args += ["-DicomToolkitPath", config["dicom_toolkit_path"]]
 
     if config.get("skip_base_infra"):
         args.append("-SkipBaseInfra")
@@ -294,7 +299,7 @@ def _build_teardown_args(config: dict[str, Any]) -> list[str]:
     return args
 
 
-def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: Any = None) -> int:
+def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: Any = None, instance_id: str = "") -> int:
     """Run a PowerShell command, streaming stdout/stderr to the logger.
 
     Parses step markers from Deploy-All.ps1 output:
@@ -310,6 +315,10 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     current_phase = 0
     current_phase_label = ""
 
+    env_dict = {**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    if instance_id:
+        env_dict["ORCHESTRATOR_INSTANCE_ID"] = instance_id
+
     process = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
@@ -320,7 +329,7 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
         bufsize=1,
         encoding="utf-8",
         errors="replace",
-        env={**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
+        env=env_dict,
     )
 
     if pid_callback:

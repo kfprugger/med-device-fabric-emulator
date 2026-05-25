@@ -26,7 +26,14 @@ import {
   LockOpenRegular,
   LinkRegular,
 } from "@fluentui/react-icons";
-import { startTeardown, getDeploymentCapacity, type DeploymentCapacityMapping } from "../api";
+import {
+  getDeploymentCapacity,
+  getLocks,
+  listSubscriptions,
+  setLock,
+  startTeardown,
+  type DeploymentCapacityMapping,
+} from "../api";
 import { useAppState } from "../AppState";
 import { typeBadge } from "../components/TypeBadges";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -193,11 +200,11 @@ export function TeardownView() {
   const [scanPhase, setScanPhase] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [scanCounts, setScanCounts] = useState({ fabric: 0, azure: 0, spn: 0 });
+  const [dryRun, setDryRun] = useState(true);
 
   // Load locks from backend on mount
   useEffect(() => {
-    fetch("/api/locks")
-      .then((r) => r.json())
+    getLocks()
       .then((ids: string[]) => {
         if (ids.length > 0) setLockedIds(new Set(ids.map(normalizeResourceId)));
       })
@@ -225,16 +232,15 @@ export function TeardownView() {
 
   // Persist locks to backend (and localStorage fallback) whenever they change
   const persistLocks = useCallback((ids: Set<string>, prevIds: Set<string>) => {
-    const lockPath = (id: string) => `/api/locks/${normalizeResourceId(id)}`;
     // Find added and removed locks
     for (const id of ids) {
       if (!prevIds.has(id)) {
-        fetch(lockPath(id), { method: "POST" }).catch(() => {});
+        setLock(id, true).catch(() => {});
       }
     }
     for (const id of prevIds) {
       if (!ids.has(id)) {
-        fetch(lockPath(id), { method: "DELETE" }).catch(() => {});
+        setLock(id, false).catch(() => {});
       }
     }
     localStorage.setItem("teardown-locks", JSON.stringify([...ids]));
@@ -250,8 +256,7 @@ export function TeardownView() {
       setSubscriptions(ctxSubscriptions);
       if (!selectedSubscription) setSelectedSubscription(ctxSubscriptions[0].id);
     } else {
-      fetch("/api/scan/subscriptions")
-        .then((r) => r.json())
+      listSubscriptions()
         .then((subs: MockSubscription[]) => {
           if (subs.length > 0) {
             setSubscriptions(subs);
@@ -261,19 +266,19 @@ export function TeardownView() {
         .catch(() => {});
     }
 
-    // If the background scan is already running or completed, seed UI from it.
-    // Otherwise kick a fresh scan.
+    // If a global scan is already running or completed, seed UI from it.
+    // Otherwise stay idle until the user clicks Scan Resources.
     if (teardownScan.status === "completed" || teardownScan.status === "running") {
       setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
       setScanCounts(teardownScan.counts);
+      setScanPhase(teardownScan.phase || teardownScan.status);
+      setScanMessage(teardownScan.message || "Resource scan running...");
       if (teardownScan.status === "completed") {
         setScanned(true);
         setScanning(false);
       } else {
         setScanning(true);
       }
-    } else {
-      handleScan();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -282,18 +287,24 @@ export function TeardownView() {
     if (teardownScan.status === "completed") {
       setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
       setScanCounts(teardownScan.counts);
+      setScanPhase(teardownScan.phase || "completed");
+      setScanMessage(teardownScan.message || "Resource scan completed.");
+      setError("");
       setScanned(true);
       setScanning(false);
     } else if (teardownScan.status === "running") {
       setCandidates((teardownScan.candidates as TeardownCandidate[]) ?? []);
       setScanCounts(teardownScan.counts);
+      setScanPhase(teardownScan.phase || "running");
+      setScanMessage(teardownScan.message || "Scanning resources...");
+      setError("");
       setScanning(true);
     } else if (teardownScan.status === "failed") {
       setScanning(false);
       if (!candidates.length) setError(teardownScan.error || "Background scan failed");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teardownScan.status, teardownScan.candidates, teardownScan.counts]);
+  }, [teardownScan.status, teardownScan.candidates, teardownScan.counts, teardownScan.phase, teardownScan.message]);
 
   useEffect(() => {
     return () => {
@@ -335,94 +346,39 @@ export function TeardownView() {
   }, [selectedSubscription, showAllHDS, expandedIds, setSearchParams]);
 
   const handleScan = () => {
+    if (!selectedSubscription) {
+      setScanning(false);
+      setError("Select a subscription before scanning resources.");
+      return;
+    }
     if (scanPollRef.current) {
       window.clearInterval(scanPollRef.current);
       scanPollRef.current = null;
     }
-    // Keep the global background scan in sync so other pages/tabs see fresh data
-    refreshTeardownScan(selectedSubscription);
-    // Generate a nonce for this scan call. If another handleScan fires (e.g. React
-    // StrictMode double-mount), the earlier one will see a stale nonce and bail out.
-    const scanNonce = Math.random().toString(36).slice(2);
-    activeScanIdRef.current = scanNonce;
-
+    activeScanIdRef.current = Math.random().toString(36).slice(2);
     setScanning(true);
     setScanned(false);
     setUsingMock(false);
     setError("");
-    setSelectedIds(new Set()); // Clear selection on rescan
+    setSelectedIds(new Set());
     setCandidates([]);
     setCapacityMappings(new Map());
     capacityFetchedRef.current = new Set();
     setScanPhase("starting");
     setScanMessage("Starting teardown scan...");
     setScanCounts({ fabric: 0, azure: 0, spn: 0 });
+    refreshTeardownScan(selectedSubscription);
+  };
 
-    fetch(`/api/scan/resources/start?subscription_id=${encodeURIComponent(selectedSubscription)}`, {
-      method: "POST",
-    })
-      .then((r) => r.json())
-      .then((data: { scanId: string }) => {
-        // If this handleScan call was superseded, bail out
-        if (activeScanIdRef.current !== scanNonce) return;
-
-        let stopped = false;
-
-        const stopPolling = () => {
-          stopped = true;
-          if (scanPollRef.current !== null) {
-            window.clearInterval(scanPollRef.current);
-            scanPollRef.current = null;
-          }
-        };
-
-        const poll = () => {
-          if (stopped || activeScanIdRef.current !== scanNonce) {
-            stopPolling();
-            return;
-          }
-          fetch(`/api/scan/resources/${encodeURIComponent(data.scanId)}`)
-            .then((r) => r.json())
-            .then((job) => {
-              if (stopped || activeScanIdRef.current !== scanNonce) { stopPolling(); return; }
-              setCandidates(job.candidates ?? []);
-              setScanPhase(job.phase ?? "");
-              setScanMessage(job.message ?? "");
-              setScanCounts(job.counts ?? { fabric: 0, azure: 0, spn: 0 });
-
-              if (job.status === "completed") {
-                stopPolling();
-                setScanned(true);
-                setScanning(false);
-              } else if (job.status === "missing") {
-                stopPolling();
-                setScanning(false);
-                setScanned(false);
-                setError("The last scan expired after a backend restart. Run the scan again.");
-              } else if (job.status === "failed") {
-                stopPolling();
-                setScanning(false);
-                setError(job.error || job.message || "Scan failed");
-              }
-            })
-            .catch(() => {
-              stopPolling();
-              setScanning(false);
-              setError("Scan polling failed. Try scanning again.");
-            });
-        };
-
-        scanPollRef.current = window.setInterval(poll, 2000);
-        poll(); // Initial poll after interval is stored so stopPolling() can clear it
-      })
-      .catch(() => {
-        // Fall back to mock data if backend unavailable
-        setError("Live scanner unavailable. Showing mock teardown candidates.");
-        setCandidates(scanForTeardownCandidates(selectedSubscription));
-        setScanned(true);
-        setScanning(false);
-        setUsingMock(true);
-      });
+  const handleMockScan = () => {
+    setError("Demo mode: showing mock teardown candidates only. No live resources are listed.");
+    setCandidates(scanForTeardownCandidates(selectedSubscription));
+    setScanned(true);
+    setScanning(false);
+    setUsingMock(true);
+    setSelectedIds(new Set());
+    setCapacityMappings(new Map());
+    capacityFetchedRef.current = new Set();
   };
 
   const toggleSelected = (id: string) => {
@@ -534,7 +490,14 @@ export function TeardownView() {
 
     const selected = candidates.filter((c) => selectedIds.has(c.id));
     const names = selected.map((c) => `${c.type}: ${c.name}`).join("\n  ");
-    if (!window.confirm(`Permanently delete ${selectedIds.size} resource(s)?\n\n  ${names}\n\nEach will be deleted in parallel in its own teardown job. This action cannot be undone.`)) return;
+    if (dryRun) {
+      window.alert(`Dry run only — no resources will be deleted.\n\nPlanned targets:\n  ${names}\n\nTurn off Dry run when you are ready to execute teardown.`);
+      return;
+    }
+    const confirmation = window.confirm(
+      `Permanently delete ${selectedIds.size} resource(s)?\n\n  ${names}\n\nEach will be deleted in parallel in its own teardown job. This action cannot be undone.\n\nAre you sure you want to continue?`
+    );
+    if (!confirmation) return;
 
     setLoading(true);
     setError("");
@@ -838,10 +801,15 @@ export function TeardownView() {
           appearance="primary"
           icon={scanning ? <ArrowSyncRegular /> : <SearchRegular />}
           onClick={handleScan}
-          disabled={scanning}
+          disabled={scanning || !selectedSubscription}
         >
           {scanning ? "Scanning…" : "Scan Resources"}
         </Button>
+        <Tooltip content="Demo mode uses generated teardown candidates and never lists live resources." relationship="description">
+          <Button appearance="secondary" onClick={handleMockScan} disabled={scanning}>
+            Use demo data
+          </Button>
+        </Tooltip>
       </div>
 
       {scanning && (
@@ -887,7 +855,12 @@ export function TeardownView() {
 
       {!scanned && !scanning && !error && (
         <div className={styles.candidateList}>
-          <Card size="small"><CardHeader header={<Text>Ready to scan resources...</Text>} /></Card>
+          <Card size="small">
+            <CardHeader
+              header={<Text weight="semibold">Ready to scan live resources</Text>}
+              description="Live teardown discovery is intentionally on demand because it enumerates Fabric workspaces, Azure resources, and Entra identities."
+            />
+          </Card>
           <Card size="small"><CardHeader header={<Text>Scanning discovers Fabric, Azure, and identity artifacts.</Text>} /></Card>
         </div>
       )}
@@ -973,8 +946,18 @@ export function TeardownView() {
             <div className={styles.warning} style={{ marginTop: tokens.spacingVerticalXL }}>
               {selectedIds.size} resource(s) selected for deletion.
               {hasBoth && " Both Fabric workspace and Azure RG selected — will run Teardown-All (complete cleanup)."}
-              {" "}This action cannot be undone.
+              {dryRun ? " Dry run is ON, so the next click only previews the plan." : " This action cannot be undone."}
             </div>
+            <Card size="small" style={{ marginTop: tokens.spacingVerticalS }}>
+              <CardHeader header={<Text weight="semibold" size={300}>Teardown plan</Text>} />
+              <div style={{ padding: `0 ${tokens.spacingHorizontalL} ${tokens.spacingVerticalM}`, display: "grid", gap: tokens.spacingVerticalXS }}>
+                {selected.slice(0, 8).map((item) => (
+                  <Text key={item.id} size={200}>{item.type.toUpperCase()} · {item.name}</Text>
+                ))}
+                {selected.length > 8 && <Text size={200}>+{selected.length - 8} more target(s)</Text>}
+                <Checkbox checked={dryRun} onChange={(_, data) => setDryRun(!!data.checked)} label="Dry run — preview only, do not delete resources" />
+              </div>
+            </Card>
             <div className={styles.actions}>
               <Button
                 appearance="primary"
@@ -983,7 +966,7 @@ export function TeardownView() {
                 disabled={loading}
                 style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
               >
-                {loading ? "Starting teardown…" : `${mode}: Delete ${selectedIds.size} resource(s)`}
+                {loading ? "Starting teardown…" : dryRun ? `Preview ${selectedIds.size} resource(s)` : `${mode}: Delete ${selectedIds.size} resource(s)`}
               </Button>
               <Button appearance="subtle" onClick={deselectAll}>
                 Clear selection

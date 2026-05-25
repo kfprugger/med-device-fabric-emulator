@@ -23,7 +23,7 @@ interface MockPhase {
 const MOCK_PHASES: MockPhase[] = [
   // ── Phase 1 ──
   {
-    phase: "Phase 1: Fabric Workspace",
+    phase: "1. Data Fabric Foundation: Fabric Workspace",
     durationMs: 3000,
     logs: [
       { delayPct: 0, level: "info", message: "Searching for workspace 'med-device-rti-hds'…" },
@@ -33,7 +33,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 1: Base Azure Infrastructure",
+    phase: "1. Data Fabric Foundation: Base Azure Infrastructure",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Resolving admin security group 'sg-azure-admins'…" },
@@ -50,7 +50,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 1: FHIR Service + Synthea + Loader",
+    phase: "1. Data Fabric Foundation: FHIR Service + Synthea + Loader",
     durationMs: 25000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying fhir-infra.bicep (FHIR workspace + service)…" },
@@ -76,7 +76,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 1: DICOM Service + Loader",
+    phase: "3. Multimodal Cohorting & Imaging: DICOM Service + Loader",
     durationMs: 15000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying dicom-infra.bicep…" },
@@ -91,7 +91,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 1: Fabric RTI",
+    phase: "2. Active Patient Telemetry: Fabric RTI Ingest",
     durationMs: 10000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating Eventhouse 'MasimoEventhouse'…" },
@@ -111,7 +111,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 1: HDS Detection",
+    phase: "1. Data Fabric Foundation: HDS Detection",
     durationMs: 3000,
     isManualGate: false,
     logs: [
@@ -125,7 +125,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 2 ──
   {
-    phase: "Phase 2: Fabric RTI",
+    phase: "2. Active Patient Telemetry: Fabric RTI Enrichment",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Discovering Silver Lakehouse…" },
@@ -142,7 +142,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 2: DICOM Shortcut + HDS Pipelines",
+    phase: "3. Multimodal Cohorting & Imaging: DICOM Shortcut + HDS Pipelines",
     durationMs: 5000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating DICOM shortcut → ADLS Gen2 dicom-output/…" },
@@ -155,7 +155,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 2: Data Agents",
+    phase: "4. Connected Semantic Intelligence: Conversational Data Agents",
     durationMs: 6000,
     logs: [
       { delayPct: 0, level: "info", message: "Building datasource config (2 KQL tables, 11 Lakehouse tables)…" },
@@ -168,7 +168,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 3 ──
   {
-    phase: "Phase 3: Imaging & Reporting",
+    phase: "3. Multimodal Cohorting & Imaging: Custom SWA Viewer & Direct Lake",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying FabricDicomCohortingToolkit…" },
@@ -184,7 +184,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 4 ──
   {
-    phase: "Phase 4: Ontology",
+    phase: "4. Connected Semantic Intelligence: Clinical Device Ontology",
     durationMs: 7000,
     logs: [
       { delayPct: 0, level: "info", message: "Verifying clinical pipeline completion…" },
@@ -202,14 +202,14 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "Phase 4: Data Activator",
+    phase: "5. Bedside Alerting & Action: Real-Time Reflex alerts",
     durationMs: 5000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating ClinicalAlertActivator Reflex item…" },
       { delayPct: 20, level: "success", message: "Reflex created: reflex-mno456" },
       { delayPct: 30, level: "info", message: "Configuring trigger: SpO2 < 90% sustained ≥ 2 min…" },
       { delayPct: 45, level: "info", message: "Configuring trigger: Pulse Rate > 120 bpm sustained ≥ 3 min…" },
-      { delayPct: 60, level: "info", message: "Configuring email action → joey@example.com…" },
+      { delayPct: 60, level: "info", message: "Configuring email action → operator@example.com…" },
       { delayPct: 75, level: "success", message: "Email rule created (tier ≥ URGENT, cooldown 15 min)" },
       { delayPct: 85, level: "info", message: "Activating Reflex triggers…" },
       { delayPct: 95, level: "success", message: "ClinicalAlertActivator active — monitoring AlertHistory" },
@@ -217,7 +217,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 5 ──
   {
-    phase: "Phase 5: CMS Quality & Claims",
+    phase: "6. CMS Quality & Performance: Claims & CQM dashboard",
     durationMs: 12000,
     logs: [
       { delayPct: 0, level: "info", message: "Discovering Gold Reporting Lakehouse…" },
@@ -249,6 +249,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
 ];
+
 
 /** In-memory store for mock deployments */
 const mockInstances = new Map<
@@ -595,7 +596,7 @@ export interface TeardownCandidate {
 }
 
 const MOCK_SUBSCRIPTIONS: MockSubscription[] = [
-  { id: "5772d06a-5513-4cc5-ac08-a3805440c60e", name: "Azure-brakekat" },
+  { id: "5772d06a-5513-4cc5-ac08-a3805440c60e", name: "Demo Subscription" },
   { id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", name: "Dev/Test" },
   { id: "f9e8d7c6-b5a4-3210-fedc-ba0987654321", name: "Production" },
 ];

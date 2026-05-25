@@ -14,6 +14,22 @@ param (
 )
 
 $ErrorActionPreference = "Stop"
+$script:AccessTokenCache = @{}
+function Get-CachedAccessToken {
+    param([Parameter(Mandatory)][string]$ResourceUrl)
+    $key = $ResourceUrl.ToLowerInvariant()
+    $cached = $script:AccessTokenCache[$key]
+    if ($cached -and $cached.ExpiresOn -gt (Get-Date).AddMinutes(5)) { return $cached.Token }
+    $tokenObj = Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop
+    $token = $tokenObj.Token
+    if ($token -is [System.Security.SecureString]) {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+        try { $token = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    $script:AccessTokenCache[$key] = @{ Token = $token; ExpiresOn = $tokenObj.ExpiresOn }
+    return $token
+}
 
 # Source the prerequisite check function from Deploy-All.ps1
 # We duplicate it here to avoid running the full script
@@ -282,7 +298,7 @@ if ($AdminSecurityGroup) {
 
 # 11. Fabric capacity
 try {
-    $fabToken = (Get-AzAccessToken -ResourceUrl "https://api.fabric.microsoft.com").Token
+    $fabToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
     if ($fabToken -is [System.Security.SecureString]) {
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($fabToken)
         try { $fabToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }

@@ -18,6 +18,7 @@ import {
   ArrowSyncCircleRegular,
 } from "@fluentui/react-icons";
 import { typeBadge } from "../components/TypeBadges";
+import { requestJson, requestVoid } from "../api";
 import {
   listMockTeardowns,
   getMockTeardownInstance,
@@ -294,8 +295,7 @@ export function TeardownMonitor() {
 
   // Load dismissed from backend on mount
   useEffect(() => {
-    fetch("/api/dismissed-teardowns")
-      .then((r) => r.json())
+    requestJson<string[]>("/api/dismissed-teardowns", { timeoutMs: 5000, retry: 1 })
       .then((ids: string[]) => {
         if (ids.length > 0) setDismissedIds(new Set(ids));
       })
@@ -312,7 +312,7 @@ export function TeardownMonitor() {
       const next = new Set(prev);
       next.add(id);
       // Persist to backend
-      fetch(`/api/dismissed-teardowns/${encodeURIComponent(id)}`, { method: "POST" }).catch(() => {});
+      requestVoid(`/api/dismissed-teardowns/${encodeURIComponent(id)}`, { method: "POST", timeoutMs: 5000 }).catch(() => {});
       localStorage.setItem("teardown-dismissed", JSON.stringify([...next]));
       return next;
     });

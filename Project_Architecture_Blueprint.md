@@ -17,7 +17,7 @@ This platform deploys an end-to-end clinical alert system that ingests real-time
 |-----------|-------------------|
 | **Single Copy of Data** | OneLake serves as the unified data lake; KQL shortcuts bridge Lakehouse → Eventhouse without duplication |
 | **Zero Secrets in Code** | User-Assigned Managed Identities for all service-to-service auth; no connection strings stored |
-| **Phased Deployment** | 4 independent phases (Infrastructure → Enrichment → Imaging → Semantic Layer) allow partial runs and retries |
+| **Phased Deployment** | 6 stages of Clinical Value Chain & Outcomes Model allow highly resilient and structured execution |
 | **Idempotent Operations** | State tracked in SQLite + JSON snapshots; steps detect existing resources and skip gracefully |
 | **Browser-First UX** | Orchestrator UI (React + Fluent UI) provides visual deployment, monitoring, and teardown — CLI also supported |
 
@@ -76,29 +76,36 @@ flowchart TB
     subgraph FAB["Microsoft Fabric Workspace"]
         direction TB
 
-        subgraph P1["Phase 1 — Real-Time Intelligence"]
+        subgraph P1["Stage 1 · Data Fabric Foundation"]
+            BZ["Bronze Lakehouse"]
+            SLV["Silver Lakehouse"]
+            GOLD["Gold OMOP Lakehouse"]
+            SC["KQL Shortcuts<br/>(6 Silver tables)"]
+        end
+
+        subgraph P2["Stage 2 · Active Patient Telemetry"]
             ES["Eventstream"]
             EVH["Eventhouse<br/>(MasimoKQLDB)"]
             DASH1["Real-Time Dashboard"]
         end
 
-        subgraph P2["Phase 2 — HDS Enrichment"]
-            BZ["Bronze Lakehouse"]
-            SLV["Silver Lakehouse"]
-            GOLD["Gold OMOP Lakehouse"]
-            SC["KQL Shortcuts<br/>(6 Silver tables)"]
-            DA["Data Agents<br/>(Patient 360 +<br/>Clinical Triage)"]
-        end
-
-        subgraph P3["Phase 3 — Imaging"]
+        subgraph P3["Stage 3 · Multimodal Cohorting & Imaging"]
             RPT["Reporting Lakehouse"]
             PBI["Power BI Report<br/>(Direct Lake)"]
             COHORT["Cohorting Agent"]
         end
 
-        subgraph P4["Phase 4 — Semantic Layer"]
+        subgraph P4["Stage 4 · Connected Semantic Intelligence"]
             ONT["ClinicalDeviceOntology<br/>(9 entity types)"]
+            DA["Data Agents<br/>(Patient 360 +<br/>Clinical Triage)"]
+        end
+
+        subgraph P5["Stage 5 · Bedside Alerting & Action"]
             ACT["Data Activator<br/>(Email Alerts)"]
+        end
+
+        subgraph P6["Stage 6 · CMS Quality & Performance"]
+            PBI_CMS["CMS Quality Scorecard<br/>Power BI Report"]
         end
     end
 
@@ -120,6 +127,7 @@ flowchart TB
     ONT -.->|"binds"| DA
     ONT -.->|"binds"| COHORT
     EVH --> ACT
+    SLV -.-> PBI_CMS
 
     FE --> BE --> DB
 
@@ -127,10 +135,12 @@ flowchart TB
     style AZ fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
     style FAB fill:#f0e6ff,stroke:#8000d4,stroke-width:2px
     style ORCH fill:#fff8e1,stroke:#f9a825,stroke-width:2px
-    style P1 fill:#fff3e6,stroke:#ff8c00
-    style P2 fill:#e6ffe6,stroke:#00a000
-    style P3 fill:#ffe6e6,stroke:#d40000
-    style P4 fill:#e6e6ff,stroke:#4040d4
+    style P1 fill:#FFF4E5,stroke:#FF8C00,stroke-width:1.5px
+    style P2 fill:#E2F0D9,stroke:#385723,stroke-width:1.5px
+    style P3 fill:#FDE7E9,stroke:#D13438,stroke-width:1.5px
+    style P4 fill:#E8E8FF,stroke:#5C2D91,stroke-width:1.5px
+    style P5 fill:#FFF2CC,stroke:#D6B656,stroke-width:1.5px
+    style P6 fill:#E1F5FE,stroke:#0288D1,stroke-width:1.5px
 ```
 
 ### Data Flow Diagram
@@ -284,13 +294,13 @@ A Python application (containerized via Docker + ACR) that simulates 100 Masimo 
 
 ### 3.6 Fabric Real-Time Intelligence (`fabric-rti/`)
 
-**Phase 1 (Streaming Pipeline):**
+**Stage 1 & 2 (Foundation & Telemetry):**
 - Eventstream → Eventhouse ingestion (sub-second latency)
 - KQL tables: `TelemetryRaw`, `AlertHistory`
 - KQL functions: `fn_SpO2Alerts`, `fn_PulseRateAnomalies`, `fn_ClinicalAlerts`
 - Real-time dashboard with SpO2 trend lines, alert heat maps
 
-**Phase 2 (Enrichment):**
+**Stage 3 & 4 (Cohorting, Imaging & Semantic Layer):**
 - 6 KQL shortcuts from Silver Lakehouse (Patient, Condition, Encounter, MedicationRequest, Observation, DeviceAssociation)
 - Enriched alert functions that correlate telemetry with clinical context
 - Clinical alerts map (device → patient → conditions → medications)
@@ -371,27 +381,30 @@ gantt
     dateFormat HH:mm
     axisFormat %H:%M
 
-    section Phase 1 — Infrastructure
+    section Stage 1: Data Fabric Foundation
     Workspace + Identity          :p1a, 00:00, 5min
     Base Azure (EH, ACR, Storage) :p1b, after p1a, 10min
     FHIR + Synthea (10K patients) :p1c, after p1b, 15min
     DICOM (TCIA + re-tag)         :p1d, after p1b, 30min
-    Fabric RTI Phase 1            :p1e, after p1c, 15min
+    HDS Setup                     :crit, manual, after p1e, 45min
 
-    section Manual Step
-    Deploy HDS in Fabric Portal   :crit, manual, after p1e, 45min
+    section Stage 2: Active Patient Telemetry
+    Fabric RTI Telemetry          :p1e, after p1c, 15min
+    RTI Shortcuts                 :p2a, after manual, 15min
 
-    section Phase 2 — Enrichment
-    RTI Phase 2 (Shortcuts)       :p2a, after manual, 15min
+    section Stage 3: Multimodal Cohorting & Imaging
     HDS Pipelines                 :p2b, after p2a, 25min
-    Data Agents                   :p2c, after p2b, 10min
-
-    section Phase 3 — Imaging
     Cohorting + DICOM Viewer + PBI :p3, after p2c, 20min
 
-    section Phase 4 — Semantic
+    section Stage 4: Connected Semantic Intelligence
     Ontology + Agent Binding      :p4a, after p3, 10min
+    Data Agents                   :p2c, after p2b, 10min
+
+    section Stage 5: Bedside Alerting & Action
     Data Activator (Reflex)       :p4b, after p4a, 5min
+
+    section Stage 6: CMS Quality & Performance
+    CMS Star Schema + measures    :p5, after p4b, 15min
 ```
 
 ### Step-by-Step Deployment Table

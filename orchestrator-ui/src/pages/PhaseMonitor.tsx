@@ -23,6 +23,7 @@ import {
   ArrowRepeatAllRegular,
   TextBulletListRegular,
   ArrowLeftRegular,
+  ClipboardRegular,
 } from "@fluentui/react-icons";
 import { PhaseCard } from "../components/PhaseCard";
 import { AllLogsStream } from "../components/AllLogsStream";
@@ -55,6 +56,37 @@ const DOT_TOTAL = DOT_SIZE + DOT_BORDER * 2; // actual rendered size = 28px
 const TRACK_CENTER = 32; // y-center of the track line in the track area
 const TRACK_TOP = TRACK_CENTER - TRACK_HEIGHT / 2;
 const DOT_TOP = TRACK_CENTER - DOT_TOTAL / 2; // vertically center dots on track
+
+const MILESTONE_ANIMATION_CSS = `
+@keyframes milestone-pulse-standard {
+  0% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 4px rgba(0, 163, 153, 0.4), 0 0 0 6px rgba(0, 163, 153, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 6px rgba(0, 163, 153, 0.45), 0 0 0 12px rgba(0, 163, 153, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 8px rgba(0, 163, 153, 0.35), 0 0 0 16px rgba(0, 163, 153, 0);
+  }
+}
+@keyframes milestone-pulse-teardown {
+  0% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 4px rgba(255, 185, 0, 0.4), 0 0 0 6px rgba(255, 185, 0, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 6px rgba(255, 185, 0, 0.45), 0 0 0 12px rgba(255, 185, 0, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 8px rgba(255, 185, 0, 0.35), 0 0 0 16px rgba(255, 185, 0, 0);
+  }
+}
+.milestone-pulse-done {
+  animation: milestone-pulse-standard 2.2s infinite cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.milestone-pulse-teardown-done {
+  animation: milestone-pulse-teardown 2.2s infinite cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+`;
 
 const useStyles = makeStyles({
   header: {
@@ -344,6 +376,10 @@ export function PhaseMonitor() {
   const [resourceErrorNotified, setResourceErrorNotified] = useState(false);
 
   const isMock = instanceId ? isMockInstance(instanceId) : false;
+  const statusIsTerminalForPolling =
+    status?.runtimeStatus === "Completed" ||
+    status?.runtimeStatus === "Terminated" ||
+    status?.runtimeStatus === "Failed";
 
   const poll = useCallback(async () => {
     if (!instanceId) return;
@@ -368,10 +404,14 @@ export function PhaseMonitor() {
   }, [instanceId, isMock]);
 
   useEffect(() => {
+    if (statusIsTerminalForPolling && !isMock) return;
     poll();
-    const interval = setInterval(poll, isMock ? 500 : 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      poll();
+    }, isMock ? 500 : 5000);
     return () => clearInterval(interval);
-  }, [poll, isMock]);
+  }, [poll, isMock, statusIsTerminalForPolling]);
 
   const isRunning = status?.runtimeStatus === "Running";
   const isWaitingForHds =
@@ -495,6 +535,35 @@ export function PhaseMonitor() {
     ? `${Math.floor(elapsedSeconds / 60)}m ${Math.floor(elapsedSeconds % 60)}s`
     : "";
 
+  const logCounts = (backendLogs ?? []).reduce((acc, log) => {
+    const level = (log.level || "info").toLowerCase();
+    acc[level] = (acc[level] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const elapsedMinutes = elapsedSeconds / 60;
+  const completedBeforeActions = phases.filter((p) => p.status === "succeeded" || p.status === "skipped").length;
+  const completedOrPartial = completedBeforeActions + (phases.some((p) => p.status === "running") ? 0.35 : 0);
+  const remainingPhases = Math.max(phases.length - completedOrPartial, 0);
+  const etaMinutes = isRunning && elapsedMinutes > 0 && completedOrPartial > 0
+    ? Math.min(180, Math.max(1, Math.round((remainingPhases / completedOrPartial) * elapsedMinutes)))
+    : 0;
+
+  const copyDiagnostics = () => {
+    const diagnostics = {
+      instanceId,
+      runtimeStatus: status?.runtimeStatus,
+      currentPhase,
+      elapsed: elapsedFormatted,
+      etaMinutes,
+      completedPhases: completedBeforeActions,
+      totalPhases: phases.length,
+      logCounts,
+      resources: status?.customStatus?.resources ?? status?.output?.resources ?? {},
+    };
+    navigator.clipboard?.writeText(JSON.stringify(diagnostics, null, 2)).catch(() => undefined);
+  };
+
   const handleResume = async () => {
     if (!instanceId) return;
     try {
@@ -607,33 +676,41 @@ export function PhaseMonitor() {
   ];
 
   const MILESTONES: MilestoneDef[] = [
-    { label: "Phase 1: Infrastructure & Data", phaseIndices: [0, 1, 2, 3, 4, 5], namePatterns: ["Fabric Workspace", "Azure Infrastructure", "FHIR", "DICOM", "Fabric RTI", "HDS Detection", "HDS Guidance"], position: 8, endWeight: 40, phaseNumber: 1 },
-    { label: "Phase 2: Analytics & AI Agents", phaseIndices: [6, 7, 8], namePatterns: ["RTI Phase 2", "HDS Pipeline", "Data Agent", "Fabric RTI (auto)", "DICOM Shortcut"], position: 36, endWeight: 60, phaseNumber: 2 },
-    { label: "Phase 3: Imaging & Reporting", phaseIndices: [9], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer", "Reporting"], position: 64, endWeight: 70, phaseNumber: 3 },
-    { label: "Phase 4: Semantic Layer & Alerts", phaseIndices: [10, 11], namePatterns: ["Ontology", "Activator", "Reflex", "Data Activator"], position: 75, endWeight: 70, phaseNumber: 4 },
-    { label: "Phase 5: CMS Quality & Claims", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence"], position: 92, endWeight: 85, phaseNumber: 5 },
+    { label: "1. Data Fabric Foundation", phaseIndices: [0, 1, 2, 3, 5], namePatterns: ["Fabric Workspace", "Base Azure Infrastructure", "FHIR", "DICOM Service", "HDS"], position: 8, endWeight: 20, phaseNumber: 1 },
+    { label: "2. Active Patient Telemetry", phaseIndices: [4, 6], namePatterns: ["Fabric RTI", "Fabric RTI (auto)", "Telemetry"], position: 24, endWeight: 40, phaseNumber: 2 },
+    { label: "3. Multimodal Cohorting & Imaging", phaseIndices: [7, 9], namePatterns: ["DICOM Shortcut", "HDS Pipelines", "Imaging", "DICOM Viewer"], position: 40, endWeight: 60, phaseNumber: 3 },
+    { label: "4. Connected Semantic Intelligence", phaseIndices: [8, 10], namePatterns: ["Data Agent", "Ontology"], position: 56, endWeight: 75, phaseNumber: 4 },
+    { label: "5. Bedside Alerting & Action", phaseIndices: [11], namePatterns: ["Activator", "Reflex"], position: 75, endWeight: 85, phaseNumber: 5 },
+    { label: "6. CMS Quality & Performance", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence"], position: 92, endWeight: 95, phaseNumber: 6 },
   ];
 
   // ── Adaptive milestones: determine active milestones from instance ID ──
-  // Instance ID format: P<milestone-digits>-<timestamp> (e.g. P1234-20260406-195906)
+  // Instance ID format: P<milestone-digits>-<timestamp> (e.g. P12345-20260406-195906)
   // Legacy formats: ALLPHASES-*, PHASE2+-*, FABRIC-*, teardown*
   function getActiveMilestoneNumbers(): Set<number> {
     const id = instanceId ?? "";
 
-    // New format: P followed by milestone digits (P1234, P234, P3, etc.)
+    // New format: P followed by milestone digits (P12345, P2345, P3, etc.)
     const pMatch = id.match(/^P(\d+)-/i);
     if (pMatch) {
-      return new Set(pMatch[1].split("").map(Number).filter((n) => n >= 1 && n <= 4));
+      const nums = pMatch[1].split("").map(Number);
+      const set = new Set(nums.filter((n) => n >= 1 && n <= 6));
+      if (set.has(5) && !set.has(6)) {
+        // If it had the 5-digit full deploy, map to all 6 milestones under the new model
+        set.add(6);
+      }
+      return set;
     }
 
     // Legacy formats
-    if (id.startsWith("ALLPHASES")) return new Set([1, 2, 3, 4]);
-    if (id.startsWith("PHASE2+")) return new Set([1, 2, 3, 4]); // skip_base_infra still has all milestones
-    if (id.startsWith("FABRIC")) return new Set([1, 2, 3, 4]);   // reduced P1 but all milestones
+    if (id.startsWith("ALLPHASES")) return new Set([1, 2, 3, 4, 5, 6]);
+    if (id.startsWith("PHASE2+")) return new Set([1, 2, 3, 4, 5, 6]); 
+    if (id.startsWith("FABRIC")) return new Set([1, 2, 3, 4, 5, 6]);   
 
     // Default: show all
-    return new Set([1, 2, 3, 4]);
+    return new Set([1, 2, 3, 4, 5, 6]);
   }
+
 
   const activeMilestoneNumbers = getActiveMilestoneNumbers();
 
@@ -819,6 +896,7 @@ export function PhaseMonitor() {
   const totalMilestones = activeMilestones.length;
   return (
     <div>
+      <style>{MILESTONE_ANIMATION_CSS}</style>
       <div className={styles.header}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS }}>
@@ -913,9 +991,15 @@ export function PhaseMonitor() {
               >
                 {/* Dot */}
                 <div
-                  className={`${styles.milestoneDot} ${getDotClass(msStatus)}`}
+                  className={`${styles.milestoneDot} ${getDotClass(msStatus)} ${
+                    msStatus === "done" && !reducedMotion
+                      ? isTeardown
+                        ? "milestone-pulse-teardown-done"
+                        : "milestone-pulse-done"
+                      : ""
+                  }`}
                   style={isTeardown && msStatus === "done"
-                    ? { backgroundColor: tokens.colorPaletteYellowForeground1, boxShadow: `0 0 0 3px ${tokens.colorNeutralBackground1}, 0 0 0 6px rgba(255, 185, 0, 0.35), ${tokens.shadow4}` }
+                    ? { backgroundColor: tokens.colorPaletteYellowForeground1 }
                     : isTeardown && msStatus === "active"
                       ? { backgroundColor: tokens.colorPaletteYellowForeground1, boxShadow: `0 0 0 3px rgba(255, 185, 0, 0.3), ${tokens.shadow4}` }
                       : undefined
@@ -952,10 +1036,24 @@ export function PhaseMonitor() {
             {isRunning && currentPhase ? ` · ${currentPhase}` : ""}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {elapsedFormatted || "0m 0s"}
+            {elapsedFormatted || "0m 0s"}{isRunning && etaMinutes > 0 ? ` · ETA ~${etaMinutes}m` : ""}
           </Text>
         </div>
       </div>
+
+      <Card className={styles.configCard} size="small">
+        <CardHeader
+          header={<Text weight="semibold" size={300}>Operator diagnostics</Text>}
+          action={<Button size="small" appearance="subtle" icon={<ClipboardRegular />} onClick={copyDiagnostics}>Copy diagnostics</Button>}
+        />
+        <div className={styles.configGrid}>
+          <span className={styles.configItem}><Badge color="informative" size="small">Elapsed</Badge> {elapsedFormatted || "0m 0s"}</span>
+          <span className={styles.configItem}><Badge color="brand" size="small">ETA</Badge> {isRunning && etaMinutes > 0 ? `~${etaMinutes}m` : "—"}</span>
+          <span className={styles.configItem}><Badge color="subtle" size="small">Logs</Badge> {(backendLogs ?? []).length}</span>
+          <span className={styles.configItem}><Badge color={logCounts.error ? "danger" : "success"} size="small">Errors</Badge> {logCounts.error ?? 0}</span>
+          <span className={styles.configItem}><Badge color={logCounts.warn || logCounts.warning ? "warning" : "subtle"} size="small">Warnings</Badge> {(logCounts.warn ?? 0) + (logCounts.warning ?? 0)}</span>
+        </div>
+      </Card>
 
       {/* Deployment / Teardown Configuration Summary */}
       {(() => {

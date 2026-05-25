@@ -1,6 +1,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   Badge,
+  Button,
   Tab,
   TabList,
   Text,
@@ -11,6 +12,9 @@ import {
   RocketRegular,
   HistoryRegular,
   DeleteRegular,
+  ShieldTaskRegular,
+  WeatherMoonRegular,
+  WeatherSunnyRegular,
 } from "@fluentui/react-icons";
 import { spacing } from "../theme";
 import { useAppState } from "../AppState";
@@ -38,6 +42,7 @@ const useStyles = makeStyles({
   header: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: spacing.l,
     paddingTop: spacing.m,
     paddingBottom: spacing.m,
@@ -74,6 +79,28 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: spacing.s,
+    position: "relative",
+  },
+  resourcesMenu: {
+    position: "relative",
+  },
+  resourcesSummary: {
+    listStyleType: "none",
+    "::-webkit-details-marker": { display: "none" },
+  },
+  resourcesPanel: {
+    position: "absolute",
+    top: "calc(100% + 6px)",
+    right: 0,
+    zIndex: 50,
+    minWidth: "180px",
+    display: "grid",
+    gap: tokens.spacingVerticalXS,
+    padding: tokens.spacingHorizontalS,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    boxShadow: tokens.shadow16,
   },
   iconPill: {
     display: "inline-flex",
@@ -227,11 +254,20 @@ export function Layout() {
       : authContext?.pwsh.error || "Not logged in";
   const contextReady = !!authContext?.ready;
   const contextAligned = !!authContext?.aligned.subscription && !!authContext?.aligned.tenant;
+  const isDarkTheme = typeof window !== "undefined" && window.localStorage.getItem("orchestrator-theme") === "dark";
+  const toggleTheme = () => {
+    if (typeof window === "undefined") return;
+    const current = window.localStorage.getItem("orchestrator-theme");
+    window.localStorage.setItem("orchestrator-theme", current === "dark" ? "light" : "dark");
+    window.dispatchEvent(new Event("orchestrator-theme-change"));
+  };
 
   const currentTab =
     location.pathname.startsWith("/monitor")
       ? "/deploy"
-      : location.pathname.startsWith("/deploy")
+      : location.pathname.startsWith("/preflight")
+        ? "/preflight"
+        : location.pathname.startsWith("/deploy")
         ? "/deploy"
         : location.pathname.startsWith("/history")
           ? "/history"
@@ -251,54 +287,65 @@ export function Layout() {
           </Text>
         </div>
         <div className={styles.headerIcons}>
-          <a
-            href="https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.iconPill}
-            title="Healthcare Data Solutions"
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={isDarkTheme ? <WeatherSunnyRegular /> : <WeatherMoonRegular />}
+            onClick={toggleTheme}
           >
-            <HdsIcon size={18} /> HDS
-          </a>
-          <a
-            href="https://portal.azure.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.iconPill}
-            title="Azure Portal"
-            style={{ color: "#0078D4", borderColor: "#0078D4" }}
-          >
-            <AzureIcon size={18} /> Azure
-          </a>
-          <a
-            href="https://app.fabric.microsoft.com/home?experience=fabric-developer"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.iconPill}
-            title="Microsoft Fabric"
-            style={{ color: "#117865", borderColor: "#117865" }}
-          >
-            <FabricIcon size={18} /> Fabric
-          </a>
-          <div className={styles.iconDivider} />
-          <a
-            href="https://github.com/kfprugger/med-device-fabric-emulator"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.iconPill}
-            title="View source on GitHub"
-          >
-            <GitHubIcon size={16} /> GitHub
-          </a>
-          <a
-            href="https://aka.ms/fabrichlsrti"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.iconPill}
-            title="Watch demo video"
-          >
-            <YouTubeIcon size={16} /> Demo
-          </a>
+            {isDarkTheme ? "Light" : "Dark"}
+          </Button>
+          <details className={styles.resourcesMenu}>
+            <summary className={`${styles.iconPill} ${styles.resourcesSummary}`}>Resources</summary>
+            <div className={styles.resourcesPanel}>
+              <a
+                href="https://learn.microsoft.com/en-us/industry/healthcare/healthcare-data-solutions/overview"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.iconPill}
+                title="Healthcare Data Solutions"
+              >
+                <HdsIcon size={18} /> HDS docs
+              </a>
+              <a
+                href="https://portal.azure.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.iconPill}
+                title="Azure Portal"
+                style={{ color: tokens.colorPaletteBlueForeground2, borderColor: tokens.colorPaletteBlueBorderActive }}
+              >
+                <AzureIcon size={18} /> Azure Portal
+              </a>
+              <a
+                href="https://app.fabric.microsoft.com/home?experience=fabric-developer"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.iconPill}
+                title="Microsoft Fabric"
+              >
+                <FabricIcon size={18} /> Fabric Portal
+              </a>
+              <a
+                href="https://github.com/kfprugger/med-device-fabric-emulator"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.iconPill}
+                title="View source on GitHub"
+              >
+                <GitHubIcon size={16} /> GitHub
+              </a>
+              <a
+                href="https://aka.ms/fabrichlsrti"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.iconPill}
+                title="Watch demo video"
+              >
+                <YouTubeIcon size={16} /> Demo
+              </a>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -308,6 +355,9 @@ export function Layout() {
             selectedValue={currentTab}
             onTabSelect={(_, data) => navigate(data.value as string)}
           >
+            <Tab value="/preflight" icon={<ShieldTaskRegular />}>
+              Preflight
+            </Tab>
             <Tab value="/deploy" icon={<RocketRegular />}>
               Deploy
             </Tab>

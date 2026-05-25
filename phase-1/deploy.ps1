@@ -8,8 +8,13 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+# Ensure cross-platform temp directory is populated in $env:TEMP
+if (-not $env:TEMP) {
+    $env:TEMP = [System.IO.Path]::GetTempPath()
+}
+
 # Resolve repo root (one level up from phase-1/) so relative paths work
-$RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $RepoRoot
 
 # Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)

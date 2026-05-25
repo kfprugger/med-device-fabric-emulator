@@ -140,6 +140,7 @@ export function DeploymentHistory() {
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("from") ?? "");
   const [dateTo, setDateTo] = useState(() => searchParams.get("to") ?? "");
   const [liveUpdates, setLiveUpdates] = useState(() => searchParams.get("live") !== "0");
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
 
   const toggleExpanded = (id: string) => {
@@ -188,7 +189,10 @@ export function DeploymentHistory() {
 
   useEffect(() => {
     if (!liveUpdates) return;
-    const interval = setInterval(refresh, 5000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      refresh();
+    }, 5000);
     return () => clearInterval(interval);
   }, [refresh, liveUpdates]);
 
@@ -214,6 +218,23 @@ export function DeploymentHistory() {
     try { await deleteDeployment(instanceId); } catch { setError(`Failed to delete deployment ${instanceId}.`); }
     refresh();
   };
+
+  const toggleCompare = (instanceId: string, checked: boolean) => {
+    setCompareIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        if (next.size >= 2 && !next.has(instanceId)) next.delete(Array.from(next)[0]);
+        next.add(instanceId);
+      } else {
+        next.delete(instanceId);
+      }
+      return next;
+    });
+  };
+
+  const comparedRuns = Array.from(compareIds)
+    .map((id) => deployments.find((deployment) => deployment.instanceId === id))
+    .filter(Boolean) as DeploymentSummary[];
 
   const filteredDeployments = deployments.filter((deployment) => {
     const cs = deployment.customStatus as Record<string, unknown> | null;
@@ -321,6 +342,35 @@ export function DeploymentHistory() {
         </Text>
       </div>
 
+      {comparedRuns.length > 0 && (
+        <div className={styles.card} style={{ marginBottom: tokens.spacingVerticalM }}>
+          <div className={styles.cardRow} style={{ alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <Text weight="semibold" block>Run compare</Text>
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                Select up to two runs to compare status, timings, workspace, resource group, and phase counts.
+              </Text>
+            </div>
+            <Button appearance="subtle" onClick={() => setCompareIds(new Set())}>Clear compare</Button>
+          </div>
+          <div className={styles.infoPanel}>
+            {comparedRuns.map((run) => {
+              const cs = run.customStatus as Record<string, unknown> | null;
+              return (
+                <div key={run.instanceId} className={styles.linkGroup} style={{ minWidth: 240 }}>
+                  <span className={styles.linkLabel}>{run.instanceId}</span>
+                  <Text size={200}>Status: {run.runtimeStatus}</Text>
+                  <Text size={200}>Workspace: {(cs?.workspaceName as string) || "—"}</Text>
+                  <Text size={200}>RG: {(cs?.resourceGroupName as string) || "—"}</Text>
+                  <Text size={200}>Phases: {(cs?.completedPhases as number) ?? 0}/{(cs?.totalPhases as number) ?? 0}</Text>
+                  <Text size={200}>Updated: {run.lastUpdatedTime ? new Date(run.lastUpdatedTime).toLocaleString() : "—"}</Text>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className={styles.list}>
         {loading && (
           <>
@@ -347,6 +397,11 @@ export function DeploymentHistory() {
           return (
             <div key={d.instanceId} className={styles.card}>
               <div className={styles.cardRow}>
+                <Checkbox
+                  checked={compareIds.has(d.instanceId)}
+                  onChange={(_, data) => toggleCompare(d.instanceId, !!data.checked)}
+                  aria-label={`Compare ${d.instanceId}`}
+                />
                 <div className={styles.instanceId}>
                   {d.instanceId}
                   {isMock && (

@@ -34,6 +34,11 @@ $doDicom = (-not $selectiveMode -and -not $SkipDicom) -or $RunDicom
 
 $ErrorActionPreference = "Stop"
 
+# Ensure cross-platform temp directory is populated in $env:TEMP
+if (-not $env:TEMP) {
+    $env:TEMP = [System.IO.Path]::GetTempPath()
+}
+
 # Fix Azure CLI Unicode encoding issue on Windows (az acr build log streaming)
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -414,7 +419,7 @@ $tagsParamContent | ConvertTo-Json -Depth 5 | Set-Content $tagsParamFile -Encodi
 $tagsParamRef = "@$tagsParamFile"
 
 # Change to repo root so relative paths (bicep/, synthea/, etc.) work
-$ScriptDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$ScriptDir = Split-Path -Parent $PSScriptRoot
 Push-Location $ScriptDir
 Write-Host "Working directory: $(Get-Location)"
 
