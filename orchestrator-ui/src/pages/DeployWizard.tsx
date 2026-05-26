@@ -1188,21 +1188,31 @@ export function DeployWizard() {
         {/* Responsive grid: auto-flow dense packing eliminates wasted space */}
         <style>{`
         .deploy-form-grid {
-          display: grid;
-          grid-template-columns: 1fr;
+          display: flex;
+          flex-direction: column;
           gap: 16px;
           margin-top: 16px;
         }
         .deploy-form-grid > * {
           animation: deploy-card-in 0.5s ease both;
-          align-self: start;
         }
-        .deploy-form-grid > *:nth-child(1) { animation-delay: 0s; }
-        .deploy-form-grid > *:nth-child(2) { animation-delay: 0.07s; }
-        .deploy-form-grid > *:nth-child(3) { animation-delay: 0.14s; }
-        .deploy-form-grid > *:nth-child(4) { animation-delay: 0.21s; }
-        .deploy-form-grid > *:nth-child(5) { animation-delay: 0.28s; }
-        .deploy-form-grid > *:nth-child(6) { animation-delay: 0.35s; }
+        .deploy-columns-row {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .deploy-column {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          min-width: 0;
+        }
+        .deploy-column > * {
+          animation: deploy-card-in 0.5s ease both;
+        }
+        .deploy-column > *:nth-child(1) { animation-delay: 0.05s; }
+        .deploy-column > *:nth-child(2) { animation-delay: 0.12s; }
+        .deploy-column > *:nth-child(3) { animation-delay: 0.19s; }
         @keyframes deploy-card-in {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -1217,14 +1227,12 @@ export function DeployWizard() {
           50%      { box-shadow: 0 0 36px ${tokens.colorBrandBackground2Hover}; outline-color: ${tokens.colorBrandStroke2}; }
         }
         @media (min-width: 1200px) {
-          .deploy-form-grid {
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-            align-items: start;
+          .deploy-columns-row {
+            flex-direction: row;
+            align-items: flex-start;
           }
-        }
-        @media (min-width: 1800px) {
-          .deploy-form-grid {
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          .deploy-column {
+            flex: 1;
           }
         }
         /* Compact padding on wide screens */
@@ -1331,6 +1339,8 @@ export function DeployWizard() {
           </div>
         </Card>
 
+        <div className="deploy-columns-row">
+        <div className="deploy-column">
         {/* Naming Convention */}
         <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
           <CardHeader
@@ -1754,7 +1764,9 @@ export function DeployWizard() {
             </div>
           </div>
         </Card>
+        </div>
 
+        <div className="deploy-column">
         {/* Fabric Configuration */}
         <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
           <CardHeader
@@ -2169,6 +2181,8 @@ export function DeployWizard() {
             </div>
           </div>
         </Card>
+        </div>
+        </div>
 
         {error && <div className={styles.error} ref={(el) => el?.scrollIntoView({ behavior: "smooth" })}>{error}</div>}
       </div>
