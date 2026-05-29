@@ -1929,7 +1929,7 @@ export function PhaseMonitor() {
 
           {afterActionLoading ? (
             <div style={{ padding: "20px", textAlign: "center" }}>
-              <Text>Compiling live security audit report...</Text>
+              <Text>Compiling Live Environment Report...</Text>
             </div>
           ) : afterActionReport ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
