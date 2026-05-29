@@ -1,0 +1,37 @@
+relationship 2245b7a5-88f7-ded8-a08b-6324a278a775
+	fromColumn: condition_occurrence.person_id
+	toColumn: person.person_id
+
+relationship 0c30509e-0a92-2ad0-3f4a-f370e6ef9827
+	fromColumn: drug_exposure.person_id
+	toColumn: person.person_id
+
+relationship 054fd771-c221-0d79-c035-a3cb414bf125
+	fromColumn: image_occurrence.person_id
+	toColumn: person.person_id
+
+relationship a9cbcd91-d799-bd09-5016-be7cb3b82843
+	fromColumn: measurement.person_id
+	toColumn: person.person_id
+
+relationship 15724193-b1b8-0d8d-4c79-c59e668b10d6
+	crossFilteringBehavior: bothDirections
+	fromColumn: person.location_id
+	toColumn: location.location_id
+
+relationship 8734f6ba-91dc-0686-3896-8f4013460b1e
+	fromColumn: note.person_id
+	toColumn: person.person_id
+
+relationship 5a8d93bd-bd6d-7921-1e7f-7723b73b1396
+	fromColumn: visit_occurrence.person_id
+	toColumn: person.person_id
+
+relationship 6fe39a1d-62dc-421a-01d5-5776a886426a
+	fromColumn: procedure_occurrence.person_id
+	toColumn: person.person_id
+
+relationship 42bf68f3-4632-6565-432c-d150faf17544
+	fromColumn: observation.person_id
+	toColumn: person.person_id
+

@@ -1,0 +1,127 @@
+table concept
+	lineageTag: 166d28e9-b886-4049-b819-87645756c6b0
+	sourceLineageTag: [dbo].[concept]
+
+	column concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 50363090-50b3-4147-b652-d2226a6026bd
+		sourceLineageTag: concept_id
+		summarizeBy: sum
+		sourceColumn: concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column concept_name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: bd0dbf5c-4c61-4ce9-99e7-4403bdb4ab09
+		sourceLineageTag: concept_name
+		summarizeBy: none
+		sourceColumn: concept_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column domain_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: de254aac-4b26-4e00-a3c2-1147e76e9147
+		sourceLineageTag: domain_id
+		summarizeBy: none
+		sourceColumn: domain_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column vocabulary_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2f80ae92-7917-4b14-8c51-643abc32adef
+		sourceLineageTag: vocabulary_id
+		summarizeBy: none
+		sourceColumn: vocabulary_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column concept_class_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e8cba06a-f162-4709-aa21-9e4ee7b150ec
+		sourceLineageTag: concept_class_id
+		summarizeBy: none
+		sourceColumn: concept_class_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column standard_concept
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: ba060816-27ab-4f20-9441-1a209c10d168
+		sourceLineageTag: standard_concept
+		summarizeBy: none
+		sourceColumn: standard_concept
+
+		annotation SummarizationSetBy = Automatic
+
+	column concept_code
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9e96bf47-5ad3-4f91-866d-5f4acb38e761
+		sourceLineageTag: concept_code
+		summarizeBy: none
+		sourceColumn: concept_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_start_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: 67753d48-d5cf-4075-b4ce-2daf01ce3c22
+		sourceLineageTag: valid_start_date
+		summarizeBy: none
+		sourceColumn: valid_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_end_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: b328adeb-ee1d-4a81-aee0-3c517c38a47d
+		sourceLineageTag: valid_end_date
+		summarizeBy: none
+		sourceColumn: valid_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column invalid_reason
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: de723a49-bb01-4970-921a-7d13ce5e7cf8
+		sourceLineageTag: invalid_reason
+		summarizeBy: none
+		sourceColumn: invalid_reason
+
+		annotation SummarizationSetBy = Automatic
+
+	column createdDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 1f63edc7-ec38-4a4a-8b40-18d00b884a55
+		sourceLineageTag: createdDatetime
+		summarizeBy: none
+		sourceColumn: createdDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	partition concept = entity
+		mode: directLake
+		source
+			entityName: concept
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

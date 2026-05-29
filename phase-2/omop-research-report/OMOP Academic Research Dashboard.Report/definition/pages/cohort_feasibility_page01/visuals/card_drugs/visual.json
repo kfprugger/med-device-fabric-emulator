@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "card_drugs",
+  "position": {
+    "x": 500,
+    "y": 20,
+    "z": 3000,
+    "height": 120,
+    "width": 220,
+    "tabOrder": 3000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "drug_exposure"
+                    }
+                  },
+                  "Property": "drug_exposure_id"
+                }
+              },
+              "queryRef": "drug_exposure.drug_exposure_id",
+              "nativeQueryRef": "drug_exposure_id"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

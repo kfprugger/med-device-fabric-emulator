@@ -1,0 +1,56 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "chart_birthyear",
+  "position": {
+    "x": 20,
+    "y": 160,
+    "z": 4000,
+    "height": 450,
+    "width": 700,
+    "tabOrder": 4000
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "person"
+                    }
+                  },
+                  "Property": "year_of_birth"
+                }
+              },
+              "queryRef": "person.year_of_birth",
+              "nativeQueryRef": "year_of_birth"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "person"
+                    }
+                  },
+                  "Property": "person_id"
+                }
+              },
+              "queryRef": "person.person_id",
+              "nativeQueryRef": "person_id"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

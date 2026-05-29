@@ -1,0 +1,249 @@
+table visit_occurrence
+	lineageTag: 8b0e256b-ad1f-473b-9d13-d3db8ad98c7a
+	sourceLineageTag: [dbo].[visit_occurrence]
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 76510d28-6f46-40bc-9a0b-726f45540325
+		sourceLineageTag: SourceTable
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column admitted_from_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e9c6c036-8ac5-4220-a923-6eee04783473
+		sourceLineageTag: admitted_from_source_value
+		summarizeBy: none
+		sourceColumn: admitted_from_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: b02d33ff-dc4a-4872-9955-ebf7996f24a0
+		sourceLineageTag: visit_occurrence_id
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column discharged_to_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 439d64d4-54e3-4a5b-94ec-eb892d9ece64
+		sourceLineageTag: discharged_to_concept_id
+		summarizeBy: sum
+		sourceColumn: discharged_to_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: c5fe6d0f-2f3a-4a7e-a899-d2b49e52b585
+		sourceLineageTag: SourceModifiedOn
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: d6522bde-ed82-4796-ab55-58cd8873fb9c
+		sourceLineageTag: visit_end_datetime
+		summarizeBy: none
+		sourceColumn: visit_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceRecordId
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3ef935b4-2216-48e3-8bac-b58e4c503950
+		sourceLineageTag: msftSourceRecordId
+		summarizeBy: none
+		sourceColumn: msftSourceRecordId
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: e044c2dc-da4b-47f3-937a-2e4b7023b70e
+		sourceLineageTag: visit_end_date
+		summarizeBy: none
+		sourceColumn: visit_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column discharged_to_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9b271823-2f89-42b0-b9f2-c0152980388a
+		sourceLineageTag: discharged_to_source_value
+		summarizeBy: none
+		sourceColumn: discharged_to_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceTableName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 1f08f7eb-e7b4-4ddf-9a53-85eb94e498d0
+		sourceLineageTag: msftSourceTableName
+		summarizeBy: none
+		sourceColumn: msftSourceTableName
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: 813675d0-c67b-4f40-9da9-fdbbecf4d927
+		sourceLineageTag: visit_start_date
+		summarizeBy: none
+		sourceColumn: visit_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftModifiedDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 68903596-4ea9-4a4a-a5b5-82730fd2562c
+		sourceLineageTag: msftModifiedDatetime
+		summarizeBy: none
+		sourceColumn: msftModifiedDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 02073ff6-6a31-4601-9f56-6e43f4c0dfbf
+		sourceLineageTag: visit_source_concept_id
+		summarizeBy: sum
+		sourceColumn: visit_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: fb125a19-64a6-43bd-9902-d40b99f174ff
+		sourceLineageTag: visit_type_concept_id
+		summarizeBy: sum
+		sourceColumn: visit_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: c6cfadb4-9517-4add-9f2b-1c2f47383cc3
+		sourceLineageTag: visit_source_value
+		summarizeBy: none
+		sourceColumn: visit_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column preceding_visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: d0dc4c32-7fb6-4393-80c8-86d6ebb43ad1
+		sourceLineageTag: preceding_visit_occurrence_id
+		summarizeBy: sum
+		sourceColumn: preceding_visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 5e136bf1-e906-4567-879d-4efd74a65f17
+		sourceLineageTag: person_id
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 2c7509c1-b440-44b3-8d17-5e18589e3f5d
+		sourceLineageTag: visit_start_datetime
+		summarizeBy: none
+		sourceColumn: visit_start_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column admitted_from_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c98e0a9d-f3d5-4e96-8a17-e8e116338b1c
+		sourceLineageTag: admitted_from_concept_id
+		summarizeBy: sum
+		sourceColumn: admitted_from_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_site_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: de44b460-9b6a-48cb-ac02-7fb51a5f7ff3
+		sourceLineageTag: care_site_id
+		summarizeBy: sum
+		sourceColumn: care_site_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: e67dc0d1-71bf-464d-ad12-92f54cb7305b
+		sourceLineageTag: provider_id
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: ec019e13-3e1d-4739-93dc-d4e039738b88
+		sourceLineageTag: visit_concept_id
+		summarizeBy: sum
+		sourceColumn: visit_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition visit_occurrence = entity
+		mode: directLake
+		source
+			entityName: visit_occurrence
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

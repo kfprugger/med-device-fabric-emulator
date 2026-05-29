@@ -1,0 +1,313 @@
+table drug_exposure
+	lineageTag: 89d3c746-8b42-4699-a091-5ff7775bf935
+	sourceLineageTag: [dbo].[drug_exposure]
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 6218a465-e2ee-42ed-9d3c-a0d04d79e079
+		sourceLineageTag: SourceTable
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: dfc2fb58-4c04-4d65-bc30-e2e10410d7e0
+		sourceLineageTag: visit_occurrence_id
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: ee103343-2d42-4c6a-b5d1-8420ca0cea08
+		sourceLineageTag: SourceModifiedOn
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 08cd3e7b-e6a1-4716-bcf8-4e567f44577e
+		sourceLineageTag: drug_source_concept_id
+		summarizeBy: sum
+		sourceColumn: drug_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceRecordId
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: b570d7a2-2c35-42f0-be18-5970196ebef8
+		sourceLineageTag: msftSourceRecordId
+		summarizeBy: none
+		sourceColumn: msftSourceRecordId
+
+		annotation SummarizationSetBy = Automatic
+
+	column dose_unit_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e5d15cda-5e4d-44b4-a05e-193f525955b6
+		sourceLineageTag: dose_unit_source_value
+		summarizeBy: none
+		sourceColumn: dose_unit_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceTableName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 22f0d936-1cf6-4922-89d6-62bfd6afde31
+		sourceLineageTag: msftSourceTableName
+		summarizeBy: none
+		sourceColumn: msftSourceTableName
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftModifiedDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 5574e0a5-49bd-442c-ac9b-c513d3bb334c
+		sourceLineageTag: msftModifiedDatetime
+		summarizeBy: none
+		sourceColumn: msftModifiedDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_detail_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 8c80aaaf-db7c-4d5d-8e5b-f1535128f899
+		sourceLineageTag: visit_detail_id
+		summarizeBy: sum
+		sourceColumn: visit_detail_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 01b48e15-210b-4849-ae0c-e6667e0d1f22
+		sourceLineageTag: route_source_value
+		summarizeBy: none
+		sourceColumn: route_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column days_supply
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 03954404-bcc1-4019-93e5-03732837c21d
+		sourceLineageTag: days_supply
+		summarizeBy: sum
+		sourceColumn: days_supply
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: ab527bd2-7a16-49c9-ba72-e1dea05b02de
+		sourceLineageTag: person_id
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d0bcd746-901d-443c-8b6e-1d375b9a3a89
+		sourceLineageTag: drug_source_value
+		summarizeBy: none
+		sourceColumn: drug_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_exposure_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: ab464d61-0e71-4d64-9618-7fd45d7c92d4
+		sourceLineageTag: drug_exposure_id
+		summarizeBy: sum
+		sourceColumn: drug_exposure_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_exposure_start_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: c6ebb5c9-2b52-4ff9-89dd-60ed61171287
+		sourceLineageTag: drug_exposure_start_date
+		summarizeBy: none
+		sourceColumn: drug_exposure_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_exposure_end_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: dfeaf4dc-c056-4387-8133-b72972cac8a0
+		sourceLineageTag: drug_exposure_end_date
+		summarizeBy: none
+		sourceColumn: drug_exposure_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column route_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: e46bd66a-eb44-4960-9ef2-fdb48883e420
+		sourceLineageTag: route_concept_id
+		summarizeBy: sum
+		sourceColumn: route_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column verbatim_end_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: c7634d56-cce7-4327-b120-75eee1981cec
+		sourceLineageTag: verbatim_end_date
+		summarizeBy: none
+		sourceColumn: verbatim_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column lot_number
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e6c2c54d-8d0e-4253-8703-3c8beab0c870
+		sourceLineageTag: lot_number
+		summarizeBy: none
+		sourceColumn: lot_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column sig
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a6d0ebf4-4604-47f2-9288-25a173440c82
+		sourceLineageTag: sig
+		summarizeBy: none
+		sourceColumn: sig
+
+		annotation SummarizationSetBy = Automatic
+
+	column quantity
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: fe6cc754-1b50-471f-a67f-3e49bd19904b
+		sourceLineageTag: quantity
+		summarizeBy: sum
+		sourceColumn: quantity
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column drug_exposure_start_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 121f78c0-17c3-48c1-899c-21aeff5b4861
+		sourceLineageTag: drug_exposure_start_datetime
+		summarizeBy: none
+		sourceColumn: drug_exposure_start_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5a408963-7354-451d-9386-8d183fa35d2e
+		sourceLineageTag: drug_concept_id
+		summarizeBy: sum
+		sourceColumn: drug_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: af182549-be8b-4af9-bec7-276b18261671
+		sourceLineageTag: drug_type_concept_id
+		summarizeBy: sum
+		sourceColumn: drug_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 7097b418-7f60-4c0a-95d9-20fe50e1f586
+		sourceLineageTag: provider_id
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_reason
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: bd5ebd77-9332-42a5-86cc-ca22dea633a7
+		sourceLineageTag: stop_reason
+		summarizeBy: none
+		sourceColumn: stop_reason
+
+		annotation SummarizationSetBy = Automatic
+
+	column drug_exposure_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 709bf5e3-ba90-4912-98d7-c2c2746a2d0a
+		sourceLineageTag: drug_exposure_end_datetime
+		summarizeBy: none
+		sourceColumn: drug_exposure_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column refills
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: cb395742-e269-4f29-a8f7-8a9c9c12c9d4
+		sourceLineageTag: refills
+		summarizeBy: sum
+		sourceColumn: refills
+
+		annotation SummarizationSetBy = Automatic
+
+	partition drug_exposure = entity
+		mode: directLake
+		source
+			entityName: drug_exposure
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

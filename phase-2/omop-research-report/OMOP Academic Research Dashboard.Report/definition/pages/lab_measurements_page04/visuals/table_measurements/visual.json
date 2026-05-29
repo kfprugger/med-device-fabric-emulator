@@ -1,0 +1,80 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "table_measurements",
+  "position": {
+    "x": 20,
+    "y": 20,
+    "z": 1000,
+    "height": 600,
+    "width": 1100,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "table",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "person"
+                    }
+                  },
+                  "Property": "person_id"
+                }
+              },
+              "queryRef": "person.person_id",
+              "nativeQueryRef": "person_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "measurement"
+                    }
+                  },
+                  "Property": "measurement_concept_id"
+                }
+              },
+              "queryRef": "measurement.measurement_concept_id",
+              "nativeQueryRef": "measurement_concept_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "measurement"
+                    }
+                  },
+                  "Property": "value_as_number"
+                }
+              },
+              "queryRef": "measurement.value_as_number",
+              "nativeQueryRef": "value_as_number"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "measurement"
+                    }
+                  },
+                  "Property": "measurement_date"
+                }
+              },
+              "queryRef": "measurement.measurement_date",
+              "nativeQueryRef": "measurement_date"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

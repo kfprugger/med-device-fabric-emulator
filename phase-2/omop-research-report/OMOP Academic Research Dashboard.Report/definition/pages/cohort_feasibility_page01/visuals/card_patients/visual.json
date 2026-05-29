@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "card_patients",
+  "position": {
+    "x": 20,
+    "y": 20,
+    "z": 1000,
+    "height": 120,
+    "width": 220,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "person"
+                    }
+                  },
+                  "Property": "person_id"
+                }
+              },
+              "queryRef": "person.person_id",
+              "nativeQueryRef": "person_id"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

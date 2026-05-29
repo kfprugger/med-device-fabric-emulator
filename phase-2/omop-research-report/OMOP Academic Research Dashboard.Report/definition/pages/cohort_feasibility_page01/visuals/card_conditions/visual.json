@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "card_conditions",
+  "position": {
+    "x": 260,
+    "y": 20,
+    "z": 2000,
+    "height": 120,
+    "width": 220,
+    "tabOrder": 2000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "condition_occurrence"
+                    }
+                  },
+                  "Property": "condition_occurrence_id"
+                }
+              },
+              "queryRef": "condition_occurrence.condition_occurrence_id",
+              "nativeQueryRef": "condition_occurrence_id"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

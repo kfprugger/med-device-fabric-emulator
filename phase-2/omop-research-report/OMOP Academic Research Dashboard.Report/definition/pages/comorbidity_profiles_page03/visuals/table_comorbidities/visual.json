@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "table_comorbidities",
+  "position": {
+    "x": 20,
+    "y": 20,
+    "z": 1000,
+    "height": 600,
+    "width": 1100,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "table",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "person"
+                    }
+                  },
+                  "Property": "person_id"
+                }
+              },
+              "queryRef": "person.person_id",
+              "nativeQueryRef": "person_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "condition_occurrence"
+                    }
+                  },
+                  "Property": "condition_concept_id"
+                }
+              },
+              "queryRef": "condition_occurrence.condition_concept_id",
+              "nativeQueryRef": "condition_concept_id"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "condition_occurrence"
+                    }
+                  },
+                  "Property": "condition_start_date"
+                }
+              },
+              "queryRef": "condition_occurrence.condition_start_date",
+              "nativeQueryRef": "condition_start_date"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

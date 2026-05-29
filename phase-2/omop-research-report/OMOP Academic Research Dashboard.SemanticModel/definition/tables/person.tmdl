@@ -1,0 +1,259 @@
+table person
+	lineageTag: d8c8d7d0-a40d-4338-bffe-ce552e9f203c
+	sourceLineageTag: [dbo].[person]
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 07d537ee-252f-4634-8221-14de5303b50d
+		sourceLineageTag: SourceTable
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: ee5349f2-db8f-4b0b-a570-afd3cb43861c
+		sourceLineageTag: race_source_value
+		summarizeBy: none
+		sourceColumn: race_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: fe354aa4-2e58-46a7-a77e-d85fd7dad389
+		sourceLineageTag: person_id
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column year_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 305e1292-a767-4c18-9cec-d9fb84ddc5de
+		sourceLineageTag: year_of_birth
+		summarizeBy: sum
+		sourceColumn: year_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 8eaa037a-8f00-44c9-b63d-a09fa9b4b7c3
+		sourceLineageTag: gender_source_value
+		summarizeBy: none
+		sourceColumn: gender_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: a51798a2-7f6c-42e3-bf9a-741a7b3d901a
+		sourceLineageTag: SourceModifiedOn
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 707966da-3634-4364-8424-921c906e3479
+		sourceLineageTag: location_id
+		summarizeBy: none
+		sourceColumn: location_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column month_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6d74b78e-3499-46ab-ac43-41e1600780a5
+		sourceLineageTag: month_of_birth
+		summarizeBy: sum
+		sourceColumn: month_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 02c2c9a8-2cdc-44b9-9fb5-808da6c2c916
+		sourceLineageTag: gender_source_concept_id
+		summarizeBy: sum
+		sourceColumn: gender_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 49655113-c731-47ae-8569-f76f2cfe3f4e
+		sourceLineageTag: gender_concept_id
+		summarizeBy: sum
+		sourceColumn: gender_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceRecordId
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 0a756041-4b99-440f-9026-af6a3c155389
+		sourceLineageTag: msftSourceRecordId
+		summarizeBy: none
+		sourceColumn: msftSourceRecordId
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceTableName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3a8e775d-1016-427e-827f-6dcd6a943adb
+		sourceLineageTag: msftSourceTableName
+		summarizeBy: none
+		sourceColumn: msftSourceTableName
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftModifiedDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 9e36cbff-05ab-46b6-a65d-4217b00c5527
+		sourceLineageTag: msftModifiedDatetime
+		summarizeBy: none
+		sourceColumn: msftModifiedDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column birth_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 5f37fdbd-f4e6-46bc-9ed9-02d2cccd74fa
+		sourceLineageTag: birth_datetime
+		summarizeBy: none
+		sourceColumn: birth_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 19c63f17-a001-4f53-9862-fd55707f0e13
+		sourceLineageTag: person_source_value
+		summarizeBy: none
+		sourceColumn: person_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: bfa64454-bf0e-4c03-81d6-38142ec8c53e
+		sourceLineageTag: race_source_concept_id
+		summarizeBy: sum
+		sourceColumn: race_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 67e362f7-577c-434d-9415-b63529ff5041
+		sourceLineageTag: ethnicity_source_value
+		summarizeBy: none
+		sourceColumn: ethnicity_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 8afa5a60-7556-436f-bc4f-93ef4addacdc
+		sourceLineageTag: ethnicity_concept_id
+		summarizeBy: sum
+		sourceColumn: ethnicity_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column day_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7c29b9cb-8f81-4cc0-8126-e08acf502448
+		sourceLineageTag: day_of_birth
+		summarizeBy: sum
+		sourceColumn: day_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_site_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: afb42938-ebae-4f0c-887a-ddd33e7be2d2
+		sourceLineageTag: care_site_id
+		summarizeBy: sum
+		sourceColumn: care_site_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5e9c7731-9be0-4ea6-bfc3-b3b4efa08770
+		sourceLineageTag: ethnicity_source_concept_id
+		summarizeBy: sum
+		sourceColumn: ethnicity_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 50023077-4e35-4d6c-8a0f-bb39bf9a5e89
+		sourceLineageTag: provider_id
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 39e720d0-07e1-4a45-9b75-e4ab86f832b4
+		sourceLineageTag: race_concept_id
+		summarizeBy: sum
+		sourceColumn: race_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition person = entity
+		mode: directLake
+		source
+			entityName: person
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

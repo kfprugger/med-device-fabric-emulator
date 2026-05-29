@@ -1,0 +1,193 @@
+table image_occurrence
+	lineageTag: c76fc52c-ad09-4a13-8c2f-5ebcebb28872
+	sourceLineageTag: [dbo].[image_occurrence]
+
+	column image_occurrence_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: 6c1e46ae-94d7-4cf3-8952-ac08decfaaf7
+		sourceLineageTag: image_occurrence_date
+		summarizeBy: none
+		sourceColumn: image_occurrence_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column modality_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 59abf622-82f7-4542-918c-b04f2ba16369
+		sourceLineageTag: modality_source_concept_id
+		summarizeBy: sum
+		sourceColumn: modality_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 5e72c5db-eefb-4bfe-a9b5-038fa71236a0
+		sourceLineageTag: SourceTable
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceRecordId
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 26209571-ee6e-4374-a643-6d8560df84ca
+		sourceLineageTag: msftSourceRecordId
+		summarizeBy: none
+		sourceColumn: msftSourceRecordId
+
+		annotation SummarizationSetBy = Automatic
+
+	column image_study_uid
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 552fed66-f524-466c-a867-9ce21224325e
+		sourceLineageTag: image_study_uid
+		summarizeBy: none
+		sourceColumn: image_study_uid
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 677e8713-e6b9-4c1c-ace1-2ea4014d9d01
+		sourceLineageTag: visit_occurrence_id
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 36415dde-45a9-4e6e-8ef8-283050f8f5c6
+		sourceLineageTag: person_id
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column image_series_uid
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 5d452e6c-b553-4482-8902-8be70f3d5e9a
+		sourceLineageTag: image_series_uid
+		summarizeBy: none
+		sourceColumn: image_series_uid
+
+		annotation SummarizationSetBy = Automatic
+
+	column modality_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c039e5dd-66dc-418f-bf0d-7bf3948aff18
+		sourceLineageTag: modality_concept_id
+		summarizeBy: sum
+		sourceColumn: modality_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: e5a7ffa0-601f-4910-b362-112f4611b248
+		sourceLineageTag: procedure_occurrence_id
+		summarizeBy: sum
+		sourceColumn: procedure_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column local_path
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 6658b3d2-96eb-4e9e-b472-fcd37ae8925d
+		sourceLineageTag: local_path
+		summarizeBy: none
+		sourceColumn: local_path
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: c1092848-d87d-4fa5-9436-5d18e37566e2
+		sourceLineageTag: SourceModifiedOn
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceTableName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 488071d4-9598-4d65-b1c2-65757b486b9e
+		sourceLineageTag: msftSourceTableName
+		summarizeBy: none
+		sourceColumn: msftSourceTableName
+
+		annotation SummarizationSetBy = Automatic
+
+	column anatomic_site_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 3d830f39-61aa-45fa-b2eb-db17e059566e
+		sourceLineageTag: anatomic_site_concept_id
+		summarizeBy: sum
+		sourceColumn: anatomic_site_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftModifiedDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 3fe225ee-81fa-441a-b04f-ac0726aad17f
+		sourceLineageTag: msftModifiedDatetime
+		summarizeBy: none
+		sourceColumn: msftModifiedDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column image_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: d914792c-588a-4e56-80e6-aa91325542c3
+		sourceLineageTag: image_occurrence_id
+		summarizeBy: sum
+		sourceColumn: image_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column modality_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 67a3a4f3-ae3a-4cf9-acfe-44fd43931a70
+		sourceLineageTag: modality_source_value
+		summarizeBy: none
+		sourceColumn: modality_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	partition image_occurrence = entity
+		mode: directLake
+		source
+			entityName: image_occurrence
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+
