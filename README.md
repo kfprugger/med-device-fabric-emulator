@@ -4,7 +4,8 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 
 ![30,000 ft Data Journey — From Source Data to Business Intelligence: Real-Time vs. Batch](docs/images/Simple%20Diagram.png)
 
-> **Ready to deploy?** [Skip to Quick Start ⬇](#-quick-start)
+> [!TIP]
+> 🚀 **Ready to deploy?** [**Skip to Quick Start ⬇**](#quick-start) to set up the platform on your machine in minutes.
 
 
 #### Video Explainer
@@ -323,6 +324,7 @@ graph LR
 
 ---
 
+<a name="quick-start"></a>
 ## 🚀 Quick Start
 
 ![Orchestrator UI deploy walkthrough](docs/gif/demo_deploy.gif)

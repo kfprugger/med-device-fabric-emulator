@@ -14,6 +14,13 @@ import {
   Badge,
   makeStyles,
   tokens,
+  Dialog,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogContent,
+  DialogActions,
+  Input,
 } from "@fluentui/react-components";
 import {
   PlayRegular,
@@ -26,6 +33,9 @@ import {
   ClipboardRegular,
   OpenRegular,
   ShieldRegular,
+  WarningRegular,
+  ErrorCircleRegular,
+  CopyRegular,
 } from "@fluentui/react-icons";
 import { PhaseCard } from "../components/PhaseCard";
 import { AllLogsStream } from "../components/AllLogsStream";
@@ -274,6 +284,19 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     minWidth: "200px",
   },
+  clickableConfigItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+    fontSize: tokens.fontSizeBase200,
+    minWidth: "200px",
+    cursor: "pointer",
+    transition: "color 0.2s, transform 0.2s",
+    ":hover": {
+      color: tokens.colorBrandForeground1,
+      transform: "translateY(-1.5px)",
+    },
+  },
   hdsGate: {
     marginTop: tokens.spacingVerticalL,
     marginBottom: tokens.spacingVerticalL,
@@ -383,6 +406,10 @@ export function PhaseMonitor() {
   const [frozenElapsed, setFrozenElapsed] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [operatorMode, setOperatorMode] = useState(false);
+  const [drilldownType, setDrilldownType] = useState<"error" | "warn" | null>(null);
+  const [drilldownSearch, setDrilldownSearch] = useState("");
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(
     typeof window !== "undefined" && "Notification" in window
@@ -412,6 +439,10 @@ export function PhaseMonitor() {
     setAfterActionReport(null);
     setResourceErrorNotified(false);
     setLastResourceFetch(0);
+    setDrilldownType(null);
+    setDrilldownSearch("");
+    setCopiedLogId(null);
+    setCopiedAll(false);
   }, [instanceId]);
 
   const statusIsTerminalForPolling =
@@ -499,6 +530,19 @@ export function PhaseMonitor() {
 
   // Get logs from backend customStatus.logs (for real deployments)
   const backendLogs = (status?.customStatus as Record<string, unknown>)?.logs as Array<{timestamp: string; level: string; message: string; phase?: number}> | undefined;
+
+  // Drilldown log filtering
+  const errorLogs = (backendLogs ?? []).filter(
+    (log) => (log.level ?? "").toLowerCase() === "error"
+  );
+  const warnLogs = (backendLogs ?? []).filter(
+    (log) =>
+      (log.level ?? "").toLowerCase() === "warn" ||
+      (log.level ?? "").toLowerCase() === "warning"
+  );
+  const filteredDrilldownLogs = (drilldownType === "error" ? errorLogs : warnLogs).filter(
+    (log) => log.message.toLowerCase().includes(drilldownSearch.toLowerCase())
+  );
 
   // Compute elapsed time — freeze when deployment is no longer running
   useEffect(() => {
@@ -1592,8 +1636,26 @@ export function PhaseMonitor() {
           <span className={styles.configItem}><Badge color="informative" size="small">Elapsed</Badge> {elapsedFormatted || "0m 0s"}</span>
           <span className={styles.configItem}><Badge color="brand" size="small">ETA</Badge> {isRunning && etaMinutes > 0 ? `~${etaMinutes}m` : "—"}</span>
           <span className={styles.configItem}><Badge color="subtle" size="small">Logs</Badge> {(backendLogs ?? []).length}</span>
-          <span className={styles.configItem}><Badge color={logCounts.error ? "danger" : "success"} size="small">Errors</Badge> {logCounts.error ?? 0}</span>
-          <span className={styles.configItem}><Badge color={logCounts.warn || logCounts.warning ? "warning" : "subtle"} size="small">Warnings</Badge> {(logCounts.warn ?? 0) + (logCounts.warning ?? 0)}</span>
+          <span
+            className={styles.clickableConfigItem}
+            onClick={() => {
+              setDrilldownType("error");
+              setDrilldownSearch("");
+            }}
+            title="Click to view error log details"
+          >
+            <Badge color={logCounts.error ? "danger" : "success"} size="small">Errors</Badge> {logCounts.error ?? 0}
+          </span>
+          <span
+            className={styles.clickableConfigItem}
+            onClick={() => {
+              setDrilldownType("warn");
+              setDrilldownSearch("");
+            }}
+            title="Click to view warning log details"
+          >
+            <Badge color={logCounts.warn || logCounts.warning ? "warning" : "subtle"} size="small">Warnings</Badge> {(logCounts.warn ?? 0) + (logCounts.warning ?? 0)}
+          </span>
         </div>
       </Card>
 
@@ -1979,6 +2041,118 @@ export function PhaseMonitor() {
           {autoScroll ? "Auto-scroll On" : "Auto-scroll Off"}
         </Button>
       )}
+
+      {/* Errors / Warnings Drilldown Dialog */}
+      <Dialog open={drilldownType !== null} onOpenChange={(_, data) => { if (!data.open) setDrilldownType(null); }}>
+        <DialogSurface style={{ maxWidth: "800px", width: "90%", backgroundColor: tokens.colorNeutralBackground1 }}>
+          <DialogBody>
+            <DialogTitle action={<Button appearance="subtle" icon={<DismissRegular />} onClick={() => setDrilldownType(null)} />}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {drilldownType === "error" ? (
+                  <ErrorCircleRegular style={{ color: tokens.colorPaletteRedBorderActive, fontSize: "24px" }} />
+                ) : (
+                  <WarningRegular style={{ color: tokens.colorPaletteYellowBorderActive, fontSize: "24px" }} />
+                )}
+                <Text weight="bold" size={400}>
+                  {drilldownType === "error" ? `Drilldown: Errors (${filteredDrilldownLogs.length})` : `Drilldown: Warnings (${filteredDrilldownLogs.length})`}
+                </Text>
+              </div>
+            </DialogTitle>
+            <DialogContent style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalM, marginTop: tokens.spacingVerticalM }}>
+              {/* Header Action Row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: tokens.spacingHorizontalM }}>
+                <Input
+                  placeholder="Filter messages..."
+                  value={drilldownSearch}
+                  onChange={(_, data) => setDrilldownSearch(data.value)}
+                  style={{ flex: 1 }}
+                  size="small"
+                />
+                {filteredDrilldownLogs.length > 0 && (
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    icon={<ClipboardRegular />}
+                    onClick={() => {
+                      const text = filteredDrilldownLogs
+                        .map(log => `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`)
+                        .join("\n");
+                      navigator.clipboard?.writeText(text).catch(() => undefined);
+                      setCopiedAll(true);
+                      setTimeout(() => setCopiedAll(false), 2000);
+                    }}
+                  >
+                    {copiedAll ? "Copied!" : drilldownType === "error" ? "Copy All Errors" : "Copy All Warnings"}
+                  </Button>
+                )}
+              </div>
+
+              {/* Scrollable list */}
+              <div style={{ maxHeight: "400px", overflowY: "auto", paddingRight: "4px" }}>
+                {filteredDrilldownLogs.length === 0 ? (
+                  <div style={{ display: "flex", justifyContent: "center", padding: "40px 0", color: tokens.colorNeutralForeground4 }}>
+                    <Text italic>No {drilldownType === "error" ? "errors" : "warnings"} found matching current filter.</Text>
+                  </div>
+                ) : (
+                  filteredDrilldownLogs.map((log, index) => {
+                    const logId = `${log.timestamp}-${index}`;
+                    const fullLogStr = `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`;
+                    return (
+                      <div
+                        key={logId}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                          padding: "10px 12px",
+                          borderRadius: "6px",
+                          backgroundColor: tokens.colorNeutralBackground2,
+                          borderLeft: `4px solid ${drilldownType === "error" ? tokens.colorPaletteRedBorderActive : tokens.colorPaletteYellowBorderActive}`,
+                          marginBottom: "8px",
+                          position: "relative",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <Badge appearance="outline" color={drilldownType === "error" ? "danger" : "warning"} size="small">
+                              {log.timestamp}
+                            </Badge>
+                            {log.phase !== undefined && (
+                              <Text size={100} style={{ color: tokens.colorNeutralForeground3, fontWeight: tokens.fontWeightSemibold }}>
+                                Phase {log.phase}
+                              </Text>
+                            )}
+                          </div>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<CopyRegular />}
+                            title="Copy single message"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(fullLogStr).catch(() => undefined);
+                              setCopiedLogId(logId);
+                              setTimeout(() => setCopiedLogId(null), 2000);
+                            }}
+                            style={{ height: "24px", minWidth: "55px", padding: "0 4px" }}
+                          >
+                            <Text size={100}>{copiedLogId === logId ? "Copied" : "Copy"}</Text>
+                          </Button>
+                        </div>
+                        <Text style={{ fontFamily: "Cascadia Code, Consolas, monospace", fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground1, wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+                          {log.message}
+                        </Text>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions style={{ marginTop: tokens.spacingVerticalS }}>
+              <Button appearance="secondary" onClick={() => setDrilldownType(null)}>Close</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

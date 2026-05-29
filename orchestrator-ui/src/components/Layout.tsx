@@ -179,10 +179,10 @@ const useStyles = makeStyles({
     overflow: "hidden",
     textOverflow: "ellipsis",
     display: "-webkit-box",
-    WebkitLineClamp: "2",
+    WebkitLineClamp: "1",
     WebkitBoxOrient: "vertical",
     lineHeight: "14px",
-    maxHeight: "28px",
+    maxHeight: "14px",
   },
   contextSubtext: {
     color: tokens.colorNeutralForeground2,
@@ -190,10 +190,10 @@ const useStyles = makeStyles({
     overflow: "hidden",
     textOverflow: "ellipsis",
     display: "-webkit-box",
-    WebkitLineClamp: "2",
+    WebkitLineClamp: "1",
     WebkitBoxOrient: "vertical",
     lineHeight: "13px",
-    maxHeight: "26px",
+    maxHeight: "13px",
   },
   content: {
     flex: 1,
@@ -372,9 +372,9 @@ export function Layout() {
           <div className={styles.contextStrip}>
             <div className={styles.contextPill}>
               <Text className={styles.contextTitle}>Selected Subscription</Text>
-              <Text className={styles.contextValue}>{selectedSubscriptionLabel}</Text>
-              <Text className={styles.contextSubtext}>
-                {selectedSubscriptionId || "No subscription selected"}
+              <Text className={styles.contextValue} title={selectedSubscriptionLabel}>{selectedSubscriptionLabel}</Text>
+              <Text className={styles.contextSubtext} title={selectedSubscriptionId}>
+                {selectedSubscriptionShortId ? `Sub ${selectedSubscriptionShortId}` : selectedSubscriptionId || "No subscription selected"}
               </Text>
             </div>
 
