@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — May 28, 2026
+
+### Phase Monitor & Gantt Matching Upgrades
+- **Fixed** Gantt chart in-progress highlighting (pulsing yellow stripes) and updated slow phase threshold from `> 5m` to `> 6m` in Orchestrator UI.
+- **Improved** Gantt component pattern matching logic to reliably map custom-normalized step labels and avoid name mismatches.
+- **Updated** Phase Monitor complete card action button text from `"After Action Support"` to `"Post Deployment Results"`.
+- **Fixed** local FastAPI server (`local_server.py`) `NameError` inside `start_teardown` endpoint by correctly handling partial vs full teardown mode evaluation.
+
 ## [Unreleased] — May 27, 2026
 
 ### Population Health & Quality Dashboard (4 New Features)

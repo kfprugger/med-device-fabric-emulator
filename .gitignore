@@ -3,6 +3,7 @@ state-tracking/
 .deployment-state*.json
 .orchestrator-state.json
 .orchestrator-state.json.bak
+orchestrator/.orchestrator-cache.json
 
 # Debug / log artifacts
 .pi-run/
