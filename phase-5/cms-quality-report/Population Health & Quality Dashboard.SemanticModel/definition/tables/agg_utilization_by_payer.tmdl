@@ -1,0 +1,58 @@
+/// Utilization breakdown by payer category
+table agg_utilization_by_payer
+	lineageTag: d2000001-aaaa-bbbb-cccc-d20000000001
+
+	partition 'agg_utilization_by_payer' = entity
+		mode: directLake
+		source
+			entityName: agg_utilization_by_payer
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column payer_category
+		dataType: string
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000002
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column member_count
+		dataType: int64
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000003
+		sourceColumn: member_count
+		summarizeBy: none
+
+	column inpatient_admits
+		dataType: int64
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000004
+		sourceColumn: inpatient_admits
+		summarizeBy: none
+
+	column ed_visits
+		dataType: int64
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000005
+		sourceColumn: ed_visits
+		summarizeBy: none
+
+	column outpatient_visits
+		dataType: int64
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000006
+		sourceColumn: outpatient_visits
+		summarizeBy: none
+
+	column total_bed_days
+		dataType: int64
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000007
+		sourceColumn: total_bed_days
+		summarizeBy: none
+
+	column avg_los
+		dataType: double
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000008
+		sourceColumn: avg_los
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: d2000001-aaaa-bbbb-cccc-d20000000009
+		sourceColumn: load_timestamp
+		summarizeBy: none

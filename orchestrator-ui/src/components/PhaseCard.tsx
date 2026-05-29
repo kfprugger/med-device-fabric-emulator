@@ -256,6 +256,7 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   return (
     <Tooltip content={tooltip} relationship="description" positioning="after">
       <Card
+        id={`phase-card-${phase.phase.replace(/\s+/g, "-")}`}
         className={`${styles.card} ${isActive ? styles.cardActive : ""}`}
         size="small"
         onClick={() => setExpanded((v) => !v)}

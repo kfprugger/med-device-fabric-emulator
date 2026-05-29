@@ -1,0 +1,46 @@
+/// Condition-level PMPM analysis
+table agg_condition_pmpm
+	lineageTag: d5000001-aaaa-bbbb-cccc-d50000000001
+
+	partition 'agg_condition_pmpm' = entity
+		mode: directLake
+		source
+			entityName: agg_condition_pmpm
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column condition_name
+		dataType: string
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000002
+		sourceColumn: condition_name
+		summarizeBy: none
+
+	column patient_count
+		dataType: int64
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000003
+		sourceColumn: patient_count
+		summarizeBy: none
+
+	column total_cost
+		dataType: double
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000004
+		sourceColumn: total_cost
+		summarizeBy: none
+
+	column condition_pmpm
+		dataType: double
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000005
+		sourceColumn: condition_pmpm
+		summarizeBy: none
+
+	column overall_pmpm
+		dataType: double
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000006
+		sourceColumn: overall_pmpm
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: d5000001-aaaa-bbbb-cccc-d50000000007
+		sourceColumn: load_timestamp
+		summarizeBy: none

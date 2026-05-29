@@ -1,0 +1,38 @@
+/// Relationships for CMS Quality Scorecard model
+
+relationship rel-quality-measures-gaps
+	fromColumn: care_gaps.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship rel-quality-measures-adherence
+	fromColumn: agg_medication_adherence.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship rel-claim-diagnosis
+	fromColumn: fact_diagnosis.icd_code
+	toColumn: dim_diagnosis.icd_code
+
+relationship "fact_patient_hcc→dim_hcc"
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_patient_hcc.hcc_code
+	toColumn: dim_hcc.hcc_code
+
+relationship "agg_risk_scores→agg_quality_measures"
+	joinOnDateBehavior: datePartOnly
+	fromColumn: agg_risk_scores.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship "revenue_opportunity→agg_risk_scores"
+	joinOnDateBehavior: datePartOnly
+	fromColumn: revenue_opportunity.patient_id
+	toColumn: agg_risk_scores.patient_id
+
+relationship "readmission_risk_scores→agg_quality_measures"
+	joinOnDateBehavior: datePartOnly
+	fromColumn: readmission_risk_scores.patient_id
+	toColumn: agg_quality_measures.patient_id
+
+relationship "agg_high_cost_claimants→agg_quality_measures"
+	joinOnDateBehavior: datePartOnly
+	fromColumn: agg_high_cost_claimants.patient_id
+	toColumn: agg_quality_measures.patient_id

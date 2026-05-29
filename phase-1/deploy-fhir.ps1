@@ -22,6 +22,7 @@ param (
     [switch]$RebuildContainers,
     [switch]$SkipDicom,
     [switch]$RunDicom,
+    [switch]$UseCachedSynthea,
     [hashtable]$Tags = @{}
 )
 
@@ -431,6 +432,9 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "Resource Group: $ResourceGroupName"
 Write-Host "Location: $Location"
 Write-Host "Patient Count: $PatientCount"
+if ($UseCachedSynthea) {
+    Write-Host "Use Cached Synthea: True (bypassing generation container)" -ForegroundColor Yellow
+}
 if ($selectiveMode) {
     $modes = @()
     if ($InfraOnly) { $modes += "InfraOnly" }
@@ -638,7 +642,7 @@ Write-Host "Using existing ACR: $acrName"
 # ============================================
 # STEP 2: Build Synthea Container
 # ============================================
-if ($doSynthea) {
+if ($doSynthea -and -not $UseCachedSynthea) {
 Write-Host ""
 Write-Host "--- STEP 2: SYNTHEA CONTAINER IMAGE ---" -ForegroundColor Cyan
 
@@ -694,139 +698,165 @@ if ($syntheaImageExists -eq "true" -and -not $RebuildContainers) {
     Write-Host "Synthea container built successfully" -ForegroundColor Green
 }
 
+if ($doSynthea -and $UseCachedSynthea) {
+    Write-Host ""
+    Write-Host "--- STEP 2: SYNTHEA CONTAINER IMAGE ---" -ForegroundColor Cyan
+    Write-Host "  [Bypass] UseCachedSynthea specified. Skipping ACR build of Synthea image." -ForegroundColor Green
+}
+
 # ============================================
 # STEP 3: Run Synthea Job
 # ============================================
 Write-Host ""
 Write-Host "--- STEP 3: RUNNING SYNTHEA GENERATOR ---" -ForegroundColor Cyan
 
-# Pre-flight: Verify the Masimo emulator is running (new patients need active device telemetry)
-Write-Host "  Checking Masimo emulator status..." -ForegroundColor DarkGray
-$emulatorState = az container show --resource-group $ResourceGroupName --name masimo-emulator-grp `
-    --query "{state:instanceView.state, deviceCount:containers[0].environmentVariables[?name=='DEVICE_COUNT'].value | [0]}" -o json 2>$null | ConvertFrom-Json
-if ($emulatorState -and $emulatorState.state -eq "Running") {
-    $emDevices = if ($emulatorState.deviceCount) { $emulatorState.deviceCount } else { "100" }
-    Write-Host "  ✓ Masimo emulator is running ($emDevices devices generating telemetry)" -ForegroundColor Green
-    Write-Host "    New patients will be associated with existing device IDs (MASIMO-RADIUS7-0001...$emDevices)" -ForegroundColor DarkGray
-} elseif ($emulatorState) {
-    Write-Host "  ⚠ Masimo emulator exists but state=$($emulatorState.state) — telemetry may not be flowing" -ForegroundColor Yellow
-    Write-Host "    Consider re-running phase-1/deploy.ps1 to restart the emulator after data loading" -ForegroundColor Yellow
-} else {
-    Write-Host "  ⚠ Masimo emulator not found in $ResourceGroupName" -ForegroundColor Yellow
-    Write-Host "    Run phase-1/deploy.ps1 first to create the emulator container" -ForegroundColor Yellow
-}
-Write-Host ""
-
-Write-Host "Generating $PatientCount synthetic patients for Atlanta, GA..."
-Write-Host "This may take 15-30 minutes..." -ForegroundColor Yellow
-
-# Clear existing blobs so only the new batch is loaded
-Write-Host "Clearing previous Synthea output from blob storage if it exists..." -ForegroundColor DarkGray
-az storage blob delete-batch --account-name $storageAccountName --source $containerName --auth-mode login --pattern "*.json" 2>$null | Out-Null
-Write-Host "  Previous files cleared" -ForegroundColor DarkGray
-
-# Delete existing Synthea job (new identity will get a unique role assignment via Bicep GUID)
-Write-Host "Removing previous Synthea container job if it exists..." -ForegroundColor DarkGray
-$prevSyntheaState = az container show --resource-group $ResourceGroupName --name synthea-generator-job --query "{state:instanceView.state, exitCode:containers[0].instanceView.currentState.exitCode, startTime:containers[0].instanceView.currentState.startTime}" -o json 2>$null | ConvertFrom-Json
-if ($prevSyntheaState) {
-    Write-Host "  Previous Synthea run: state=$($prevSyntheaState.state), exitCode=$($prevSyntheaState.exitCode), started=$($prevSyntheaState.startTime)" -ForegroundColor DarkGray
-}
-az container delete --resource-group $ResourceGroupName --name synthea-generator-job --yes 2>$null | Out-Null
-
-$syntheaImage = "$acrLoginServer/synthea-generator:v1"
-
-$null = Invoke-ArmGroupDeployment `
-    -ResourceGroup $ResourceGroupName `
-    -DeploymentName "synthea-job" `
-    -TemplateFile "bicep/synthea-job.bicep" `
-    -ParameterArgs @(
-        "--parameters", "acrName=$acrName",
-        "imageName=$syntheaImage",
-        "storageAccountName=$storageAccountName",
-        "containerName=$containerName",
-        "patientCount=$PatientCount",
-        "aciIdentityId=$aciIdentityId",
-        "aciIdentityClientId=$aciIdentityClientId",
-        "--parameters", $tagsParamRef
-    )
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR deploying Synthea job" -ForegroundColor Red
-    exit 1
-}
-
-# Wait for Synthea job to complete with live log streaming
-Write-Host "Waiting for Synthea generation to complete..."
-Write-Host ""
-$maxWaitMinutes = 60
-$waitedMinutes = 0
-$lastLogLines = 0
-
-while ($waitedMinutes -lt $maxWaitMinutes) {
-    $state = az container show `
-        --resource-group $ResourceGroupName `
-        --name synthea-generator-job `
-        --query "instanceView.state" -o tsv 2>$null
+if ($UseCachedSynthea) {
+    Write-Host "Uploading pre-generated Synthea patient bundles..." -ForegroundColor Cyan
     
-    if ($state -eq "Succeeded") {
-        Write-Host ""
-        Write-Host "Synthea generation completed successfully!" -ForegroundColor Green
-        break
-    } elseif ($state -eq "Failed") {
-        Write-Host ""
-        Write-Host "ERROR: Synthea generation failed" -ForegroundColor Red
-        az container logs --resource-group $ResourceGroupName --name synthea-generator-job
+    # Clear existing blobs so only the new batch is loaded
+    Write-Host "Clearing previous Synthea output from blob storage if it exists..." -ForegroundColor DarkGray
+    az storage blob delete-batch --account-name $storageAccountName --source $containerName --auth-mode login --pattern "*.json" 2>$null | Out-Null
+    Write-Host "  Previous files cleared" -ForegroundColor DarkGray
+    
+    $localPrepackagedPath = Join-Path $ScriptDir "synthea/prepackaged"
+    Write-Host "  Uploading prepackaged patient bundles from $localPrepackagedPath to $containerName container..." -ForegroundColor Cyan
+    $uploadResult = az storage blob upload-batch --account-name $storageAccountName --destination $containerName --source $localPrepackagedPath --auth-mode login 2>&1
+    $uploadExit = $LASTEXITCODE
+    if ($uploadExit -ne 0) {
+        Write-Host "ERROR uploading prepackaged bundles: $uploadResult" -ForegroundColor Red
         exit 1
-    } elseif ($state -eq "Terminated") {
-        # Check exit code
-        $exitCode = az container show `
+    }
+    Write-Host "  ✓ Prepackaged bundles uploaded successfully!" -ForegroundColor Green
+} else {
+    # Pre-flight: Verify the Masimo emulator is running (new patients need active device telemetry)
+    Write-Host "  Checking Masimo emulator status..." -ForegroundColor DarkGray
+    $emulatorState = az container show --resource-group $ResourceGroupName --name masimo-emulator-grp `
+        --query "{state:instanceView.state, deviceCount:containers[0].environmentVariables[?name=='DEVICE_COUNT'].value | [0]}" -o json 2>$null | ConvertFrom-Json
+    if ($emulatorState -and $emulatorState.state -eq "Running") {
+        $emDevices = if ($emulatorState.deviceCount) { $emulatorState.deviceCount } else { "100" }
+        Write-Host "  ✓ Masimo emulator is running ($emDevices devices generating telemetry)" -ForegroundColor Green
+        Write-Host "    New patients will be associated with existing device IDs (MASIMO-RADIUS7-0001...$emDevices)" -ForegroundColor DarkGray
+    } elseif ($emulatorState) {
+        Write-Host "  ⚠ Masimo emulator exists but state=$($emulatorState.state) — telemetry may not be flowing" -ForegroundColor Yellow
+        Write-Host "    Consider re-running phase-1/deploy.ps1 to restart the emulator after data loading" -ForegroundColor Yellow
+    } else {
+        Write-Host "  ⚠ Masimo emulator not found in $ResourceGroupName" -ForegroundColor Yellow
+        Write-Host "    Run phase-1/deploy.ps1 first to create the emulator container" -ForegroundColor Yellow
+    }
+    Write-Host ""
+
+    Write-Host "Generating $PatientCount synthetic patients for Atlanta, GA..."
+    Write-Host "This may take 15-30 minutes..." -ForegroundColor Yellow
+
+    # Clear existing blobs so only the new batch is loaded
+    Write-Host "Clearing previous Synthea output from blob storage if it exists..." -ForegroundColor DarkGray
+    az storage blob delete-batch --account-name $storageAccountName --source $containerName --auth-mode login --pattern "*.json" 2>$null | Out-Null
+    Write-Host "  Previous files cleared" -ForegroundColor DarkGray
+
+    # Delete existing Synthea job (new identity will get a unique role assignment via Bicep GUID)
+    Write-Host "Removing previous Synthea container job if it exists..." -ForegroundColor DarkGray
+    $prevSyntheaState = az container show --resource-group $ResourceGroupName --name synthea-generator-job --query "{state:instanceView.state, exitCode:containers[0].instanceView.currentState.exitCode, startTime:containers[0].instanceView.currentState.startTime}" -o json 2>$null | ConvertFrom-Json
+    if ($prevSyntheaState) {
+        Write-Host "  Previous Synthea run: state=$($prevSyntheaState.state), exitCode=$($prevSyntheaState.exitCode), started=$($prevSyntheaState.startTime)" -ForegroundColor DarkGray
+    }
+    az container delete --resource-group $ResourceGroupName --name synthea-generator-job --yes 2>$null | Out-Null
+
+    $syntheaImage = "$acrLoginServer/synthea-generator:v1"
+
+    $null = Invoke-ArmGroupDeployment `
+        -ResourceGroup $ResourceGroupName `
+        -DeploymentName "synthea-job" `
+        -TemplateFile "bicep/synthea-job.bicep" `
+        -ParameterArgs @(
+            "--parameters", "acrName=$acrName",
+            "imageName=$syntheaImage",
+            "storageAccountName=$storageAccountName",
+            "containerName=$containerName",
+            "patientCount=$PatientCount",
+            "aciIdentityId=$aciIdentityId",
+            "aciIdentityClientId=$aciIdentityClientId",
+            "--parameters", $tagsParamRef
+        )
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR deploying Synthea job" -ForegroundColor Red
+        exit 1
+    }
+
+    # Wait for Synthea job to complete with live log streaming
+    Write-Host "Waiting for Synthea generation to complete..."
+    Write-Host ""
+    Write-Host ""
+    $maxWaitMinutes = 60
+    $waitedMinutes = 0
+    $lastLogLines = 0
+
+    while ($waitedMinutes -lt $maxWaitMinutes) {
+        $state = az container show `
             --resource-group $ResourceGroupName `
             --name synthea-generator-job `
-            --query "containers[0].instanceView.currentState.exitCode" -o tsv 2>$null
+            --query "instanceView.state" -o tsv 2>$null
         
-        if ($exitCode -eq "0") {
+        if ($state -eq "Succeeded") {
             Write-Host ""
             Write-Host "Synthea generation completed successfully!" -ForegroundColor Green
             break
-        } else {
+        } elseif ($state -eq "Failed") {
             Write-Host ""
-            Write-Host "ERROR: Synthea generation failed with exit code $exitCode" -ForegroundColor Red
+            Write-Host "ERROR: Synthea generation failed" -ForegroundColor Red
             az container logs --resource-group $ResourceGroupName --name synthea-generator-job
             exit 1
-        }
-    }
-
-    # Stream progress from container logs
-    if ($state -eq "Running") {
-        $logs = az container logs --resource-group $ResourceGroupName --name synthea-generator-job 2>$null
-        if ($logs) {
-            $logLines = @($logs -split "`n")
-            if ($logLines.Count -gt $lastLogLines) {
-                $newLines = $logLines[$lastLogLines..($logLines.Count - 1)]
-                foreach ($line in $newLines) {
-                    if ($line -match "Running|Patient|Generated|Upload|Complete|files|FHIR|blob") {
-                        Write-Host "  [Synthea] $line" -ForegroundColor DarkCyan
-                    }
-                }
-                $lastLogLines = $logLines.Count
+        } elseif ($state -eq "Terminated") {
+            # Check exit code
+            $exitCode = az container show `
+                --resource-group $ResourceGroupName `
+                --name synthea-generator-job `
+                --query "containers[0].instanceView.currentState.exitCode" -o tsv 2>$null
+            
+            if ($exitCode -eq "0") {
+                Write-Host ""
+                Write-Host "Synthea generation completed successfully!" -ForegroundColor Green
+                break
+            } else {
+                Write-Host ""
+                Write-Host "ERROR: Synthea generation failed with exit code $exitCode" -ForegroundColor Red
+                az container logs --resource-group $ResourceGroupName --name synthea-generator-job
+                exit 1
             }
         }
+
+        # Stream progress from container logs
+        if ($state -eq "Running") {
+            $logs = az container logs --resource-group $ResourceGroupName --name synthea-generator-job 2>$null
+            if ($logs) {
+                $logLines = @($logs -split "`n")
+                if ($logLines.Count -gt $lastLogLines) {
+                    $newLines = $logLines[$lastLogLines..($logLines.Count - 1)]
+                    foreach ($line in $newLines) {
+                        if ($line -match "Running|Patient|Generated|Upload|Complete|files|FHIR|blob") {
+                            Write-Host "  [Synthea] $line" -ForegroundColor DarkCyan
+                        }
+                    }
+                    $lastLogLines = $logLines.Count
+                }
+            }
+        }
+        
+        Write-Host "  Status: $state (waited $waitedMinutes min)" -ForegroundColor DarkGray
+        Start-Sleep -Seconds 30
+        $waitedMinutes += 0.5
     }
-    
-    Write-Host "  Status: $state (waited $waitedMinutes min)" -ForegroundColor DarkGray
-    Start-Sleep -Seconds 30
-    $waitedMinutes += 0.5
-}
 
-if ($waitedMinutes -ge $maxWaitMinutes) {
-    Write-Host "ERROR: Synthea generation timed out" -ForegroundColor Red
-    exit 1
-}
+    if ($waitedMinutes -ge $maxWaitMinutes) {
+        Write-Host "ERROR: Synthea generation timed out" -ForegroundColor Red
+        exit 1
+    }
 
-# Show final Synthea logs
-Write-Host ""
-Write-Host "Synthea generation logs (last 20 lines):" -ForegroundColor Gray
-az container logs --resource-group $ResourceGroupName --name synthea-generator-job 2>$null | Select-Object -Last 20
+    # Show final Synthea logs
+    Write-Host ""
+    Write-Host "Synthea generation logs (last 20 lines):" -ForegroundColor Gray
+    az container logs --resource-group $ResourceGroupName --name synthea-generator-job 2>$null | Select-Object -Last 20
+}
 
     # Verify Synthea blobs actually landed in synthea-output container
     Write-Host ""

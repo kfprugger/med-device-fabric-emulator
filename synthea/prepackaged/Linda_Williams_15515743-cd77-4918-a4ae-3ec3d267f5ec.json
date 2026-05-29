@@ -1,0 +1,177 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:15515743-cd77-4918-a4ae-3ec3d267f5ec",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "15515743-cd77-4918-a4ae-3ec3d267f5ec",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Williams",
+            "given": [
+              "Linda"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1981-06-22",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "9205 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3393122c-3c79-4647-803c-cb127534b13c",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "3393122c-3c79-4647-803c-cb127534b13c",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:15515743-cd77-4918-a4ae-3ec3d267f5ec"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810004"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/wellstar-kennestone-hospital",
+          "display": "Wellstar Kennestone Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-wellstar-kennestone-hospital",
+              "display": "Location Wellstar Kennestone Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5e9c96b-d4ef-4dd4-8eed-11a22547ed00",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "c5e9c96b-d4ef-4dd4-8eed-11a22547ed00",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "162864005",
+              "display": "Body mass index 30+ - obesity"
+            }
+          ],
+          "text": "Body mass index 30+ - obesity"
+        },
+        "subject": {
+          "reference": "urn:uuid:15515743-cd77-4918-a4ae-3ec3d267f5ec"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3393122c-3c79-4647-803c-cb127534b13c"
+        },
+        "recordedDate": "2026-05-28T15:24:32Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:2dbd1656-8f52-4f7d-b406-8f31022460d0",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "2dbd1656-8f52-4f7d-b406-8f31022460d0",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:15515743-cd77-4918-a4ae-3ec3d267f5ec"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3393122c-3c79-4647-803c-cb127534b13c"
+        },
+        "effectiveDateTime": "2026-05-28T15:24:32Z",
+        "valueQuantity": {
+          "value": 94.5,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    }
+  ]
+}

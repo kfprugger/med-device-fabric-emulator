@@ -1,6 +1,43 @@
 # Changelog
 
-## [Unreleased] — May 4, 2026
+## [Unreleased] — May 27, 2026
+
+### Population Health & Quality Dashboard (4 New Features)
+- **Renamed** "CMS Quality Scorecard" → **"Population Health & Quality Dashboard"** (10-page Power BI report)
+- **Added** Star Rating Simulator (Step 8)
+  - Computes weighted CMS Star Ratings from 7 eCQMs + 3 PDC measures using 2025 cut points
+  - What-if simulation: "close N gaps → new star" scenarios (N=10, 25, 50, 100, 250)
+  - New Gold tables: `star_rating_detail`, `star_rating_simulation`
+  - New report page 7: Star Rating Simulator
+- **Added** HCC Risk Adjustment / RAF Scores (Step 9)
+  - CMS-HCC V28 model with ~36 SNOMED/ICD-10 → HCC condition mappings
+  - Hierarchy rules (keep only most severe per disease group)
+  - Demographic RAF coefficients (age/sex bands, Community Non-Dual)
+  - Revenue-at-risk calculation ($1,000 PMPM benchmark)
+  - New Gold tables: `dim_hcc`, `fact_patient_hcc`, `agg_risk_scores`, `agg_risk_summary`, `revenue_opportunity`
+  - New report page 8: Risk Adjustment & RAF
+- **Added** 30-Day Readmission Risk ML Model (Step 10)
+  - Scikit-learn LogisticRegression trained on 12 features (demographics, LOS, comorbidities, prior utilization, chronic disease flags)
+  - 30-day readmission labels computed from Encounter self-join
+  - Risk tiers: Low (<15%), Medium (15-30%), High (≥30%)
+  - Model performance transparency: AUC, accuracy, precision, recall, feature coefficients
+  - New Gold tables: `readmission_risk_scores`, `readmission_risk_summary`, `readmission_model_performance`
+  - New report page 9: Readmission Risk
+  - **Data Activator**: Daily email alert for high-risk readmission patients
+- **Added** Cost & Utilization Analytics (Step 11)
+  - Standard utilization metrics: PMPM, IP/1K, ED/1K, ALOS, Bed Days/1K
+  - Benchmark comparisons (PMPM $950, IP/1K 300, ED/1K 500, ALOS 5.0)
+  - High-cost claimants (≥95th percentile) with condition profiles
+  - Condition-specific PMPM (7 chronic conditions)
+  - Payer stratification across all metrics
+  - New Gold tables: `agg_utilization_summary`, `agg_utilization_by_payer`, `agg_cost_by_category`, `agg_high_cost_claimants`, `agg_condition_pmpm`
+  - New report page 10: Cost & Utilization
+- **Added** 31 new DAX measures (Star Rating: 4, HCC: 9, Readmission: 5, Utilization: 13) — total now 58
+- **Added** 5 new semantic model relationships for cross-table analysis
+- **Updated** Orchestrator UI (DeployWizard, PhaseMonitor) with new naming and expanded pattern matching
+- Gold Lakehouse grows from 8 → 23 tables; PySpark notebook grows from 760 → 1,529 lines
+
+
 
 ### Phase 5: Payer-Specific Quality Stratification
 - **Moved** all Phase 5 deployment artifacts under `phase-5/` to match the existing `phase-1/`, `phase-2/`, `phase-4/` convention:

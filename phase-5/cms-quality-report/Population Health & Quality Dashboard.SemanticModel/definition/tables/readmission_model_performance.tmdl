@@ -1,0 +1,34 @@
+/// Readmission Model Performance — ML model evaluation metrics
+table readmission_model_performance
+	lineageTag: c3000001-aaaa-bbbb-cccc-c30000000001
+
+	partition 'readmission_model_performance' = entity
+		mode: directLake
+		source
+			entityName: readmission_model_performance
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column name
+		dataType: string
+		lineageTag: c3000001-aaaa-bbbb-cccc-c30000000002
+		sourceColumn: name
+		summarizeBy: none
+
+	column type
+		dataType: string
+		lineageTag: c3000001-aaaa-bbbb-cccc-c30000000003
+		sourceColumn: type
+		summarizeBy: none
+
+	column value
+		dataType: double
+		lineageTag: c3000001-aaaa-bbbb-cccc-c30000000004
+		sourceColumn: value
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: c3000001-aaaa-bbbb-cccc-c30000000005
+		sourceColumn: load_timestamp
+		summarizeBy: none

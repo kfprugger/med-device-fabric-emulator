@@ -16,6 +16,8 @@ import json
 import tempfile
 import time
 import traceback
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 
@@ -65,31 +67,33 @@ class FHIRClient:
         self.credential = None
         self.access_token = None
         self.token_expiry = None
+        self.token_lock = threading.Lock()
         # Use the FHIR URL itself as the resource scope
         self.resource_scope = f"{fhir_url}/.default"
         
     def _get_token(self) -> str:
         """Get access token using Managed Identity"""
-        if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
-            return self.access_token
-            
-        try:
-            # Use AZURE_CLIENT_ID for user-assigned managed identity, fall back to Default
-            client_id = os.environ.get('AZURE_CLIENT_ID')
-            try:
-                self.credential = ManagedIdentityCredential(client_id=client_id)
-                token = self.credential.get_token(self.resource_scope)
-            except Exception:
-                self.credential = DefaultAzureCredential(managed_identity_client_id=client_id)
-                token = self.credential.get_token(self.resource_scope)
+        with self.token_lock:
+            if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
+                return self.access_token
                 
-            self.access_token = token.token
-            # Token typically expires in 1 hour, refresh 5 minutes early
-            self.token_expiry = datetime.fromtimestamp(token.expires_on - 300)
-            return self.access_token
-        except Exception as e:
-            print(f"Error getting token: {e}", flush=True)
-            raise
+            try:
+                # Use AZURE_CLIENT_ID for user-assigned managed identity, fall back to Default
+                client_id = os.environ.get('AZURE_CLIENT_ID')
+                try:
+                    self.credential = ManagedIdentityCredential(client_id=client_id)
+                    token = self.credential.get_token(self.resource_scope)
+                except Exception:
+                    self.credential = DefaultAzureCredential(managed_identity_client_id=client_id)
+                    token = self.credential.get_token(self.resource_scope)
+                    
+                self.access_token = token.token
+                # Token typically expires in 1 hour, refresh 5 minutes early
+                self.token_expiry = datetime.fromtimestamp(token.expires_on - 300)
+                return self.access_token
+            except Exception as e:
+                print(f"Error getting token: {e}", flush=True)
+                raise
     
     def _headers(self) -> Dict[str, str]:
         return {
@@ -912,7 +916,8 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
     If existing_locations is provided, Location resources already in FHIR are reused
     instead of creating new stubs, avoiding duplicate Location entries across runs.
     """
-    print("Processing Synthea bundles (streaming mode)...", flush=True)
+    max_workers = 10
+    print(f"Processing Synthea bundles (streaming mode with {max_workers} threads)...", flush=True)
     
     qualifying_patients = []
     uploaded_count = 0
@@ -920,90 +925,99 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
     processed_count = 0
     bundle_splits = 0
     
-    # Stream bundles in batches to avoid OOM
-    for batch in stream_synthea_bundles(batch_size=50):
-        for bundle in batch:
-            try:
-                patient = get_patient_from_bundle(bundle)
-                if not patient:
-                    continue
-                
-                # Check CHOA patients - must be pediatric
-                if is_choa_patient(bundle) and not is_pediatric(patient):
+    state_lock = threading.Lock()
+    
+    def process_bundle_worker(bundle):
+        nonlocal uploaded_count, skipped_choa_adult, processed_count, bundle_splits
+        try:
+            patient = get_patient_from_bundle(bundle)
+            if not patient:
+                return
+            
+            # Check CHOA patients - must be pediatric
+            if is_choa_patient(bundle) and not is_pediatric(patient):
+                with state_lock:
                     skipped_choa_adult += 1
-                    continue  # Skip non-pediatric CHOA patients
+                return
+            
+            # Inject stub Practitioner/Location resources for conditional references
+            # Synthea bundles reference these but don't include them
+            # Existing locations from FHIR are reused rather than re-created
+            bundle = inject_referenced_resources(bundle, existing_locations)
+            
+            # Reorder entries so referenced resources come first
+            bundle = reorder_bundle_entries(bundle)
+            
+            # Build map of conditional references -> direct UUID references
+            # This allows us to convert Practitioner?identifier=... to Practitioner/uuid
+            ref_map = build_conditional_reference_map(bundle)
+            
+            # Merge existing FHIR location references into the map so
+            # conditional refs resolve to the real Location resource IDs
+            if existing_locations:
+                ref_map.update(existing_locations)
+            
+            # Convert to transaction bundle
+            bundle['type'] = 'transaction'
+            for entry in bundle.get('entry', []):
+                resource = entry.get('resource', {})
+                resource_type = resource.get('resourceType', '')
+                full_url = entry.get('fullUrl', '')
                 
-                # Inject stub Practitioner/Location resources for conditional references
-                # Synthea bundles reference these but don't include them
-                # Existing locations from FHIR are reused rather than re-created
-                bundle = inject_referenced_resources(bundle, existing_locations)
+                # Extract resource ID - handle urn:uuid: format from Synthea
+                if full_url.startswith('urn:uuid:'):
+                    resource_id = full_url.replace('urn:uuid:', '')
+                elif '/' in full_url:
+                    resource_id = full_url.split('/')[-1]
+                else:
+                    resource_id = resource.get('id', '')
                 
-                # Reorder entries so referenced resources come first
-                bundle = reorder_bundle_entries(bundle)
+                # Ensure resource.id matches the URL we'll use
+                if resource_id:
+                    resource['id'] = resource_id
                 
-                # Build map of conditional references -> direct UUID references
-                # This allows us to convert Practitioner?identifier=... to Practitioner/uuid
-                ref_map = build_conditional_reference_map(bundle)
+                # Transform all urn:uuid: references within the resource
+                transformed_resource = transform_references_in_resource(resource)
                 
-                # Merge existing FHIR location references into the map so
-                # conditional refs resolve to the real Location resource IDs
-                if existing_locations:
-                    ref_map.update(existing_locations)
+                # Convert conditional references to direct references
+                transformed_resource = transform_conditional_to_direct(transformed_resource, ref_map)
+                entry['resource'] = transformed_resource
                 
-                # Convert to transaction bundle
-                bundle['type'] = 'transaction'
-                for entry in bundle.get('entry', []):
-                    resource = entry.get('resource', {})
-                    resource_type = resource.get('resourceType', '')
-                    full_url = entry.get('fullUrl', '')
-                    
-                    # Extract resource ID - handle urn:uuid: format from Synthea
-                    if full_url.startswith('urn:uuid:'):
-                        resource_id = full_url.replace('urn:uuid:', '')
-                    elif '/' in full_url:
-                        resource_id = full_url.split('/')[-1]
-                    else:
-                        resource_id = resource.get('id', '')
-                    
-                    # Ensure resource.id matches the URL we'll use
-                    if resource_id:
-                        resource['id'] = resource_id
-                    
-                    # Transform all urn:uuid: references within the resource
-                    transformed_resource = transform_references_in_resource(resource)
-                    
-                    # Convert conditional references to direct references
-                    transformed_resource = transform_conditional_to_direct(transformed_resource, ref_map)
-                    entry['resource'] = transformed_resource
-                    
-                    entry['request'] = {
-                        'method': 'PUT',
-                        'url': f"{resource_type}/{resource_id}" if resource_id else resource_type
-                    }
+                entry['request'] = {
+                    'method': 'PUT',
+                    'url': f"{resource_type}/{resource_id}" if resource_id else resource_type
+                }
+            
+            # Split large bundles to stay under FHIR's 500 entry limit
+            sub_bundles = split_bundle_entries(bundle, max_entries=400)
+            
+            local_splits = 0
+            if len(sub_bundles) > 1:
+                local_splits = len(sub_bundles) - 1
+            
+            # Upload all sub-bundles
+            for sub_bundle in sub_bundles:
+                client.post_bundle(sub_bundle)
                 
-                # Split large bundles to stay under FHIR's 500 entry limit
-                sub_bundles = split_bundle_entries(bundle, max_entries=400)
-                if len(sub_bundles) > 1:
-                    bundle_splits += 1
-                
-                # Upload all sub-bundles
-                for sub_bundle in sub_bundles:
-                    client.post_bundle(sub_bundle)
+            with state_lock:
                 uploaded_count += 1
-                
-                # Associate patient with a device for monitoring
-                # Every admitted patient gets a pulse oximeter, not just those with qualifying conditions
+                bundle_splits += local_splits
+            
+            # Associate patient with a device for monitoring
+            # Every admitted patient gets a pulse oximeter, not just those with qualifying conditions
+            patient_id = patient.get('id', '')
+            patient_name = ''
+            names = patient.get('name', [])
+            if names:
+                name = names[0]
+                given = ' '.join(name.get('given', []))
+                family = name.get('family', '')
+                patient_name = f"{given} {family}".strip()
+            
+            has_condition = has_qualifying_condition(bundle)
+            
+            with state_lock:
                 if len(qualifying_patients) < DEVICE_COUNT:
-                    patient_name = ''
-                    names = patient.get('name', [])
-                    if names:
-                        name = names[0]
-                        given = ' '.join(name.get('given', []))
-                        family = name.get('family', '')
-                        patient_name = f"{given} {family}".strip()
-                    
-                    patient_id = patient.get('id', '')
-                    has_condition = has_qualifying_condition(bundle)
                     qualifying_patients.append({
                         'id': patient_id,
                         'name': patient_name,
@@ -1011,17 +1025,21 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
                         'isPediatric': is_pediatric(patient),
                         'hasQualifyingCondition': has_condition
                     })
-                
                 processed_count += 1
-                if processed_count % 100 == 0:
+                if processed_count % 10 == 0:
                     print(f"  - Processed {processed_count} bundles, uploaded {uploaded_count}, qualifying: {len(qualifying_patients)}, splits: {bundle_splits}", flush=True)
                     
-            except Exception as e:
-                print(f"  - Error processing bundle: {e}", flush=True)
-        
-        # Clear batch reference to help GC
-        del batch
-    
+        except Exception as e:
+            print(f"  - Error processing bundle: {e}", flush=True)
+
+    # Stream bundles in batches to run in thread pool
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for batch in stream_synthea_bundles(batch_size=50):
+            futures = [executor.submit(process_bundle_worker, bundle) for bundle in batch]
+            for future in as_completed(futures):
+                pass
+            del batch
+            
     print(f"Uploaded {uploaded_count} patient bundles", flush=True)
     print(f"Skipped {skipped_choa_adult} non-pediatric CHOA patients", flush=True)
     print(f"Split {bundle_splits} large bundles to stay under FHIR limit", flush=True)

@@ -1,0 +1,177 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:0ecdcce8-6bf9-450a-8697-518f84677676",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "0ecdcce8-6bf9-450a-8697-518f84677676",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Davis",
+            "given": [
+              "Jennifer"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1964-12-07",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "174 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1b0d7f82-af5b-4eec-ac92-ac64a4f95766",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "1b0d7f82-af5b-4eec-ac92-ac64a4f95766",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:0ecdcce8-6bf9-450a-8697-518f84677676"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810001"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/piedmont-atlanta-hospital",
+          "display": "Piedmont Atlanta Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-piedmont-atlanta-hospital",
+              "display": "Location Piedmont Atlanta Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5fcb4af-79b4-4293-ac0e-84837b361304",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "c5fcb4af-79b4-4293-ac0e-84837b361304",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "84114007",
+              "display": "Heart failure"
+            }
+          ],
+          "text": "Heart failure"
+        },
+        "subject": {
+          "reference": "urn:uuid:0ecdcce8-6bf9-450a-8697-518f84677676"
+        },
+        "encounter": {
+          "reference": "urn:uuid:1b0d7f82-af5b-4eec-ac92-ac64a4f95766"
+        },
+        "recordedDate": "2026-05-28T15:24:32Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:382c0a74-3370-4476-86cd-0e8b2c296026",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "382c0a74-3370-4476-86cd-0e8b2c296026",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:0ecdcce8-6bf9-450a-8697-518f84677676"
+        },
+        "encounter": {
+          "reference": "urn:uuid:1b0d7f82-af5b-4eec-ac92-ac64a4f95766"
+        },
+        "effectiveDateTime": "2026-05-28T15:24:32Z",
+        "valueQuantity": {
+          "value": 96.5,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,10 @@
     "claims_analytics_page03",
     "medication_adherence_page04",
     "care_gap_closure_page05",
-    "payer_performance_page06"
+    "payer_performance_page06",
+    "star_rating_page07",
+    "risk_adjustment_page08",
+    "readmission_risk_page09",
+    "utilization_overview_page10"
   ]
 }

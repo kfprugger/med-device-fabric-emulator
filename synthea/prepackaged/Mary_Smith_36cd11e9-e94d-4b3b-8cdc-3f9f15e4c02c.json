@@ -1,0 +1,177 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:36cd11e9-e94d-4b3b-8cdc-3f9f15e4c02c",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "36cd11e9-e94d-4b3b-8cdc-3f9f15e4c02c",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": [
+              "Mary"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1963-11-07",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "9348 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4b89a5e9-ae64-4b14-b00b-323a727a3391",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "4b89a5e9-ae64-4b14-b00b-323a727a3391",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:36cd11e9-e94d-4b3b-8cdc-3f9f15e4c02c"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810008"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/emory-university-hospital",
+          "display": "Emory University Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-emory-university-hospital",
+              "display": "Location Emory University Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e94a0b04-6076-4cd5-9b88-8f245e52a7a1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "e94a0b04-6076-4cd5-9b88-8f245e52a7a1",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "13645005",
+              "display": "Chronic obstructive lung disease"
+            }
+          ],
+          "text": "Chronic obstructive lung disease"
+        },
+        "subject": {
+          "reference": "urn:uuid:36cd11e9-e94d-4b3b-8cdc-3f9f15e4c02c"
+        },
+        "encounter": {
+          "reference": "urn:uuid:4b89a5e9-ae64-4b14-b00b-323a727a3391"
+        },
+        "recordedDate": "2026-05-28T15:24:32Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b5ce11bb-5990-453b-af19-c53871950a8d",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "b5ce11bb-5990-453b-af19-c53871950a8d",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:36cd11e9-e94d-4b3b-8cdc-3f9f15e4c02c"
+        },
+        "encounter": {
+          "reference": "urn:uuid:4b89a5e9-ae64-4b14-b00b-323a727a3391"
+        },
+        "effectiveDateTime": "2026-05-28T15:24:32Z",
+        "valueQuantity": {
+          "value": 98.9,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    }
+  ]
+}

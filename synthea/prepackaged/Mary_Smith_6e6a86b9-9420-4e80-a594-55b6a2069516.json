@@ -1,0 +1,177 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:6e6a86b9-9420-4e80-a594-55b6a2069516",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "6e6a86b9-9420-4e80-a594-55b6a2069516",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": [
+              "Mary"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1962-07-21",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "8900 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d6111e8e-5153-4102-8567-eadaec9982c8",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "d6111e8e-5153-4102-8567-eadaec9982c8",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:6e6a86b9-9420-4e80-a594-55b6a2069516"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ec1803e1-bcb1-43e1-abcf-fcfcce64d2fb",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "ec1803e1-bcb1-43e1-abcf-fcfcce64d2fb",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "59621000",
+              "display": "Essential hypertension"
+            }
+          ],
+          "text": "Essential hypertension"
+        },
+        "subject": {
+          "reference": "urn:uuid:6e6a86b9-9420-4e80-a594-55b6a2069516"
+        },
+        "encounter": {
+          "reference": "urn:uuid:d6111e8e-5153-4102-8567-eadaec9982c8"
+        },
+        "recordedDate": "2026-05-28T15:24:32Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:2f0c7cc9-cb93-4c49-ab3a-548a78eca526",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "2f0c7cc9-cb93-4c49-ab3a-548a78eca526",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:6e6a86b9-9420-4e80-a594-55b6a2069516"
+        },
+        "encounter": {
+          "reference": "urn:uuid:d6111e8e-5153-4102-8567-eadaec9982c8"
+        },
+        "effectiveDateTime": "2026-05-28T15:24:32Z",
+        "valueQuantity": {
+          "value": 97.8,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    }
+  ]
+}

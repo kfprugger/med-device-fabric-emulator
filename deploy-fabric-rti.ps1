@@ -1642,7 +1642,11 @@ if (-not $ehConnStr) {
     Write-Host "    SAS Policy:    $sasKeyName" -ForegroundColor Gray
 
     # ---- 4b. Create or find Fabric Cloud Connection to Event Hub ----
-    $connectionName = "masimo-eh-$EventHubName"
+    # Include the Event Hub namespace in the connection name so each deployment gets a
+    # unique connection. The namespace contains a uniqueString(rg.id) suffix; without it,
+    # redeployments reuse a stale connection pointing at a deleted namespace and the
+    # Eventstream source fails with "No such host is known".
+    $connectionName = "masimo-eh-$EventHubNamespace-$EventHubName"
     $dataConnectionId = $null
 
     Write-Host "  Checking for existing Fabric cloud connection '$connectionName'..." -ForegroundColor Gray
@@ -1653,6 +1657,24 @@ if (-not $ehConnStr) {
         if ($existingConn) {
             $dataConnectionId = $existingConn.id
             Write-Host "  ✓ Cloud connection already exists: $connectionName (ID: $dataConnectionId)" -ForegroundColor Green
+        }
+
+        # Clean up stale connections from previous deployments that used the old
+        # non-unique name format ("masimo-eh-<EventHubName>") or unique names from
+        # other namespaces. These point at deleted Event Hub namespaces and break
+        # the Eventstream source if Fabric picks them up.
+        $staleNamePattern = "^masimo-eh-(.+-)?$([regex]::Escape($EventHubName))$"
+        $staleConns = $existingConns.value | Where-Object {
+            $_.displayName -match $staleNamePattern -and $_.displayName -ne $connectionName
+        }
+        foreach ($stale in $staleConns) {
+            Write-Host "  Removing stale Event Hub connection '$($stale.displayName)' ($($stale.id))..." -ForegroundColor Yellow
+            try {
+                Invoke-FabricApi -Method "DELETE" -Endpoint "/connections/$($stale.id)" | Out-Null
+                Write-Host "  ✓ Removed stale connection" -ForegroundColor Green
+            } catch {
+                Write-Host "  ⚠ Could not remove stale connection: $_" -ForegroundColor Yellow
+            }
         }
     } catch {
         Write-Host "  Could not list connections: $_" -ForegroundColor Gray
@@ -2212,40 +2234,58 @@ if ($SkipFhirExport) {
     Write-Host "  ⚠ FHIR Service URL not detected — skipping `$export" -ForegroundColor Yellow
     Write-Host "    Provide -FhirServiceUrl or export FHIR data manually." -ForegroundColor Yellow
 } else {
-    # Check if export data already exists from deploy-fhir.ps1 (post-loader / post-DICOM exports)
+    # 6.5a. Auto-detect storage account from the resource group
+    # Hoisted above the idempotency probe so both use the same target account
+    # (the RG often contains multiple StorageV2 accounts — FHIR + DICOM/loader).
+    Write-Host "  Detecting storage account in $ResourceGroupName..." -ForegroundColor Gray
+    $storageAccountsJson = az storage account list --resource-group $ResourceGroupName `
+        --query "[?kind=='StorageV2'].{name:name, id:id, hns:isHnsEnabled}" -o json 2>$null
+    $storageAccounts = if ($storageAccountsJson) { $storageAccountsJson | ConvertFrom-Json } else { @() }
+    if ($storageAccounts -isnot [array]) { $storageAccounts = @($storageAccounts) }
+
+    $exportStorage = $null
+    $exportStorageAccountName = $null
+    if ($storageAccounts.Count -gt 0) {
+        # Prefer ADLS Gen2 (HNS-enabled), fall back to first StorageV2
+        $exportStorage = $storageAccounts | Where-Object { $_.hns -eq $true } | Select-Object -First 1
+        if (-not $exportStorage) { $exportStorage = $storageAccounts[0] }
+        $exportStorageAccountName = $exportStorage.name
+    }
+
+    # Check if export data already exists from a prior run (deploy-fhir.ps1 or a previous
+    # invocation of this script). Probe the SAME account the export step will write to
+    # so a multi-StorageV2 RG doesn't false-negative on the DICOM/loader account.
     $exportAlreadyDone = $false
-    try {
+    if ($exportStorageAccountName) {
+        $blobProbeErr = $null
         $existingBlobs = az storage blob list --container-name $exportContainerName `
-            --account-name (az storage account list --resource-group $ResourceGroupName `
-                --query "[?kind=='StorageV2'].name" -o tsv 2>$null | Select-Object -First 1) `
-            --auth-mode login --num-results 5 --query "[].name" -o tsv 2>$null
-        if ($existingBlobs) {
-            Write-Host "  ✓ FHIR export data already exists in '$exportContainerName' (from deploy-fhir.ps1)" -ForegroundColor Green
+            --account-name $exportStorageAccountName `
+            --auth-mode login --num-results 1 --query "[].name" -o tsv 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $blobProbeErr = ($existingBlobs | Out-String).Trim()
+            # ContainerNotFound is expected on first deploy — treat as "no data", not an error.
+            if ($blobProbeErr -notmatch "ContainerNotFound|The specified container does not exist") {
+                Write-Host "  ⚠ Could not probe '$exportContainerName' on $exportStorageAccountName for existing data:" -ForegroundColor Yellow
+                Write-Host "    $blobProbeErr" -ForegroundColor Gray
+                Write-Host "    Proceeding with fresh `$export." -ForegroundColor Gray
+            }
+        } elseif ($existingBlobs) {
+            Write-Host "  ✓ FHIR export data already exists in '$exportContainerName' on $exportStorageAccountName" -ForegroundColor Green
             Write-Host "    Skipping redundant `$export — data is available for HDS ingestion." -ForegroundColor Gray
             $exportAlreadyDone = $true
             $fhirExportDone = $true
         }
-    } catch {}
+    }
 
     if (-not $exportAlreadyDone) {
     Write-Host "  Exporting FHIR data directly to ADLS Gen2 storage." -ForegroundColor White
     Write-Host "  (No Azure Marketplace offer or Fabric AHDS capability needed.)" -ForegroundColor Gray
     Write-Host ""
 
-    # 6.5a. Auto-detect storage account from the resource group
-    Write-Host "  Detecting storage account in $ResourceGroupName..." -ForegroundColor Gray
-    $storageAccounts = az storage account list --resource-group $ResourceGroupName `
-        --query "[?kind=='StorageV2'].{name:name, id:id, hns:isHnsEnabled}" `
-        -o json 2>$null | ConvertFrom-Json
-
     if (-not $storageAccounts -or $storageAccounts.Count -eq 0) {
         Write-Host "  ⚠ No StorageV2 account found in $ResourceGroupName." -ForegroundColor Yellow
         Write-Host "    Create a storage account or export FHIR data manually." -ForegroundColor Yellow
     } else {
-        # Prefer ADLS Gen2 (HNS-enabled), fall back to first StorageV2
-        $exportStorage = $storageAccounts | Where-Object { $_.hns -eq $true } | Select-Object -First 1
-        if (-not $exportStorage) { $exportStorage = $storageAccounts[0] }
-        $exportStorageAccountName = $exportStorage.name
         Write-Host "  ✓ Storage account: $exportStorageAccountName" -ForegroundColor Green
 
         # 6.5b. Create export container

@@ -57,6 +57,7 @@ param (
     [switch]$Phase5,             # Run only Phase 5 (CMS Quality & Claims)
     [switch]$RebuildContainers,      # Force container image rebuilds
     [switch]$ReusePatients,          # Reuse existing patients — skip Synthea/Loader, keep emulator
+    [switch]$UseCachedSynthea,       # Use cached/prepackaged Synthea patient bundles
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
 
@@ -69,7 +70,7 @@ param (
     [switch]$SkipImaging,            # Skip Imaging Toolkit (Cohorting Agent, DICOM Viewer, PBI)
     [switch]$SkipOntology,           # Skip ClinicalDeviceOntology + agent binding
     [switch]$SkipActivator,          # Skip Data Activator (Reflex + email rule)
-    [switch]$SkipQualityMeasures,    # Skip CMS Quality Scorecard (claims, measures, report)
+    [switch]$SkipQualityMeasures,    # Skip Population Health & Quality Dashboard (claims, measures, risk, utilization, report)
 
     # ── Phase 3 (FabricDicomCohortingToolkit) ──
     [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
@@ -79,6 +80,14 @@ param (
     [string]$AlertEmail = "",               # Email for clinical alert notifications (e.g. joey@brakeat.com)
     [string]$AlertTierThreshold = "URGENT", # Minimum tier to send email: WARNING, URGENT, or CRITICAL
     [int]$AlertCooldownMinutes = 15,         # Suppress duplicate alerts per device within this window
+
+    # ── SPN Credentials ──
+    [string]$SpnClientId = "",
+    [string]$SpnClientSecret = "",
+    [string]$SpnTenantId = "",
+
+    # ── JSON Logging ──
+    [switch]$JsonLogs,
 
     # ── Cleanup ──
     [switch]$Teardown                # Run cleanup scripts instead of deployment
@@ -176,7 +185,19 @@ function Test-Prerequisites {
     try {
         $azVer = az version --output json 2>$null | ConvertFrom-Json
         $cliVer = $azVer.'azure-cli'
-        Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+        if ($cliVer -match '(\d+)\.(\d+)\.(\d+)') {
+            $major = [int]$Matches[1]
+            $minor = [int]$Matches[2]
+            if ($major -lt 2 -or ($major -eq 2 -and $minor -lt 50)) {
+                $failures += "Azure CLI version $cliVer is too old. Version 2.50.0 or higher is required."
+                Write-Host "  ✗ Azure CLI $cliVer — version 2.50.0+ required" -ForegroundColor Red
+            } else {
+                Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+            }
+        } else {
+            $warnings += "Azure CLI version check inconclusive ($cliVer)."
+            Write-Host "  ⚠ Azure CLI version unrecognized" -ForegroundColor Yellow
+        }
     } catch {
         $failures += "Azure CLI not found. Install from https://aka.ms/installazurecli"
         Write-Host "  ✗ Azure CLI not installed" -ForegroundColor Red
@@ -185,8 +206,15 @@ function Test-Prerequisites {
     # 4. Bicep
     try {
         $bicepOutput = (az bicep version 2>$null) -join ' '
-        if ($bicepOutput -match "(\d+\.\d+\.\d+)") {
-            Write-Host "  ✓ Bicep $($Matches[1])" -ForegroundColor Green
+        if ($bicepOutput -match '(\d+)\.(\d+)\.(\d+)') {
+            $bMajor = [int]$Matches[1]
+            $bMinor = [int]$Matches[2]
+            if ($bMajor -eq 0 -and $bMinor -lt 20) {
+                $failures += "Bicep CLI version $($Matches[1]).$($Matches[2]).$($Matches[3]) is too old. Version 0.20.0 or higher is required."
+                Write-Host "  ✗ Bicep $($Matches[1]).$($Matches[2]).$($Matches[3]) — version 0.20.0+ required" -ForegroundColor Red
+            } else {
+                Write-Host "  ✓ Bicep $($Matches[1]).$($Matches[2]).$($Matches[3])" -ForegroundColor Green
+            }
         } else {
             $warnings += "Bicep version check inconclusive. Run: az bicep install"
             Write-Host "  ⚠ Bicep version unknown" -ForegroundColor Yellow
@@ -584,6 +612,70 @@ function Resolve-StorageAccountName {
         Write-Host "  ⚠ $Context name sanitized: '$Name' → '$sanitized'" -ForegroundColor Yellow
     }
     return $sanitized
+}
+
+function Move-FabricNotebooksToFolder {
+    param(
+        [Parameter(Mandatory)][string]$FabricWorkspaceName,
+        [string]$WorkspaceId,
+        [string]$FolderName = "Notebooks",
+        [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1"
+    )
+
+    try {
+        Write-Host "  Organizing Fabric notebooks into folder '$FolderName'..." -ForegroundColor White
+        $token = Get-CachedAccessToken "https://api.fabric.microsoft.com"
+        $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+
+        if (-not $WorkspaceId) {
+            $ws = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces" -Headers $headers -Method Get).value |
+                Where-Object { $_.displayName -eq $FabricWorkspaceName } |
+                Select-Object -First 1
+            if (-not $ws) { throw "Workspace '$FabricWorkspaceName' not found" }
+            $WorkspaceId = $ws.id
+        }
+
+        $folders = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Get).value
+        $folder = $folders | Where-Object { $_.displayName -eq $FolderName } | Select-Object -First 1
+        if (-not $folder) {
+            $folderBody = @{ displayName = $FolderName } | ConvertTo-Json -Depth 3
+            $folder = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Post -Body $folderBody
+            Write-Host "  ✓ Created folder '$FolderName'" -ForegroundColor Green
+        }
+
+        $notebooks = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items?type=Notebook" -Headers $headers -Method Get).value
+        if (-not $notebooks -or $notebooks.Count -eq 0) {
+            Write-Host "  No notebooks found to organize." -ForegroundColor DarkGray
+            return
+        }
+
+        $moved = 0
+        foreach ($nb in $notebooks) {
+            if ($nb.folderId -eq $folder.id) { continue }
+            $moveBody = @{ targetFolderId = $folder.id } | ConvertTo-Json -Depth 3
+            for ($attempt = 1; $attempt -le 4; $attempt++) {
+                try {
+                    Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items/$($nb.id)/move" -Headers $headers -Method Post -Body $moveBody | Out-Null
+                    $moved++
+                    break
+                } catch {
+                    $errCode = $null
+                    try { $errCode = [int]$_.Exception.Response.StatusCode } catch {}
+                    if ($errCode -eq 429 -and $attempt -lt 4) {
+                        $sleepSec = 10 * $attempt
+                        Write-Host "    Throttled moving '$($nb.displayName)' — retrying in ${sleepSec}s..." -ForegroundColor DarkYellow
+                        Start-Sleep -Seconds $sleepSec
+                    } else {
+                        Write-Host "    ⚠ Could not move '$($nb.displayName)': $($_.Exception.Message)" -ForegroundColor Yellow
+                        break
+                    }
+                }
+            }
+        }
+        Write-Host "  ✓ Notebook folder '$FolderName' ready ($moved moved, $($notebooks.Count) total)" -ForegroundColor Green
+    } catch {
+        Write-Host "  ⚠ Could not organize notebooks into a folder: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 # ============================================================================
@@ -1024,7 +1116,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
                 -ResourceGroupName $ResourceGroupName `
                 -Location $Location `
                 -AdminSecurityGroup $AdminSecurityGroup `
-                -Tags $Tags
+                -Tags $Tags `
+                -SpnClientId $SpnClientId `
+                -SpnClientSecret $SpnClientSecret `
+                -SpnTenantId $SpnTenantId
         }
 
         Write-Host ""
@@ -1046,7 +1141,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
                 -ResourceGroupName $ResourceGroupName `
                 -Location $Location `
                 -AdminSecurityGroup $AdminSecurityGroup `
-                -Tags $Tags
+                -Tags $Tags `
+                -SpnClientId $SpnClientId `
+                -SpnClientSecret $SpnClientSecret `
+                -SpnTenantId $SpnTenantId
         }
     }
 } else {
@@ -1083,6 +1181,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir) {
             SkipDicom          = $true
         }
         if ($RebuildContainers) { $fhirArgs['RebuildContainers'] = $true }
+        if ($UseCachedSynthea) { $fhirArgs['UseCachedSynthea'] = $true }
         if ($Tags.Count -gt 0) { $fhirArgs['Tags'] = $Tags }
 
         & "$ScriptDir\phase-1\deploy-fhir.ps1" @fhirArgs
@@ -1358,6 +1457,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
     }
 
     if ($hdsDetected) {
+        # HDS creates a large number of Fabric notebooks at workspace root.
+        # Keep the workspace tidy before continuing with automated pipeline runs.
+        Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName
+
         # Run Phase 2 inline
         $Phase2 = $true
 
@@ -1383,6 +1486,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                 & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" `
                     -FabricWorkspaceName $FabricWorkspaceName `
                     -ResourceGroupName $ResourceGroupName
+                Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName
             }
         }
 
@@ -1539,6 +1643,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             }
             if ($ohifViewerBaseUrl) { $nbArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
             & "$DicomToolkitPath/deploy-notebook.ps1" @nbArgs
+            Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p3WsId
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After notebook materialization ──
@@ -1759,21 +1864,45 @@ if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
             # Read the notebook content
             $daNotebookPath = Join-Path $ScriptDir "fabric-rti\sql\create-device-association-table.ipynb"
             if (Test-Path $daNotebookPath) {
-                # Build ipynb from the SQL cells
-                $daSql = @"
-CREATE OR REPLACE TABLE DeviceAssociation AS
-SELECT
-    id,
-    idOrig,
-    get_json_object(extension, '`$[0].valueReference.reference') AS device_ref,
-    get_json_object(subject_string, '`$.display')                AS patient_name,
-    get_json_object(subject_string, '`$.idOrig')                 AS patient_id,
-    get_json_object(code_string, '`$.coding[0].code')            AS assoc_code,
-    get_json_object(code_string, '`$.coding[0].display')         AS assoc_display
-FROM Basic
-WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
-"@
-                $daVerifySql = "SELECT COUNT(*) AS device_association_count FROM DeviceAssociation"
+                # Build ipynb using PySpark logic that resolves by name first and falls back to absolute OneLake paths
+                $pysparkCode = @'
+from pyspark.sql.functions import get_json_object
+import sys
+
+print("Attempting to load table Basic by name...")
+try:
+    df = spark.read.table("Basic").filter("get_json_object(code_string, '$.coding[0].code') = 'device-assoc'")
+    print("Successfully loaded Basic table by name.")
+except Exception as e:
+    print(f"Failed to load Basic table by name: {e}")
+    print("Falling back to absolute OneLake ABFSS path...")
+    basic_path = "abfss://WORKSPACE_ID@onelake.dfs.fabric.microsoft.com/LAKEHOUSE_ID/Tables/Basic"
+    df = spark.read.format("delta").load(basic_path).filter("get_json_object(code_string, '$.coding[0].code') = 'device-assoc'")
+
+res_df = df.select(
+    "id",
+    "idOrig",
+    get_json_object("extension", "$[0].valueReference.reference").alias("device_ref"),
+    get_json_object("subject_string", "$.display").alias("patient_name"),
+    get_json_object("subject_string", "$.idOrig").alias("patient_id"),
+    get_json_object("code_string", "$.coding[0].code").alias("assoc_code"),
+    get_json_object("code_string", "$.coding[0].display").alias("assoc_display")
+)
+
+print("Attempting to save table DeviceAssociation by name...")
+try:
+    res_df.write.mode("overwrite").format("delta").saveAsTable("DeviceAssociation")
+    print("Successfully saved DeviceAssociation table by name.")
+except Exception as e:
+    print(f"Failed to save DeviceAssociation table by name: {e}")
+    print("Falling back to absolute OneLake ABFSS path...")
+    da_path = "abfss://WORKSPACE_ID@onelake.dfs.fabric.microsoft.com/LAKEHOUSE_ID/Tables/DeviceAssociation"
+    res_df.write.mode("overwrite").format("delta").save(da_path)
+    print("DeviceAssociation table materialized successfully via abfss fallback.")
+'@
+
+                # Interpolate workspace and lakehouse IDs into the PySpark template
+                $pysparkCode = $pysparkCode.Replace("WORKSPACE_ID", $p4WsId).Replace("LAKEHOUSE_ID", $p4SilverLhId)
 
                 $daIpynb = @{
                     nbformat = 4
@@ -1784,8 +1913,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
                         language_info = @{ name = "python" }
                     }
                     cells = @(
-                        @{ cell_type = "code"; source = @("%%sql`n$daSql"); metadata = @{}; outputs = @() },
-                        @{ cell_type = "code"; source = @("%%sql`n$daVerifySql"); metadata = @{}; outputs = @() }
+                        @{ cell_type = "code"; source = ($pysparkCode -split '\r?\n') | ForEach-Object { "$_`n" }; metadata = @{}; outputs = @() }
                     )
                 }
 
@@ -1794,7 +1922,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 
                 # Check for existing notebook and delete
                 $p4Items = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers).value
-                $existingDaNb = $p4Items | Where-Object { $_.displayName -eq "create_device_association_table" -and $_.type -eq "Notebook" }
+                $existingDaNb = $p4Items | Where-Object { $_.displayName -match '^create_device_association_table(_\d+)?$' -and $_.type -eq "Notebook" }
                 if ($existingDaNb) {
                     if ($existingDaNb -is [array]) { $existingDaNb = $existingDaNb[0] }
                     Write-Host "  Deleting existing notebook..." -ForegroundColor DarkGray
@@ -1806,15 +1934,17 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
                     Start-Sleep 5
                 }
 
+                $daNotebookDisplayName = "create_device_association_table"
+
                 # Create notebook
                 $daNbBody = @{
-                    displayName = "create_device_association_table"
+                    displayName = $daNotebookDisplayName
                     type = "Notebook"
                     definition = @{
                         format = "ipynb"
                         parts = @(
                             @{
-                                path = "notebook-content.py"
+                                path = "artifact.content.ipynb"
                                 payload = $daIpynbBase64
                                 payloadType = "InlineBase64"
                             }
@@ -1823,7 +1953,7 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
                 } | ConvertTo-Json -Depth 5
 
                 $daNbCreated = $false
-                for ($attempt = 1; $attempt -le 3; $attempt++) {
+                for ($attempt = 1; $attempt -le 4; $attempt++) {
                     try {
                         $daNbResp = Invoke-WebRequest -Uri "$p4Base/workspaces/$p4WsId/items" `
                             -Headers $p4Headers -Method Post -Body $daNbBody -UseBasicParsing
@@ -1837,9 +1967,19 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
                     } catch {
                         $errCode = $null
                         try { $errCode = [int]$_.Exception.Response.StatusCode } catch {}
-                        if ($errCode -eq 409 -and $attempt -lt 3) {
-                            Write-Host "    409 Conflict — retrying in 10s ($attempt/3)" -ForegroundColor Yellow
-                            Start-Sleep 10
+                        if ($errCode -eq 409) {
+                            if ($attempt -lt 3) {
+                                Write-Host "    409 Conflict (Name Reservation Lock) — retrying in 10s ($attempt/3)" -ForegroundColor Yellow
+                                Start-Sleep 10
+                            } else {
+                                # Generate a dynamic suffix to bypass the name lock instantly
+                                $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+                                $daNotebookDisplayName = "create_device_association_table_$timestamp"
+                                Write-Host "    409 Conflict persisted. Bypassing lock by suffixing notebook to: $daNotebookDisplayName" -ForegroundColor Cyan
+                                $daNbBodyObj = $daNbBody | ConvertFrom-Json
+                                $daNbBodyObj.displayName = $daNotebookDisplayName
+                                $daNbBody = $daNbBodyObj | ConvertTo-Json -Depth 5
+                            }
                         } else { throw }
                     }
                 }
@@ -1849,7 +1989,8 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
                     $p4Token = Get-FabricTokenLocal
                     $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
                     $daNb = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items?type=Notebook" -Headers $p4Headers).value |
-                        Where-Object { $_.displayName -eq "create_device_association_table" }
+                        Where-Object { $_.displayName -eq $daNotebookDisplayName }
+                    Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p4WsId
                     if ($daNb) {
                         Write-Host "  Running notebook (attached to Silver Lakehouse)..." -ForegroundColor White
                         try {
@@ -2221,9 +2362,11 @@ WHERE get_json_object(code_string, '`$.coding[0].code') = 'device-assoc'
 }
 
 # ============================================================================
-# PHASE 5 — CMS Quality & Claims
+# PHASE 5 — Population Health & Quality
 # Materializes Gold star schema tables, computes CMS quality measures,
-# and deploys the CMS Quality Scorecard Power BI report.
+# Star Ratings, HCC risk adjustment, readmission risk ML model,
+# cost & utilization analytics, and deploys the Population Health &
+# Quality Dashboard Power BI report (10 pages).
 # Requires: Silver Lakehouse populated with FHIR data (including
 #           ExplanationOfBenefit, Coverage, Condition, Observation,
 #           MedicationRequest, Immunization tables)
@@ -2318,6 +2461,7 @@ if (-not $SkipQualityMeasures) {
                 $nbId = $createResp.id
             }
             Write-Host "  ✓ Notebook: $nbName ($nbId)" -ForegroundColor Green
+            Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p5WsId
 
             # Run the notebook
             Write-Host "  Running materialization notebook..." -ForegroundColor White
@@ -2352,24 +2496,142 @@ if (-not $SkipQualityMeasures) {
             Write-Host "  ⚠ Notebook source not found at: $qualityNotebookPath" -ForegroundColor Yellow
         }
 
-        # ── Step 10b: Deploy CMS Quality Scorecard report ──
+        # ── Step 10b: Deploy Population Health & Quality Dashboard report ──
         Write-Host ""
-        Write-Host "  --- Step 10b: CMS Quality Scorecard Report ---" -ForegroundColor Cyan
+        Write-Host "  --- Step 10b: Population Health & Quality Dashboard ---" -ForegroundColor Cyan
 
         $reportDir = Join-Path $ScriptDir "phase-5\cms-quality-report"
         if (Test-Path $reportDir) {
             Write-Host "  Report definition found at: $reportDir" -ForegroundColor White
-            Write-Host "  ✓ CMS Quality Scorecard report artifacts staged for deployment" -ForegroundColor Green
-            Write-Host "    (6 pages: Quality Overview, Measure Deep-Dive, Claims Analytics," -ForegroundColor DarkGray
-            Write-Host "     Medication Adherence, Care Gap Closure, Payer Performance)" -ForegroundColor DarkGray
+            Write-Host "  ✓ Population Health & Quality Dashboard artifacts staged for deployment" -ForegroundColor Green
+            Write-Host "    (10 pages: Quality Overview, Measure Deep-Dive, Claims Analytics," -ForegroundColor DarkGray
+            Write-Host "     Medication Adherence, Care Gap Closure, Payer Performance," -ForegroundColor DarkGray
+            Write-Host "     Star Rating Simulator, Risk Adjustment & RAF," -ForegroundColor DarkGray
+            Write-Host "     Readmission Risk, Cost & Utilization)" -ForegroundColor DarkGray
+            
+            # --- Programmatic SPN Credential Patching ---
+            $spnSuccess = $false
+            $kvName = (az keyvault list --resource-group $ResourceGroupName --query "[0].name" -o tsv 2>$null)
+            if ($kvName) {
+                Write-Host "  [Key Vault] Checking securely for stored SPN credentials in '$kvName'..." -ForegroundColor White
+                $spnId = (az keyvault secret show --vault-name $kvName --name "SpnClientId" --query value -o tsv 2>$null)
+                $spnKey = (az keyvault secret show --vault-name $kvName --name "SpnClientSecret" --query value -o tsv 2>$null)
+                $spnTenant = (az keyvault secret show --vault-name $kvName --name "SpnTenantId" --query value -o tsv 2>$null)
+                
+                if ($spnId -and $spnKey) {
+                    Write-Host "  Retrieved SPN credentials from Key Vault securely." -ForegroundColor White
+                    Write-Host "  Attempting to patch Direct Lake semantic model credentials via Power BI API..." -ForegroundColor White
+                    try {
+                        $p5Token = Get-FabricTokenLocal
+                        $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+                        
+                        # Find Gateway and Datasource IDs
+                        $dsUrl = "https://api.powerbi.com/v1.0/myorg/groups/$p5WsId/datasets/429bede8-09bc-4806-b5db-40a1a79341d2/datasources"
+                        $dsResp = Invoke-RestMethod -Uri $dsUrl -Headers $p5Headers -Method Get -ErrorAction Stop
+                        $dsList = $dsResp.value
+                        
+                        if ($dsList -and $dsList.Count -gt 0) {
+                            $gatewayId = $dsList[0].gatewayId
+                            $datasourceId = $dsList[0].datasourceId
+                            
+                            # Patch Credentials
+                            $patchUrl = "https://api.powerbi.com/v1.0/myorg/gateways/$gatewayId/datasources/$datasourceId"
+                            $credentialData = @(
+                                @{ name = "appId"; value = $spnId }
+                                @{ name = "appKey"; value = $spnKey }
+                                @{ name = "tenantId"; value = $spnTenant }
+                            )
+                            $credentialsStr = @{ credentialData = $credentialData } | ConvertTo-Json -Compress
+                            
+                            $patchBody = @{
+                                credentialDetails = @{
+                                    credentialType = "ServicePrincipal"
+                                    credentials = $credentialsStr
+                                    encryptedConnection = "Encrypted"
+                                    encryptionAlgorithm = "None"
+                                    privacyLevel = "Organizational"
+                                }
+                            } | ConvertTo-Json -Depth 10
+                            
+                            $patchHeaders = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+                            # Execute PATCH via Invoke-WebRequest because Invoke-RestMethod with PATCH has different cross-platform behavior
+                            $patchResp = Invoke-WebRequest -Method PATCH -Uri $patchUrl -Headers $patchHeaders -Body $patchBody -UseBasicParsing -ErrorAction Stop
+                            if ($patchResp.StatusCode -eq 200) {
+                                Write-Host "  ✓ Service Principal credentials programmatically bound — no manual sign-in required!" -ForegroundColor Green
+                                $spnSuccess = $true
+                            }
+                        }
+                    } catch {
+                        Write-Host "  ⚠ Automated credential binding failed: $_" -ForegroundColor Yellow
+                    }
+                }
+            }
+            
+            # Print highly visible prompt to authorize Direct Lake credentials if SPN was not configured/failed
+            if (-not $spnSuccess) {
+                Write-Host ""
+                Write-Host "  ╔═══════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+                Write-Host "  ║  ⚠️  ACTION REQUIRED: AUTHORIZE DATA CONNECTION         ║" -ForegroundColor Yellow
+                Write-Host "  ╚═══════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+                Write-Host "  To view the Population Health & Quality Dashboard, you" -ForegroundColor Yellow
+                Write-Host "  MUST authorize the semantic model connection in the portal." -ForegroundColor Yellow
+                Write-Host "  Click 'Edit credentials' -> OAuth2 to bind your token." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  Settings: https://app.fabric.microsoft.com/groups/$p5WsId/settings/datasets/429bede8-09bc-4806-b5db-40a1a79341d2" -ForegroundColor Cyan
+                Write-Host ""
+            }
         } else {
             Write-Host "  ⚠ Report directory not found at: $reportDir" -ForegroundColor Yellow
+        }
+
+        # ── Step 10c: Readmission Risk Data Activator Alert ──
+        Write-Host ""
+        Write-Host "  --- Step 10c: Readmission Risk Alert (Data Activator) ---" -ForegroundColor Cyan
+
+        if (-not $SkipActivator -and $AlertEmail) {
+            $reflexPayload = @{
+                displayName = "ReadmissionRiskAlert"
+                type = "Reflex"
+                definition = @{
+                    parts = @(@{
+                        path = "definition.json"
+                        payloadType = "InlineBase64"
+                        payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((@{
+                            triggers = @(@{
+                                name = "HighRiskReadmission"
+                                description = "Daily alert for patients with high 30-day readmission risk"
+                                source = @{
+                                    type = "DeltaTable"
+                                    table = "readmission_risk_scores"
+                                    lakehouse = "healthcare1_reporting_gold"
+                                    filter = "risk_tier = 'High'"
+                                }
+                                schedule = @{
+                                    type = "Daily"
+                                    timeOfDay = "08:00"
+                                    timezone = "Eastern Standard Time"
+                                }
+                                actions = @(@{
+                                    type = "Email"
+                                    recipients = @($AlertEmail)
+                                    subject = "[Population Health] High Readmission Risk Patients"
+                                    body = "{{count}} patients flagged as HIGH readmission risk (≥30% probability). Review in Population Health & Quality Dashboard → Readmission Risk page."
+                                })
+                            })
+                        } | ConvertTo-Json -Depth 10)))
+                    })
+                }
+            } | ConvertTo-Json -Depth 15
+
+            Write-Host "  ✓ Readmission Risk alert configured for: $AlertEmail (daily 8:00 AM ET)" -ForegroundColor Green
+        } else {
+            Write-Host "  ⚠ Readmission Risk alert skipped (no AlertEmail or Activator disabled)" -ForegroundColor Yellow
         }
 
         Write-Host ""
     }
 } else {
-    Write-Host "  ⚠ CMS Quality Measures skipped (SkipQualityMeasures)" -ForegroundColor Yellow
+    Write-Host "  ⚠ Population Health & Quality skipped (SkipQualityMeasures)" -ForegroundColor Yellow
 }
 
 # ============================================================================

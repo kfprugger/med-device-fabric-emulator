@@ -126,6 +126,7 @@ export interface DeploymentConfig {
   capacity_name: string;
   pause_capacity_after_deploy: boolean;
   reuse_patients: boolean;
+  use_cached_synthea: boolean;
   skip_synthea: boolean;
   skip_device_assoc: boolean;
   skip_fhir_export: boolean;
@@ -289,6 +290,89 @@ export async function getDeployedResources(
   signal?: AbortSignal
 ): Promise<DeployedResourcesResult> {
   return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/deployed-resources`, {
+    timeoutMs: 20000,
+    retry: 1,
+    signal,
+  });
+}
+
+export interface AfterActionReportResult {
+  adminGroup: string;
+  keyVaultName: string;
+  azurePortalUrl: string;
+  fabricWorkspaceUrl: string;
+  resources: Array<{
+    name: string;
+    category: "Azure" | "Fabric";
+    type: string;
+    identity: string;
+    credentialLocation: string;
+    credentialDetails: string;
+    accessControlDetails: string;
+  }>;
+}
+
+export async function getAfterActionReport(
+  instanceId: string,
+  signal?: AbortSignal
+): Promise<AfterActionReportResult> {
+  if (instanceId.startsWith("mock-")) {
+    return {
+      adminGroup: "sg-msft-hds-dicom-project",
+      keyVaultName: "masimo-kv-mock",
+      azurePortalUrl: "https://portal.azure.com",
+      fabricWorkspaceUrl: "https://app.powerbi.com",
+      resources: [
+        {
+          name: "masimo-kv-mock",
+          category: "Azure",
+          type: "Vaults",
+          identity: "System-Assigned Managed Identity",
+          credentialLocation: "Azure Key Vault",
+          credentialDetails: "SpnClientId, SpnClientSecret, SpnTenantId, EventHubConnStr (Secure Secrets)",
+          accessControlDetails: "Securely stores connection strings and SPN secrets. Fully governed by RBAC roles assigned to Admin Security Group 'sg-msft-hds-dicom-project'."
+        },
+        {
+          name: "masimoxyz-eh-ns",
+          category: "Azure",
+          type: "Namespaces",
+          identity: "System-Assigned Managed Identity / SAS Rule",
+          credentialLocation: "Azure Key Vault",
+          credentialDetails: "EventHubConnStr (Key Vault Secret)",
+          accessControlDetails: "Uses Managed Identity for device emulator stream ingestion. SAS authorization rule fallback is stored in Key Vault."
+        },
+        {
+          name: "stfhirxyz",
+          category: "Azure",
+          type: "StorageAccounts",
+          identity: "System-Assigned Managed Identity",
+          credentialLocation: "None",
+          credentialDetails: "None (Entra ID RBAC / Service-to-Service)",
+          accessControlDetails: "Service-to-service communication is handled securely via Azure Managed Identity without stored secrets."
+        },
+        {
+          name: "Population Health & Quality Dashboard",
+          category: "Fabric",
+          type: "SemanticModel",
+          identity: "Service Principal (SPN) Fixed Identity",
+          credentialLocation: "Azure Key Vault (Secret)",
+          credentialDetails: "SpnClientSecret (Azure Key Vault Secret)",
+          accessControlDetails: "Automated Direct Lake data connections utilize the SPN secrets retrieved from Key Vault to query OneLake securely."
+        },
+        {
+          name: "Masimo Telemetry Trigger",
+          category: "Fabric",
+          type: "Reflex",
+          identity: "Workspace Identity",
+          credentialLocation: "Workspace Boundary",
+          credentialDetails: "None (Fabric Native Integration)",
+          accessControlDetails: "Data Activator alerts operate entirely within the workspace security boundary to route care team notifications."
+        }
+      ]
+    };
+  }
+
+  return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/after-action-report`, {
     timeoutMs: 20000,
     retry: 1,
     signal,

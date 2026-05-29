@@ -194,6 +194,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipFabric")
         if config.get("reuse_patients"):
             params.append("-ReusePatients")
+        if config.get("use_cached_synthea"):
+            params.append("-UseCachedSynthea")
         if config.get("skip_synthea"):
             params.append("-SkipSynthea")
         if config.get("skip_device_assoc"):
@@ -254,6 +256,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-SkipFabric")
     if config.get("skip_fhir_export"):
         args.append("-SkipFhirExport")
+    if config.get("use_cached_synthea"):
+        args.append("-UseCachedSynthea")
     if config.get("skip_synthea"):
         args.append("-SkipSynthea")
     if config.get("skip_device_assoc"):

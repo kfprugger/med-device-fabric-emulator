@@ -1,0 +1,76 @@
+/// Star Rating Simulation — what-if gap closure impact on star ratings
+table star_rating_simulation
+	lineageTag: a2000001-aaaa-bbbb-cccc-a20000000001
+
+	partition 'star_rating_simulation' = entity
+		mode: directLake
+		source
+			entityName: star_rating_simulation
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column measure_id
+		dataType: string
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000002
+		sourceColumn: measure_id
+		summarizeBy: none
+
+	column measure_name
+		dataType: string
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000003
+		sourceColumn: measure_name
+		summarizeBy: none
+
+	column gaps_to_close
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000004
+		sourceColumn: gaps_to_close
+		summarizeBy: none
+
+	column closeable_gaps
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000005
+		sourceColumn: closeable_gaps
+		summarizeBy: none
+
+	column current_rate
+		dataType: double
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000006
+		sourceColumn: current_rate
+		summarizeBy: none
+
+	column simulated_rate
+		dataType: double
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000007
+		sourceColumn: simulated_rate
+		summarizeBy: none
+
+	column current_star
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000008
+		sourceColumn: current_star
+		summarizeBy: none
+
+	column simulated_star
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a20000000009
+		sourceColumn: simulated_star
+		summarizeBy: none
+
+	column measure_weight
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a2000000000a
+		sourceColumn: measure_weight
+		summarizeBy: none
+
+	column total_open_gaps
+		dataType: int64
+		lineageTag: a2000001-aaaa-bbbb-cccc-a2000000000b
+		sourceColumn: total_open_gaps
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: a2000001-aaaa-bbbb-cccc-a2000000000c
+		sourceColumn: load_timestamp
+		summarizeBy: none

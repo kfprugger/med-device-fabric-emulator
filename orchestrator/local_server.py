@@ -451,8 +451,10 @@ def _extract_deployment_links(message: str) -> dict[str, str]:
 async def start_teardown(req: TeardownRequest):
     now_local = datetime.now()
     timestamp = now_local.strftime("%Y%m%d-%H%M%S")
-    teardown_mode = "teardownFull" if req.delete_workspace and req.delete_azure_rg else "teardownPartial"
-    instance_id = f"{teardown_mode}-{timestamp}"
+    import random
+    suffix = random.randint(1000, 9999)
+    teardown_mode = "teardownFull" if (req.delete_workspace and req.delete_azure_rg) else "teardownPartial"
+    instance_id = f"{teardown_mode}-{timestamp}-{suffix}"
 
     teardown_targets = []
     if req.fabric_workspace_name:
@@ -690,8 +692,67 @@ def func_response(data, status_code=200):
     return JSONResponse(content=data, status_code=status_code)
 
 
+def _apply_prior_success_skips(req: DeployRequest):
+    """Find the most recent failed deployment with the same workspace or RG,
+    and automatically skip all phases that completed successfully in it.
+    """
+    prior_deploy = None
+    # Sort deployments by createdTime to find the most recent one
+    for dep in sorted(deployments.values(), key=lambda d: d.get("createdTime", ""), reverse=True):
+        if dep.get("runtimeStatus") not in ["Failed", "Terminated"]:
+            continue
+        cs = dep.get("customStatus", {})
+        if cs.get("workspaceName") == req.fabric_workspace_name or cs.get("resourceGroupName") == req.resource_group_name:
+            prior_deploy = dep
+            break
+
+    if not prior_deploy:
+        return
+
+    output = prior_deploy.get("output") or {}
+    phases = output.get("phases") or []
+    
+    # Check each successful phase and enable corresponding skip flags
+    for p in phases:
+        if p.get("status") != "succeeded":
+            continue
+        phase_name = p.get("phase", "").upper()
+        
+        if "BASE AZURE INFRASTRUCTURE" in phase_name:
+            req.skip_base_infra = True
+        elif "FHIR SERVICE + SYNTHEA" in phase_name:
+            req.skip_fhir = True
+            req.skip_synthea = True
+            req.skip_device_assoc = True
+            req.reuse_patients = True
+        elif "DICOM SERVICE + LOADER" in phase_name:
+            req.skip_dicom = True
+        elif "FABRIC RTI" in phase_name and "PHASE 2" not in phase_name:
+            req.skip_fabric = True
+        elif "FABRIC RTI (AUTO)" in phase_name or "PHASE 2: FABRIC RTI" in phase_name:
+            req.skip_rti_phase2 = True
+        elif "HDS PIPELINES" in phase_name:
+            req.skip_hds_pipelines = True
+        elif "DATA AGENTS" in phase_name:
+            req.skip_data_agents = True
+        elif "IMAGING & REPORTING" in phase_name:
+            req.skip_imaging = True
+        elif "ONTOLOGY" in phase_name:
+            req.skip_ontology = True
+        elif "DATA ACTIVATOR" in phase_name:
+            req.skip_activator = True
+        elif "CMS QUALITY" in phase_name:
+            req.skip_quality_measures = True
+
+    logger.info("Auto-resume activated: loaded successful phases from %s. Applied skips: base_infra=%s, fhir=%s, dicom=%s, fabric=%s, rti2=%s, hds=%s, agents=%s, imaging=%s, ontology=%s, activator=%s, quality=%s",
+                prior_deploy["instanceId"], req.skip_base_infra, req.skip_fhir, req.skip_dicom, req.skip_fabric, req.skip_rti_phase2, req.skip_hds_pipelines, req.skip_data_agents, req.skip_imaging, req.skip_ontology, req.skip_activator, req.skip_quality_measures)
+
+
 @app.post("/api/deploy/start")
 async def start_deploy(req: DeployRequest):
+    # Auto-resume failed deployments by skipping successfully completed phases
+    _apply_prior_success_skips(req)
+
     # Hard gate on local auth/tooling readiness before launch.
     auth_context = await asyncio.get_event_loop().run_in_executor(None, _get_auth_context_sync)
     if not auth_context.get("ready", False):
@@ -1160,6 +1221,98 @@ async def get_deployed_resources(instance_id: str):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _get_deployed_resources_sync, ws_name, rg_name)
     return result
+
+
+@app.get("/api/deploy/{instance_id}/after-action-report")
+async def get_after_action_report(instance_id: str):
+    """Compile and return the After Action Security & Resources Report metadata."""
+    if instance_id not in deployments:
+        raise HTTPException(404, "Instance not found")
+
+    dep = deployments[instance_id]
+    custom_status = dep.get("customStatus", {})
+    ws_name = custom_status.get("workspaceName", "")
+    rg_name = custom_status.get("resourceGroupName", "")
+    cfg = custom_status.get("deployConfig", {})
+    admin_group = cfg.get("admin_security_group", "") or "sg-msft-hds-dicom-project"
+
+    # Call the existing sync function to get actual resources
+    loop = asyncio.get_event_loop()
+    resources = await loop.run_in_executor(None, _get_deployed_resources_sync, ws_name, rg_name)
+
+    # Compile the After Action security schema mappings
+    # Map each resource type to its identity strategy and vault secrets
+    security_report = {
+        "adminGroup": admin_group,
+        "keyVaultName": next((r["name"] for r in resources["azure"] if r["type"].lower() == "vaults"), f"masimo-kv"),
+        "azurePortalUrl": custom_status.get("links", {}).get("azurePortal", ""),
+        "fabricWorkspaceUrl": custom_status.get("links", {}).get("fabricWorkspace", ""),
+        "resources": []
+    }
+
+    # 1. Map Azure Resources
+    for r in resources["azure"]:
+        name = r["name"]
+        rtype = r["type"].lower()
+        identity = "System-Assigned Managed Identity"
+        credentials = "None (Entra ID RBAC / Service-to-Service)"
+        details = "Service-to-service communication is handled securely via Azure Managed Identity without stored secrets."
+
+        if rtype == "vaults":
+            identity = "System-Assigned Managed Identity"
+            credentials = "SpnClientId, SpnClientSecret, SpnTenantId, EventHubConnStr (Secure Secrets)"
+            details = f"Securely stores connection strings and SPN secrets. Fully governed by RBAC roles assigned to Admin Security Group '{admin_group}'."
+        elif rtype == "namespaces" or "eventhub" in rtype:
+            identity = "System-Assigned Managed Identity / SAS Rule"
+            credentials = "EventHubConnStr (Key Vault Secret)"
+            details = "Uses Managed Identity for device emulator stream ingestion. SAS authorization rule fallback is stored in Key Vault."
+        elif rtype == "registries":
+            identity = "System-Assigned Managed Identity"
+            credentials = "None (AcrPull/AcrPush RBAC Roles)"
+            details = "Container build and image retrieval utilize Managed Identity, with pushes/pulls secured via RBAC roles."
+        elif rtype == "containergroups":
+            identity = "System-Assigned Managed Identity"
+            credentials = "EventHubConnStr (Key Vault secret reference)"
+            details = "Active device emulator container group accesses Event Hub using a System-Assigned Managed Identity."
+
+        security_report["resources"].append({
+            "name": name,
+            "category": "Azure",
+            "type": r["type"],
+            "identity": identity,
+            "credentialLocation": "Azure Key Vault" if rtype == "vaults" or rtype == "namespaces" else "None",
+            "credentialDetails": credentials,
+            "accessControlDetails": details
+        })
+
+    # 2. Map Fabric Resources
+    for r in resources["fabric"]:
+        name = r["name"]
+        rtype = r["type"].lower()
+        identity = "Workspace Identity / Owner Context"
+        credentials = "None (Entra ID SSO / Service-to-Service)"
+        details = "Microsoft Fabric Workspace Identity allows notebooks, Eventstreams, and KQL databases to interoperate securely without connection strings."
+
+        if rtype == "semanticmodel":
+            identity = "Service Principal (SPN) Fixed Identity"
+            credentials = "SpnClientSecret (Azure Key Vault Secret)"
+            details = "Automated Direct Lake data connections utilize the SPN secrets retrieved from Key Vault to query OneLake securely."
+        elif rtype == "reflex":
+            identity = "Workspace Identity"
+            credentials = "None (Fabric Native Integration)"
+            details = "Data Activator alerts operate entirely within the workspace security boundary to route care team notifications."
+
+        security_report["resources"].append({
+            "name": name,
+            "category": "Fabric",
+            "type": r["type"],
+            "identity": identity,
+            "credentialLocation": "Azure Key Vault (Secret)" if rtype == "semanticmodel" else "Workspace Boundary",
+            "credentialDetails": credentials,
+            "accessControlDetails": details
+        })
+
+    return security_report
 
 
 def _get_deployed_resources_sync(ws_name: str, rg_name: str) -> dict:

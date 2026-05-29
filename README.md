@@ -18,7 +18,7 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo
 - **Fabric IQ Ontology** — A 9-entity semantic layer (Patient, Device, Encounter, Condition, MedicationRequest, Observation, DeviceAssociation, ClinicalAlert, DeviceTelemetry) with relationships across Lakehouse and Eventhouse, bound to all Data Agents
 - **Data Activator** — A Reflex item with KQL source (`fn_ClinicalAlerts`), Device object, 6 attributes, and an email rule that alerts on CRITICAL/URGENT SpO2 events — deployed fully programmatically via the Fabric REST API
-- **CMS Quality & Claims** — 7 CMS eCQM quality measures (CMS122, CMS165, CMS69, CMS127, CMS147, CMS134, CMS144), 3 HEDIS medication adherence PDC classes (diabetes, RAS antagonists, statins), claims analytics from Synthea-generated ExplanationOfBenefit/Coverage data, and a 6-page CMS Quality Scorecard Power BI report
+- **Population Health & Quality** — 7 CMS eCQM quality measures, 3 HEDIS PDC classes, Star Rating simulator, HCC risk adjustment (CMS-HCC V28), 30-day readmission risk ML model, cost & utilization analytics (PMPM, IP/1K, ED/1K), and a 10-page Population Health & Quality Dashboard Power BI report with Data Activator alerting
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
 The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches eight Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, Power BI, and Healthcare Data Solutions.
@@ -101,7 +101,7 @@ flowchart LR
             F5["📧 Data Activator Reflex alerts"]
         end
         subgraph P6["Stage 6 · CMS Quality & Performance"]
-            F6["📊 CMS Quality Scorecard PBI Report"]
+            F6["📊 Population Health & Quality Dashboard"]
         end
     end
 
@@ -203,7 +203,7 @@ flowchart TB
         end
 
         subgraph P6["Stage 6 — CMS Quality & Performance"]
-            PBI_CMS["CMS Quality Scorecard\nPower BI Report"]
+            PBI_CMS["Population Health\n& Quality Dashboard"]
         end
     end
 

@@ -552,7 +552,7 @@ export function TeardownView() {
         setError(`${failures.length} of ${jobs.length} teardown jobs failed to start. Check history for successful ones.`);
       }
       setLoading(false);
-      navigate("/history");
+      navigate("/teardown/monitor");
       return;
     } catch {
       setError("Backend teardown API unavailable. Running mock teardown monitor.");

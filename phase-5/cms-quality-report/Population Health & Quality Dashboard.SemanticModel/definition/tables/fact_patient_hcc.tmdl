@@ -1,0 +1,70 @@
+/// Patient HCC Fact — patient-level HCC condition mappings with hierarchy
+table fact_patient_hcc
+	lineageTag: b2000001-aaaa-bbbb-cccc-b20000000001
+
+	partition 'fact_patient_hcc' = entity
+		mode: directLake
+		source
+			entityName: fact_patient_hcc
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000002
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column condition_code
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000003
+		sourceColumn: condition_code
+		summarizeBy: none
+
+	column condition_display
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000004
+		sourceColumn: condition_display
+		summarizeBy: none
+
+	column hcc_code
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000005
+		sourceColumn: hcc_code
+		summarizeBy: none
+
+	column hcc_name
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000006
+		sourceColumn: hcc_name
+		summarizeBy: none
+
+	column coefficient
+		dataType: double
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000007
+		sourceColumn: coefficient
+		summarizeBy: none
+
+	column hierarchy_group
+		dataType: string
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000008
+		sourceColumn: hierarchy_group
+		summarizeBy: none
+
+	column hierarchy_rank
+		dataType: int64
+		lineageTag: b2000001-aaaa-bbbb-cccc-b20000000009
+		sourceColumn: hierarchy_rank
+		summarizeBy: none
+
+	column hierarchy_applied
+		dataType: boolean
+		lineageTag: b2000001-aaaa-bbbb-cccc-b2000000000a
+		sourceColumn: hierarchy_applied
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: b2000001-aaaa-bbbb-cccc-b2000000000b
+		sourceColumn: load_timestamp
+		summarizeBy: none

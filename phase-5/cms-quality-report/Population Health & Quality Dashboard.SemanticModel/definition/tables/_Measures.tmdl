@@ -160,3 +160,153 @@ table _Measures
         measure 'Patients Measured (Commercial)' =
                 CALCULATE([Patients Measured], agg_quality_measures[payer_category] = "Commercial")
                 lineageTag: 99999999-aaaa-bbbb-cccc-9999999999b0
+
+	// ── Star Rating measures ────────────────────────────────────────
+
+	measure 'Overall Star Rating' =
+		AVERAGE(star_rating_detail[overall_weighted_star])
+		formatString: 0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999c1
+
+	measure 'Weighted Score' =
+		SUM(star_rating_detail[weighted_score])
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999c2
+
+	measure 'Max Possible Score' =
+		SUM(star_rating_detail[measure_weight]) * 5
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999c3
+
+	measure 'Star Improvement Opportunity' =
+		[Max Possible Score] - [Weighted Score]
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999c4
+
+	// ── HCC Risk Adjustment measures ────────────────────────────────
+
+	measure 'Average RAF Score' =
+		AVERAGE(agg_risk_scores[raf_score])
+		formatString: 0.000
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d1
+
+	measure 'Average RAF (Medicare)' =
+		CALCULATE([Average RAF Score], agg_risk_scores[payer_category] = "Medicare")
+		formatString: 0.000
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d2
+
+	measure 'Average RAF (Medicaid)' =
+		CALCULATE([Average RAF Score], agg_risk_scores[payer_category] = "Medicaid")
+		formatString: 0.000
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d3
+
+	measure 'Average RAF (Commercial)' =
+		CALCULATE([Average RAF Score], agg_risk_scores[payer_category] = "Commercial")
+		formatString: 0.000
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d4
+
+	measure 'High Risk Members' =
+		COUNTROWS(FILTER(agg_risk_scores, [risk_tier] = "Very High" || [risk_tier] = "High"))
+		formatString: #,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d5
+
+	measure 'Total Revenue at Risk' =
+		SUM(revenue_opportunity[potential_revenue_uplift])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d6
+
+	measure 'Coding Gap Count' =
+		COUNTROWS(revenue_opportunity)
+		formatString: #,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d7
+
+	measure 'Total Annual Revenue' =
+		SUM(agg_risk_scores[annual_revenue])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d8
+
+	measure 'Average HCC Count' =
+		AVERAGE(agg_risk_scores[hcc_count])
+		formatString: 0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999d9
+
+	// ── Readmission Risk measures ───────────────────────────────────
+
+	measure 'High Risk Encounters' =
+		COUNTROWS(FILTER(readmission_risk_scores, [risk_tier] = "High"))
+		formatString: #,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999e1
+
+	measure 'Avg Readmission Risk' =
+		AVERAGE(readmission_risk_scores[risk_probability])
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999e2
+
+	measure 'Actual Readmission Rate' =
+		DIVIDE(SUM(readmission_risk_scores[readmitted_30d]), COUNTROWS(readmission_risk_scores), 0)
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999e3
+
+	measure 'Model AUC' =
+		CALCULATE(MAX(readmission_model_performance[value]), readmission_model_performance[name] = "auc_roc")
+		formatString: 0.000
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999e4
+
+	measure 'Model Accuracy' =
+		CALCULATE(MAX(readmission_model_performance[value]), readmission_model_performance[name] = "accuracy")
+		formatString: 0.0%
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999e5
+
+	// ── Cost & Utilization measures ─────────────────────────────────
+
+	measure 'PMPM' =
+		DIVIDE(SUM(fact_claim[paid_amount]), MAX(agg_utilization_summary[unique_members]) * 12, 0)
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f1
+
+	measure 'PMPM (Medicare)' =
+		CALCULATE([PMPM], fact_claim[payer_category] = "Medicare")
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f2
+
+	measure 'PMPM (Medicaid)' =
+		CALCULATE([PMPM], fact_claim[payer_category] = "Medicaid")
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f3
+
+	measure 'PMPM (Commercial)' =
+		CALCULATE([PMPM], fact_claim[payer_category] = "Commercial")
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f4
+
+	measure 'IP per 1K' =
+		MAX(agg_utilization_summary[ip_per_1k])
+		formatString: #,0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f5
+
+	measure 'ED per 1K' =
+		MAX(agg_utilization_summary[ed_per_1k])
+		formatString: #,0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f6
+
+	measure 'ALOS' =
+		AVERAGE(agg_utilization_summary[avg_los])
+		formatString: 0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f7
+
+	measure 'Bed Days per 1K' =
+		MAX(agg_utilization_summary[bed_days_per_1k])
+		formatString: #,0.0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f8
+
+	measure 'High Cost Member Count' =
+		COUNTROWS(agg_high_cost_claimants)
+		formatString: #,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999f9
+
+	measure 'High Cost Total Paid' =
+		SUM(agg_high_cost_claimants[total_paid])
+		formatString: \$#,0
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999fa
+
+	measure 'PMPM vs Benchmark' =
+		MAX(agg_utilization_summary[pmpm]) - MAX(agg_utilization_summary[benchmark_pmpm])
+		formatString: \$#,0.00
+		lineageTag: 99999999-aaaa-bbbb-cccc-9999999999fb

@@ -1,0 +1,82 @@
+/// Risk Scores — patient-level RAF scores and revenue estimates
+table agg_risk_scores
+	lineageTag: b3000001-aaaa-bbbb-cccc-b30000000001
+
+	partition 'agg_risk_scores' = entity
+		mode: directLake
+		source
+			entityName: agg_risk_scores
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000002
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column gender
+		dataType: string
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000003
+		sourceColumn: gender
+		summarizeBy: none
+
+	column age
+		dataType: int64
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000004
+		sourceColumn: age
+		summarizeBy: none
+
+	column demographic_score
+		dataType: double
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000005
+		sourceColumn: demographic_score
+		summarizeBy: none
+
+	column hcc_score
+		dataType: double
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000006
+		sourceColumn: hcc_score
+		summarizeBy: none
+
+	column hcc_count
+		dataType: int64
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000007
+		sourceColumn: hcc_count
+		summarizeBy: none
+
+	column hcc_list
+		dataType: string
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000008
+		sourceColumn: hcc_list
+		summarizeBy: none
+
+	column raf_score
+		dataType: double
+		lineageTag: b3000001-aaaa-bbbb-cccc-b30000000009
+		sourceColumn: raf_score
+		summarizeBy: none
+
+	column risk_tier
+		dataType: string
+		lineageTag: b3000001-aaaa-bbbb-cccc-b3000000000a
+		sourceColumn: risk_tier
+		summarizeBy: none
+
+	column annual_revenue
+		dataType: double
+		lineageTag: b3000001-aaaa-bbbb-cccc-b3000000000b
+		sourceColumn: annual_revenue
+		summarizeBy: none
+
+	column payer_category
+		dataType: string
+		lineageTag: b3000001-aaaa-bbbb-cccc-b3000000000c
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: b3000001-aaaa-bbbb-cccc-b3000000000d
+		sourceColumn: load_timestamp
+		summarizeBy: none

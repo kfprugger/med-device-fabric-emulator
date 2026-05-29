@@ -21,6 +21,8 @@ import hashlib
 import shutil
 import logging
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 import httpx
@@ -44,6 +46,9 @@ class AzureClient:
         self.fhir_url = fhir_url.rstrip("/")
         self.storage_account = storage_account
         self.dicom_container = dicom_container
+        self.token_lock = threading.Lock()
+        self.access_token = None
+        self.token_expiry = None
         if client_id:
             self.credential = ManagedIdentityCredential(client_id=client_id)
         else:
@@ -56,8 +61,26 @@ class AzureClient:
 
     @property
     def fhir_token(self) -> str:
-        scope = f"{self.fhir_url}/.default"
-        return self.credential.get_token(scope).token
+        with self.token_lock:
+            if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
+                return self.access_token
+            try:
+                scope = f"{self.fhir_url}/.default"
+                token = self.credential.get_token(scope)
+                self.access_token = token.token
+                # expires_on can be int/float epoch timestamp
+                if isinstance(token.expires_on, (int, float)):
+                    self.token_expiry = datetime.fromtimestamp(token.expires_on - 300)
+                else:
+                    self.token_expiry = None
+                return self.access_token
+            except Exception as e:
+                logger.warning(f"Error getting token: {e}. Retrying without expiry caching.")
+                scope = f"{self.fhir_url}/.default"
+                token = self.credential.get_token(scope)
+                self.access_token = token.token
+                self.token_expiry = None
+                return self.access_token
 
     def upload_blob(self, blob_path: str, file_path: str) -> str:
         """Upload a file to blob storage. Returns the blob URL."""
@@ -368,23 +391,222 @@ def main():
     associations = associations[:study_count]
     logger.info("Processing %d patients", len(associations))
 
-    # Step 2: Get available TCIA studies
-    tcia = TCIAClient()
-    studies_by_collection: dict[str, list[dict]] = {}
+# Thread-safe worker and locks
+tcia_lock = threading.Lock()
+stats_lock = threading.Lock()
+studies_by_collection: dict[str, list[dict]] = {}
 
-    def get_studies_for_collection(coll_name: str) -> list[dict]:
+def get_studies_for_collection(coll_name: str, tcia: TCIAClient) -> list[dict]:
+    with tcia_lock:
         if coll_name not in studies_by_collection:
             logger.info("Fetching TCIA studies for collection '%s'...", coll_name)
-            studies_by_collection[coll_name] = tcia.get_studies(coll_name)
-            logger.info("  %d studies available in %s", len(studies_by_collection[coll_name]), coll_name)
+            try:
+                studies_by_collection[coll_name] = tcia.get_studies(coll_name)
+                logger.info("  %d studies available in %s", len(studies_by_collection[coll_name]), coll_name)
+            except Exception as e:
+                logger.warning("Failed to fetch studies for collection '%s': %s. Falling back to default collection.", coll_name, e)
+                studies_by_collection[coll_name] = []
         return studies_by_collection[coll_name]
 
-    default_studies = get_studies_for_collection(collection)
+def process_single_patient_worker(
+    idx: int,
+    assoc: dict,
+    fhir_url: str,
+    azure: AzureClient,
+    forced_chest_patient_ids: set[str],
+    modality_map: dict,
+    hospital_names: list[str],
+    default_studies: list[dict],
+    collection: str,
+    stats: dict,
+    tmp_base: str
+):
+    patient_id = assoc["patientId"]
+    device_id = assoc["deviceId"]
+    hospital = hospital_names[idx % len(hospital_names)]
+
+    logger.info("[%d] Patient %s (device %s) starting", idx + 1, patient_id, device_id)
+
+    try:
+        # Create dedicated TCIAClient per thread
+        tcia = TCIAClient()
+
+        # Get patient info and conditions
+        fhir_token = azure.fhir_token
+        patient_info = get_patient_info(fhir_url, fhir_token, patient_id)
+        condition_codings = get_patient_conditions(fhir_url, fhir_token, patient_id)
+        target_collection, modality = determine_collection(condition_codings, modality_map)
+        body_site = infer_body_site(condition_codings)
+
+        if patient_id in forced_chest_patient_ids:
+            target_collection = "RSNA Pneumonia"
+            modality = "CR"
+            body_site = {
+                "code": "39607008",
+                "display": "Chest",
+                "text": "Chest",
+                "dicom_body_part": "CHEST",
+            }
+
+        # Pick a TCIA study (cycle through available studies)
+        candidate_studies = get_studies_for_collection(target_collection, tcia)
+        if not candidate_studies:
+            logger.warning("  [%d] No studies found in %s; falling back to default %s", idx + 1, target_collection, collection)
+            candidate_studies = default_studies
+        tcia_study = candidate_studies[idx % len(candidate_studies)]
+        study_uid_tcia = tcia_study["StudyInstanceUID"]
+
+        # Get series for the study (pick first series)
+        series_list = tcia.get_series_for_study(study_uid_tcia)
+        if not series_list:
+            logger.warning("  [%d] No series found for TCIA study %s — skipping patient %s", idx + 1, study_uid_tcia, patient_id)
+            with stats_lock:
+                stats["failed"] += 1
+            return
+
+        series_uid_tcia = series_list[0]["SeriesInstanceUID"]
+
+        # Download DICOM files
+        download_dir = os.path.join(tmp_base, f"download_{idx}")
+        logger.info("  [%d] Downloading series %s...", idx + 1, series_uid_tcia)
+        dcm_files = tcia.download_series(series_uid_tcia, download_dir)
+        logger.info("  [%d] Downloaded %d DICOM files", idx + 1, len(dcm_files))
+
+        if not dcm_files:
+            logger.warning("  [%d] No DICOM files in series — skipping patient %s", idx + 1, patient_id)
+            with stats_lock:
+                stats["failed"] += 1
+            return
+
+        # Re-tag with Synthea patient identifiers
+        retag_dir = os.path.join(tmp_base, f"retag_{idx}")
+        study_uid, series_uid, retagged_files = retag_series(
+            dcm_files=dcm_files,
+            patient_info=patient_info,
+            device_id=device_id,
+            hospital_name=hospital,
+            body_part_examined=body_site["dicom_body_part"],
+            output_dir=retag_dir,
+        )
+
+        # Upload re-tagged .dcm files to ADLS Gen2
+        # Path: {patientId}/{studyUID}/{seriesUID}/{instance}.dcm
+        blob_base = f"{patient_id}/{study_uid}/{series_uid}"
+        logger.info("  [%d] Uploading %d .dcm files to blob: %s/...", idx + 1, len(retagged_files), blob_base)
+        for dcm_file in retagged_files:
+            fname = os.path.basename(dcm_file)
+            blob_path = f"{blob_base}/{fname}"
+            azure.upload_blob(blob_path, dcm_file)
+            with stats_lock:
+                stats["blobs_written"] += 1
+
+        with stats_lock:
+            stats["uploaded"] += 1
+        logger.info("  [%d] Uploaded study %s (%d files)", idx + 1, study_uid, len(retagged_files))
+
+        # Create FHIR ImagingStudy resource
+        fhir_token = azure.fhir_token
+        img_study_id = create_imaging_study(
+            fhir_url, fhir_token, patient_id,
+            study_uid, series_uid, modality,
+            body_site,
+            len(retagged_files), blob_base,
+        )
+        with stats_lock:
+            stats["imaging_studies_created"] += 1
+        logger.info("  [%d] Created ImagingStudy/%s", idx + 1, img_study_id)
+
+        # Clean up temp files for this patient
+        shutil.rmtree(download_dir, ignore_errors=True)
+        shutil.rmtree(retag_dir, ignore_errors=True)
+
+    except Exception as e:
+        logger.error("  [%d] Error processing patient %s: %s", idx + 1, patient_id, str(e), exc_info=True)
+        with stats_lock:
+            stats["failed"] += 1
+
+
+# ── Main ─────────────────────────────────────────────────────────────────
+
+def main():
+    fhir_url = os.environ.get("FHIR_SERVICE_URL", "")
+    storage_account = os.environ.get("STORAGE_ACCOUNT", "")
+    dicom_container = os.environ.get("DICOM_CONTAINER", "dicom-output")
+    client_id = os.environ.get("AZURE_CLIENT_ID")
+    collection = os.environ.get("TCIA_COLLECTION", "LIDC-IDRI")
+    study_count = int(os.environ.get("STUDY_COUNT", "100"))
+
+    if not fhir_url or not storage_account:
+        logger.error("FHIR_SERVICE_URL and STORAGE_ACCOUNT must be set")
+        sys.exit(1)
+
+    logger.info("DICOM Loader starting")
+    logger.info("  FHIR URL:        %s", fhir_url)
+    logger.info("  Storage Account: %s", storage_account)
+    logger.info("  DICOM Container: %s", dicom_container)
+    logger.info("  Collection:      %s", collection)
+    logger.info("  Max studies:     %d", study_count)
+
+    # Load condition → modality mapping
+    map_path = os.path.join(os.path.dirname(__file__), "condition_modality_map.json")
+    with open(map_path) as f:
+        modality_map = json.load(f)
+
+    # Load atlanta_providers for hospital names
+    providers_path = os.path.join(os.path.dirname(__file__), "..", "fhir-loader", "atlanta_providers.json")
+    if os.path.exists(providers_path):
+        with open(providers_path) as f:
+            providers = json.load(f)
+        hospital_names = [p["name"] for p in providers.get("organizations", [])]
+    else:
+        hospital_names = ["Emory University Hospital"]
+    logger.info("  Hospitals: %d available", len(hospital_names))
+
+    # Authenticate
+    azure = AzureClient(fhir_url, storage_account, dicom_container, client_id)
+    logger.info("Azure authentication configured")
+
+    # Ensure container exists
+    try:
+        azure.container_client.get_container_properties()
+    except Exception:
+        logger.info("Creating blob container '%s'...", dicom_container)
+        azure.blob_service.create_container(dicom_container)
+
+    # Step 1: Get device-associated patients (blob first, FHIR search fallback)
+    # Blob is strongly consistent — no search indexing delay
+    associations = get_device_associations_from_blob(storage_account, azure.credential)
+    
+    if not associations:
+        # Fallback: query FHIR directly (may hit search indexing delays)
+        logger.info("Falling back to FHIR search for device associations...")
+        fhir_token = azure.fhir_token
+        for attempt in range(30):  # Retry up to 5 minutes
+            associations = get_device_associated_patients(fhir_url, fhir_token)
+            if associations:
+                break
+            if attempt < 29:
+                logger.info("Waiting for FHIR search index to be consistent... (%ds)", (attempt + 1) * 10)
+                import time
+                time.sleep(10)
+                fhir_token = azure.fhir_token
+
+    if not associations:
+        logger.error("No device-associated patients found. Run the FHIR loader first.")
+        sys.exit(1)
+
+    associations = associations[:study_count]
+    logger.info("Processing %d patients", len(associations))
+
+    # Step 2: Get available TCIA studies
+    tcia = TCIAClient()
+
+    default_studies = get_studies_for_collection(collection, tcia)
     if not default_studies:
         logger.error("No studies found in TCIA collection '%s'", collection)
         sys.exit(1)
 
-    # Ensure at least 10%% of assigned studies are chest X-rays.
+    # Ensure at least 10% of assigned studies are chest X-rays.
     chest_target_count = max(1, math.ceil(len(associations) * 0.10))
     sorted_assoc = sorted(
         associations,
@@ -393,114 +615,35 @@ def main():
     forced_chest_patient_ids = {a["patientId"] for a in sorted_assoc[:chest_target_count]}
     logger.info("Forcing chest X-ray assignment for %d/%d patients (>=10%%)", chest_target_count, len(associations))
 
-    fhir_token = azure.fhir_token
-
-    # Step 3: Process each patient
+    # Step 3: Process each patient concurrently
     stats = {"uploaded": 0, "failed": 0, "imaging_studies_created": 0, "blobs_written": 0}
     tmp_base = tempfile.mkdtemp(prefix="dicom_loader_")
-    fhir_token = azure.fhir_token
 
     try:
-        for idx, assoc in enumerate(associations):
-            patient_id = assoc["patientId"]
-            device_id = assoc["deviceId"]
-            hospital = hospital_names[idx % len(hospital_names)]
-
-            logger.info("[%d/%d] Patient %s (device %s)",
-                        idx + 1, len(associations), patient_id, device_id)
-
-            try:
-                # Refresh token periodically
-                if idx % 20 == 0 and idx > 0:
-                    fhir_token = azure.fhir_token
-
-                # Get patient info and conditions
-                patient_info = get_patient_info(fhir_url, fhir_token, patient_id)
-                condition_codings = get_patient_conditions(fhir_url, fhir_token, patient_id)
-                target_collection, modality = determine_collection(condition_codings, modality_map)
-                body_site = infer_body_site(condition_codings)
-
-                if patient_id in forced_chest_patient_ids:
-                    target_collection = "RSNA Pneumonia"
-                    modality = "CR"
-                    body_site = {
-                        "code": "39607008",
-                        "display": "Chest",
-                        "text": "Chest",
-                        "dicom_body_part": "CHEST",
-                    }
-
-                # Pick a TCIA study (cycle through available studies)
-                candidate_studies = get_studies_for_collection(target_collection)
-                if not candidate_studies:
-                    logger.warning("  No studies found in %s; falling back to %s", target_collection, collection)
-                    candidate_studies = default_studies
-                tcia_study = candidate_studies[idx % len(candidate_studies)]
-                study_uid_tcia = tcia_study["StudyInstanceUID"]
-
-                # Get series for the study (pick first series)
-                series_list = tcia.get_series_for_study(study_uid_tcia)
-                if not series_list:
-                    logger.warning("  No series found for TCIA study %s — skipping", study_uid_tcia)
-                    stats["failed"] += 1
-                    continue
-
-                series_uid_tcia = series_list[0]["SeriesInstanceUID"]
-
-                # Download DICOM files
-                download_dir = os.path.join(tmp_base, f"download_{idx}")
-                logger.info("  Downloading series %s...", series_uid_tcia)
-                dcm_files = tcia.download_series(series_uid_tcia, download_dir)
-                logger.info("  Downloaded %d DICOM files", len(dcm_files))
-
-                if not dcm_files:
-                    logger.warning("  No DICOM files in series — skipping")
-                    stats["failed"] += 1
-                    continue
-
-                # Re-tag with Synthea patient identifiers
-                retag_dir = os.path.join(tmp_base, f"retag_{idx}")
-                study_uid, series_uid, retagged_files = retag_series(
-                    dcm_files=dcm_files,
-                    patient_info=patient_info,
-                    device_id=device_id,
-                    hospital_name=hospital,
-                    body_part_examined=body_site["dicom_body_part"],
-                    output_dir=retag_dir,
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for idx, assoc in enumerate(associations):
+                futures.append(
+                    executor.submit(
+                        process_single_patient_worker,
+                        idx,
+                        assoc,
+                        fhir_url,
+                        azure,
+                        forced_chest_patient_ids,
+                        modality_map,
+                        hospital_names,
+                        default_studies,
+                        collection,
+                        stats,
+                        tmp_base
+                    )
                 )
-
-                # Upload re-tagged .dcm files to ADLS Gen2
-                # Path: {patientId}/{studyUID}/{seriesUID}/{instance}.dcm
-                blob_base = f"{patient_id}/{study_uid}/{series_uid}"
-                logger.info("  Uploading %d .dcm files to blob: %s/...", len(retagged_files), blob_base)
-                for dcm_file in retagged_files:
-                    fname = os.path.basename(dcm_file)
-                    blob_path = f"{blob_base}/{fname}"
-                    azure.upload_blob(blob_path, dcm_file)
-                    stats["blobs_written"] += 1
-
-                stats["uploaded"] += 1
-                logger.info("  Uploaded study %s (%d files)", study_uid, len(retagged_files))
-
-                # Create FHIR ImagingStudy resource
-                fhir_token = azure.fhir_token
-                img_study_id = create_imaging_study(
-                    fhir_url, fhir_token, patient_id,
-                    study_uid, series_uid, modality,
-                    body_site,
-                    len(retagged_files), blob_base,
-                )
-                stats["imaging_studies_created"] += 1
-                logger.info("  Created ImagingStudy/%s", img_study_id)
-
-                # Clean up temp files for this patient
-                shutil.rmtree(download_dir, ignore_errors=True)
-                shutil.rmtree(retag_dir, ignore_errors=True)
-
-            except Exception:
-                logger.exception("  Error processing patient %s", patient_id)
-                stats["failed"] += 1
-
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"Worker thread execution failed: {e}")
     finally:
         shutil.rmtree(tmp_base, ignore_errors=True)
 

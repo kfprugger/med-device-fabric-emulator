@@ -1,0 +1,64 @@
+/// Revenue Opportunity — coding gap driven revenue uplift potential
+table revenue_opportunity
+	lineageTag: b5000001-aaaa-bbbb-cccc-b50000000001
+
+	partition 'revenue_opportunity' = entity
+		mode: directLake
+		source
+			entityName: revenue_opportunity
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column patient_id
+		dataType: string
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000002
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column raf_score
+		dataType: double
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000003
+		sourceColumn: raf_score
+		summarizeBy: none
+
+	column hcc_count
+		dataType: int64
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000004
+		sourceColumn: hcc_count
+		summarizeBy: none
+
+	column hcc_list
+		dataType: string
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000005
+		sourceColumn: hcc_list
+		summarizeBy: none
+
+	column risk_tier
+		dataType: string
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000006
+		sourceColumn: risk_tier
+		summarizeBy: none
+
+	column potential_additional_raf
+		dataType: double
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000007
+		sourceColumn: potential_additional_raf
+		summarizeBy: none
+
+	column potential_revenue_uplift
+		dataType: double
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000008
+		sourceColumn: potential_revenue_uplift
+		summarizeBy: none
+
+	column payer_category
+		dataType: string
+		lineageTag: b5000001-aaaa-bbbb-cccc-b50000000009
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: b5000001-aaaa-bbbb-cccc-b5000000000a
+		sourceColumn: load_timestamp
+		summarizeBy: none

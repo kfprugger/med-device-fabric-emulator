@@ -1,0 +1,136 @@
+/// Readmission Risk Scores — encounter-level ML risk predictions
+table readmission_risk_scores
+	lineageTag: c1000001-aaaa-bbbb-cccc-c10000000001
+
+	partition 'readmission_risk_scores' = entity
+		mode: directLake
+		source
+			entityName: readmission_risk_scores
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column encounter_id
+		dataType: string
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000002
+		sourceColumn: encounter_id
+		summarizeBy: none
+
+	column patient_id
+		dataType: string
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000003
+		sourceColumn: patient_id
+		summarizeBy: none
+
+	column admit_date
+		dataType: dateTime
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000004
+		sourceColumn: admit_date
+		summarizeBy: none
+
+	column discharge_date
+		dataType: dateTime
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000005
+		sourceColumn: discharge_date
+		summarizeBy: none
+
+	column risk_probability
+		dataType: double
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000006
+		sourceColumn: risk_probability
+		summarizeBy: none
+
+	column risk_tier
+		dataType: string
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000007
+		sourceColumn: risk_tier
+		summarizeBy: none
+
+	column readmitted_30d
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000008
+		sourceColumn: readmitted_30d
+		summarizeBy: none
+
+	column age
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000009
+		sourceColumn: age
+		summarizeBy: none
+
+	column sex_male
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000a
+		sourceColumn: sex_male
+		summarizeBy: none
+
+	column los_days
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000b
+		sourceColumn: los_days
+		summarizeBy: none
+
+	column comorbidity_count
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000c
+		sourceColumn: comorbidity_count
+		summarizeBy: none
+
+	column medication_count
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000d
+		sourceColumn: medication_count
+		summarizeBy: none
+
+	column prior_admits_12mo
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000e
+		sourceColumn: prior_admits_12mo
+		summarizeBy: none
+
+	column prior_ed_visits_6mo
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c1000000000f
+		sourceColumn: prior_ed_visits_6mo
+		summarizeBy: none
+
+	column has_diabetes
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000010
+		sourceColumn: has_diabetes
+		summarizeBy: none
+
+	column has_chf
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000011
+		sourceColumn: has_chf
+		summarizeBy: none
+
+	column has_copd
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000012
+		sourceColumn: has_copd
+		summarizeBy: none
+
+	column payer_is_medicare
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000013
+		sourceColumn: payer_is_medicare
+		summarizeBy: none
+
+	column payer_is_medicaid
+		dataType: int64
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000014
+		sourceColumn: payer_is_medicaid
+		summarizeBy: none
+
+	column payer_category
+		dataType: string
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000015
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: c1000001-aaaa-bbbb-cccc-c10000000016
+		sourceColumn: load_timestamp
+		summarizeBy: none

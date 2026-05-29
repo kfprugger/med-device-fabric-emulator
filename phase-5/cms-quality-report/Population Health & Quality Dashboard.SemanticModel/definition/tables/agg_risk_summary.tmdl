@@ -1,0 +1,52 @@
+/// Risk Summary — aggregated risk metrics by payer and tier
+table agg_risk_summary
+	lineageTag: b4000001-aaaa-bbbb-cccc-b40000000001
+
+	partition 'agg_risk_summary' = entity
+		mode: directLake
+		source
+			entityName: agg_risk_summary
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column payer_category
+		dataType: string
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000002
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column risk_tier
+		dataType: string
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000003
+		sourceColumn: risk_tier
+		summarizeBy: none
+
+	column member_count
+		dataType: int64
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000004
+		sourceColumn: member_count
+		summarizeBy: none
+
+	column avg_raf
+		dataType: double
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000005
+		sourceColumn: avg_raf
+		summarizeBy: none
+
+	column avg_hcc_count
+		dataType: double
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000006
+		sourceColumn: avg_hcc_count
+		summarizeBy: none
+
+	column total_annual_revenue
+		dataType: double
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000007
+		sourceColumn: total_annual_revenue
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: b4000001-aaaa-bbbb-cccc-b40000000008
+		sourceColumn: load_timestamp
+		summarizeBy: none

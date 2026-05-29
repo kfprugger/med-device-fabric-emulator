@@ -1,0 +1,40 @@
+/// HCC Dimension — Hierarchical Condition Category reference
+table dim_hcc
+	lineageTag: b1000001-aaaa-bbbb-cccc-b10000000001
+
+	partition 'dim_hcc' = entity
+		mode: directLake
+		source
+			entityName: dim_hcc
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column hcc_code
+		dataType: string
+		lineageTag: b1000001-aaaa-bbbb-cccc-b10000000002
+		sourceColumn: hcc_code
+		summarizeBy: none
+
+	column hcc_name
+		dataType: string
+		lineageTag: b1000001-aaaa-bbbb-cccc-b10000000003
+		sourceColumn: hcc_name
+		summarizeBy: none
+
+	column coefficient
+		dataType: double
+		lineageTag: b1000001-aaaa-bbbb-cccc-b10000000004
+		sourceColumn: coefficient
+		summarizeBy: none
+
+	column hierarchy_group
+		dataType: string
+		lineageTag: b1000001-aaaa-bbbb-cccc-b10000000005
+		sourceColumn: hierarchy_group
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: b1000001-aaaa-bbbb-cccc-b10000000006
+		sourceColumn: load_timestamp
+		summarizeBy: none

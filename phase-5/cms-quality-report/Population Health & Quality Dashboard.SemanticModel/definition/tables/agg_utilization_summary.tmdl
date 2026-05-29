@@ -1,0 +1,106 @@
+/// Monthly utilization summary with benchmark comparisons
+table agg_utilization_summary
+	lineageTag: d1000001-aaaa-bbbb-cccc-d10000000001
+
+	partition 'agg_utilization_summary' = entity
+		mode: directLake
+		source
+			entityName: agg_utilization_summary
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column service_month
+		dataType: string
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000002
+		sourceColumn: service_month
+		summarizeBy: none
+
+	column unique_members
+		dataType: int64
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000003
+		sourceColumn: unique_members
+		summarizeBy: none
+
+	column inpatient_admits
+		dataType: int64
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000004
+		sourceColumn: inpatient_admits
+		summarizeBy: none
+
+	column ed_visits
+		dataType: int64
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000005
+		sourceColumn: ed_visits
+		summarizeBy: none
+
+	column outpatient_visits
+		dataType: int64
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000006
+		sourceColumn: outpatient_visits
+		summarizeBy: none
+
+	column bed_days
+		dataType: int64
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000007
+		sourceColumn: bed_days
+		summarizeBy: none
+
+	column avg_los
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000008
+		sourceColumn: avg_los
+		summarizeBy: none
+
+	column pmpm
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000009
+		sourceColumn: pmpm
+		summarizeBy: none
+
+	column ip_per_1k
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000a
+		sourceColumn: ip_per_1k
+		summarizeBy: none
+
+	column ed_per_1k
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000b
+		sourceColumn: ed_per_1k
+		summarizeBy: none
+
+	column bed_days_per_1k
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000c
+		sourceColumn: bed_days_per_1k
+		summarizeBy: none
+
+	column benchmark_pmpm
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000d
+		sourceColumn: benchmark_pmpm
+		summarizeBy: none
+
+	column benchmark_ip_per_1k
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000e
+		sourceColumn: benchmark_ip_per_1k
+		summarizeBy: none
+
+	column benchmark_ed_per_1k
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d1000000000f
+		sourceColumn: benchmark_ed_per_1k
+		summarizeBy: none
+
+	column benchmark_alos
+		dataType: double
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000010
+		sourceColumn: benchmark_alos
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: d1000001-aaaa-bbbb-cccc-d10000000011
+		sourceColumn: load_timestamp
+		summarizeBy: none

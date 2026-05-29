@@ -24,6 +24,8 @@ import {
   TextBulletListRegular,
   ArrowLeftRegular,
   ClipboardRegular,
+  OpenRegular,
+  ShieldRegular,
 } from "@fluentui/react-icons";
 import { PhaseCard } from "../components/PhaseCard";
 import { AllLogsStream } from "../components/AllLogsStream";
@@ -34,10 +36,12 @@ import {
   cancelDeployment,
   startDeployment,
   getDeployedResources,
+  getAfterActionReport,
   type DeploymentStatus,
   type DeploymentConfig,
   type PhaseInfo,
   type DeployedResourcesResult,
+  type AfterActionReportResult,
 } from "../api";
 import {
   isMockInstance,
@@ -45,6 +49,7 @@ import {
   getMockPhases,
   resumeMockHds,
   cancelMockDeployment,
+  startMockDeployment,
   type PhaseLog,
 } from "../mockDeployment";
 import { useReducedMotion } from "../hooks/useReducedMotion";
@@ -85,6 +90,15 @@ const MILESTONE_ANIMATION_CSS = `
 }
 .milestone-pulse-teardown-done {
   animation: milestone-pulse-teardown 2.2s infinite cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+@keyframes gantt-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 40px 0; }
+}
+.gantt-running-striped {
+  background-image: linear-gradient(45deg, rgba(0,0,0,0.18) 25%, transparent 25%, transparent 50%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.18) 75%, transparent 75%, transparent) !important;
+  background-size: 40px 40px !important;
+  animation: gantt-stripes 1.2s linear infinite !important;
 }
 `;
 
@@ -315,6 +329,7 @@ const useStyles = makeStyles({
   actions: {
     display: "flex",
     gap: tokens.spacingHorizontalS,
+    alignItems: "center",
     marginTop: tokens.spacingVerticalL,
   },
   floatingScrollBtn: {
@@ -334,24 +349,19 @@ const useStyles = makeStyles({
 });
 
 const ALL_PHASES: PhaseInfo[] = [
-  // Phase 1: Infrastructure & Data
-  { phase: "Phase 1: Fabric Workspace", status: "pending" },
-  { phase: "Phase 1: Base Azure Infrastructure", status: "pending" },
-  { phase: "Phase 1: FHIR Service + Synthea + Loader", status: "pending" },
-  { phase: "Phase 1: DICOM Service + Loader", status: "pending" },
-  { phase: "Phase 1: Fabric RTI", status: "pending" },
-  { phase: "Phase 1: HDS Detection", status: "pending" },
-  // Phase 2: Analytics & AI Agents
-  { phase: "Phase 2: Fabric RTI", status: "pending" },
-  { phase: "Phase 2: DICOM Shortcut + HDS Pipelines", status: "pending" },
-  { phase: "Phase 2: Data Agents", status: "pending" },
-  // Phase 3: Imaging & Reporting
-  { phase: "Phase 3: Imaging & Reporting", status: "pending" },
-  // Phase 4: Semantic Layer & Alerts
-  { phase: "Phase 4: Ontology", status: "pending" },
-  { phase: "Phase 4: Data Activator", status: "pending" },
-  // Phase 5: CMS Quality & Claims
-  { phase: "Phase 5: CMS Quality & Claims", status: "pending" },
+  { phase: "1. Data Fabric Foundation: Fabric Workspace", status: "pending" },
+  { phase: "1. Data Fabric Foundation: Base Azure Infrastructure", status: "pending" },
+  { phase: "1. Data Fabric Foundation: FHIR Service + Synthea + Loader", status: "pending" },
+  { phase: "3. Multimodal Cohorting & Imaging: DICOM Service + Loader", status: "pending" },
+  { phase: "2. Active Patient Telemetry: Fabric RTI Ingest", status: "pending" },
+  { phase: "1. Data Fabric Foundation: HDS Detection", status: "pending" },
+  { phase: "2. Active Patient Telemetry: Fabric RTI Enrichment", status: "pending" },
+  { phase: "3. Multimodal Cohorting & Imaging: DICOM Shortcut + HDS Pipelines", status: "pending" },
+  { phase: "4. Connected Semantic Intelligence: Conversational Data Agents", status: "pending" },
+  { phase: "3. Multimodal Cohorting & Imaging: Custom SWA Viewer & Direct Lake", status: "pending" },
+  { phase: "4. Connected Semantic Intelligence: Clinical Device Ontology", status: "pending" },
+  { phase: "5. Bedside Alerting & Action: Real-Time Reflex alerts", status: "pending" },
+  { phase: "6. Population Health & Quality: Full analytics pipeline", status: "pending" },
 ];
 
 export function PhaseMonitor() {
@@ -373,9 +383,37 @@ export function PhaseMonitor() {
   const [frozenElapsed, setFrozenElapsed] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
   const [operatorMode, setOperatorMode] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(
+    typeof window !== "undefined" && "Notification" in window
+      ? window.Notification.permission === "granted"
+      : false
+  );
   const [resourceErrorNotified, setResourceErrorNotified] = useState(false);
+  const [showAfterActionReport, setShowAfterActionReport] = useState(false);
+  const [showGantt, setShowGantt] = useState(true);
+  const [compressCompleted, setCompressCompleted] = useState(false);
+  const [afterActionReport, setAfterActionReport] = useState<AfterActionReportResult | null>(null);
+  const [afterActionLoading, setAfterActionLoading] = useState(false);
 
   const isMock = instanceId ? isMockInstance(instanceId) : false;
+
+  // Reset all deployment-specific states on instanceId change
+  useEffect(() => {
+    setStatus(null);
+    setMockPhaseLogs(new Map());
+    setError("");
+    setDeployedResources(null);
+    setFrozenElapsed(null);
+    setTick(0);
+    setShowAfterActionReport(false);
+    setShowGantt(true);
+    setCompressCompleted(false);
+    setAfterActionReport(null);
+    setResourceErrorNotified(false);
+    setLastResourceFetch(0);
+  }, [instanceId]);
+
   const statusIsTerminalForPolling =
     status?.runtimeStatus === "Completed" ||
     status?.runtimeStatus === "Terminated" ||
@@ -525,6 +563,23 @@ export function PhaseMonitor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId, isMock, phases.length, isCancelled, isFailed, isRunning, resourceErrorNotified]);
 
+  // Fetch After Action report when requested
+  useEffect(() => {
+    if (!instanceId || !showAfterActionReport || afterActionReport) return;
+
+    setAfterActionLoading(true);
+    getAfterActionReport(instanceId)
+      .then((res) => {
+        setAfterActionReport(res);
+      })
+      .catch(() => {
+        setError("Unable to retrieve the After Action Security & Resources Report.");
+      })
+      .finally(() => {
+        setAfterActionLoading(false);
+      });
+  }, [instanceId, showAfterActionReport, afterActionReport]);
+
   const elapsedSeconds = frozenElapsed !== null
     ? frozenElapsed
     : status?.createdTime
@@ -594,6 +649,29 @@ export function PhaseMonitor() {
   const completedCount = phases.filter(
     (p) => p.status === "succeeded" || p.status === "skipped"
   ).length;
+
+  // Trigger OS Notifications on deployment completion
+  useEffect(() => {
+    if (!status || !notificationsEnabled || !notificationPermissionGranted || !instanceId) return;
+
+    const runtimeStatus = status.runtimeStatus;
+    const isFinished = runtimeStatus === "Completed" || runtimeStatus === "Failed" || runtimeStatus === "Terminated";
+    
+    if (isFinished) {
+      const sessionKey = `notified-${instanceId}-${runtimeStatus}`;
+      if (sessionStorage.getItem(sessionKey)) return;
+      
+      sessionStorage.setItem(sessionKey, "true");
+
+      const title = runtimeStatus === "Completed" ? "Deployment Successful!" : `Deployment ${runtimeStatus}`;
+      const elapsedText = elapsedFormatted ? ` in ${elapsedFormatted}` : "";
+      new Notification(title, {
+        body: `Instance: ${instanceId}\nStatus: ${runtimeStatus}${elapsedText}\nTotal completed phases: ${completedCount}/${phases.length}.`,
+        tag: instanceId,
+        requireInteraction: true
+      });
+    }
+  }, [status, notificationsEnabled, notificationPermissionGranted, instanceId, elapsedFormatted, completedCount, phases.length]);
 
   // ── Weighted progress based on typical step durations (minutes) ──
   // Each step gets a weight proportional to how long it typically takes.
@@ -681,7 +759,7 @@ export function PhaseMonitor() {
     { label: "3. Multimodal Cohorting & Imaging", phaseIndices: [7, 9], namePatterns: ["DICOM Shortcut", "HDS Pipelines", "Imaging", "DICOM Viewer"], position: 40, endWeight: 60, phaseNumber: 3 },
     { label: "4. Connected Semantic Intelligence", phaseIndices: [8, 10], namePatterns: ["Data Agent", "Ontology"], position: 56, endWeight: 75, phaseNumber: 4 },
     { label: "5. Bedside Alerting & Action", phaseIndices: [11], namePatterns: ["Activator", "Reflex"], position: 75, endWeight: 85, phaseNumber: 5 },
-    { label: "6. CMS Quality & Performance", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence"], position: 92, endWeight: 95, phaseNumber: 6 },
+    { label: "6. Population Health & Quality", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence", "HCC", "RAF", "Readmission", "Utilization", "PMPM", "Star Rating"], position: 92, endWeight: 95, phaseNumber: 6 },
   ];
 
   // ── Adaptive milestones: determine active milestones from instance ID ──
@@ -924,14 +1002,52 @@ export function PhaseMonitor() {
             onChange={(_, data) => setOperatorMode(!!data.checked)}
             label="Operator mode"
           />
+          <Checkbox
+            checked={notificationsEnabled}
+            onChange={async (_, data) => {
+              const enabled = !!data.checked;
+              if (enabled && typeof window !== "undefined" && "Notification" in window) {
+                const permission = await window.Notification.requestPermission();
+                if (permission === "granted") {
+                  setNotificationPermissionGranted(true);
+                  setNotificationsEnabled(true);
+                  new Notification("System Notifications Enabled", {
+                    body: "You will receive desktop alerts when the deployment finishes.",
+                  });
+                } else {
+                  setNotificationPermissionGranted(false);
+                  setNotificationsEnabled(false);
+                  alert("Please enable notification permissions in your browser settings to receive alerts.");
+                }
+              } else {
+                setNotificationsEnabled(enabled);
+              }
+            }}
+            label="OS Notifications"
+          />
           <Badge
             color={isCancelled ? "warning" : isFailed ? "danger" : isComplete ? (isTeardown ? "warning" : "success") : isRunning ? "informative" : "subtle"}
             size="large"
+            style={{ transform: "translateY(1px)" }}
           >
             {milestonesDone}/{totalMilestones} phases{" "}
             {isCancelled ? "cancelled" : isComplete ? (isTeardown ? "torn down" : "complete") : ""}{" "}
             {elapsedFormatted && `(${elapsedFormatted})`}
           </Badge>
+          {isComplete && !isTeardown && (
+            <Button
+              appearance={showAfterActionReport ? "primary" : "outline"}
+              icon={<ShieldRegular />}
+              onClick={() => setShowAfterActionReport((prev) => !prev)}
+              style={showAfterActionReport ? {} : {
+                borderColor: tokens.colorPaletteBlueBorderActive,
+                color: tokens.colorPaletteBlueBorderActive,
+                boxShadow: `0 0 4px ${tokens.colorPaletteBlueBorderActive}`
+              }}
+            >
+              {showAfterActionReport ? "Hide Security Audit" : "Post Deployment Results"}
+            </Button>
+          )}
           {isRunning && (
             <>
               <Tooltip
@@ -1039,6 +1155,432 @@ export function PhaseMonitor() {
             {elapsedFormatted || "0m 0s"}{isRunning && etaMinutes > 0 ? ` · ETA ~${etaMinutes}m` : ""}
           </Text>
         </div>
+
+        {/* Gantt Timeline Analysis Section (Sliding Animation) */}
+        {(() => {
+          // Define a function to parse duration
+          const parseDurationMinutes = (durationStr: string | number | undefined): number => {
+            if (typeof durationStr === "number") return durationStr;
+            if (!durationStr) return 0;
+            const match = durationStr.toString().match(/([\d.]+)\s*m/i);
+            return match ? parseFloat(match[1]) : 0;
+          };
+
+          // Build a normalized list of all phases in order (Completed, Current, Future)
+          const allPhasesNormalized = ALL_PHASES.map((ap) => {
+            const resolved = phases.find((p) => {
+              if (p.phase === ap.phase) return true;
+              
+              const clean = (name: string) => name.toLowerCase()
+                .replace(/^(phase\s*\d+:|[\d.]+\s*[^:]+:)/i, "")
+                .replace(/\s*\(auto\)\s*/i, "")
+                .replace(/\s*\(manual\)\s*/i, "")
+                .trim();
+                
+              const pClean = clean(p.phase);
+              const apClean = clean(ap.phase);
+              
+              if (pClean === apClean) return true;
+              
+              // Custom precise mapping logic for tricky names:
+              if (pClean.includes("workspace") && apClean.includes("workspace")) return true;
+              if (pClean.includes("base azure") && apClean.includes("base azure")) return true;
+              if (pClean.includes("fhir service") && apClean.includes("fhir service")) return true;
+              if (pClean.includes("dicom service") && apClean.includes("dicom service")) return true;
+              if ((pClean.includes("healthcare data solutions") || pClean.includes("hds guidance")) && apClean.includes("hds detection")) return true;
+              if (pClean.includes("dicom shortcut") && apClean.includes("dicom shortcut")) return true;
+              if (pClean.includes("conversational") && apClean.includes("conversational")) return true;
+              if (pClean.includes("swa viewer") && apClean.includes("swa viewer")) return true;
+              if (pClean.includes("ontology") && apClean.includes("ontology")) return true;
+              if (pClean.includes("reflex alerts") && apClean.includes("reflex alerts")) return true;
+              if (pClean.includes("analytics pipeline") && apClean.includes("analytics pipeline")) return true;
+
+              // Handle "fabric rti" cases very carefully to avoid collision.
+              if (apClean === "fabric rti ingest") {
+                const isEnrichment = p.phase.toLowerCase().includes("phase 2") || 
+                                     p.phase.toLowerCase().includes("auto") || 
+                                     p.phase.toLowerCase().includes("enrichment");
+                return pClean.includes("fabric rti") && !isEnrichment;
+              }
+              
+              if (apClean === "fabric rti enrichment") {
+                const isEnrichment = p.phase.toLowerCase().includes("phase 2") || 
+                                     p.phase.toLowerCase().includes("auto") || 
+                                     p.phase.toLowerCase().includes("enrichment");
+                return pClean.includes("fabric rti") && isEnrichment;
+              }
+              
+              return pClean.includes(apClean) || apClean.includes(pClean);
+            });
+            if (resolved) return { ...resolved, phase: ap.phase };
+            return { ...ap, status: "pending" as const };
+          });
+
+          // Separate phases by status
+          const completedPhases = allPhasesNormalized.filter(
+            (p) => p.status === "succeeded" || p.status === "skipped"
+          );
+          const activePhases = allPhasesNormalized.filter(
+            (p) => p.status === "running" || p.status === "waiting_for_input"
+          );
+          const futurePhases = allPhasesNormalized.filter(
+            (p) => p.status === "pending"
+          );
+
+          // Get total elapsed / durations
+          const completedPhasesSumMins = completedPhases.reduce(
+            (acc, p) => acc + parseDurationMinutes(p.duration),
+            0
+          );
+          const runningPhaseDurationMins = Math.max(
+            0.1,
+            (elapsedSeconds / 60) - completedPhasesSumMins
+          );
+
+          // Helper to scroll to a phase card and highlight it
+          const scrollToCard = (phaseName: string, isGreen = false) => {
+            const matchingPhase = phases.find((p) => {
+              if (p.phase === phaseName) return true;
+              
+              const clean = (name: string) => name.toLowerCase()
+                .replace(/^(phase\s*\d+:|[\d.]+\s*[^:]+:)/i, "")
+                .replace(/\s*\(auto\)\s*/i, "")
+                .replace(/\s*\(manual\)\s*/i, "")
+                .trim();
+                
+              return clean(p.phase) === clean(phaseName);
+            });
+            const targetPhaseName = matchingPhase ? matchingPhase.phase : phaseName;
+            const cardId = `phase-card-${targetPhaseName.replace(/\s+/g, "-")}`;
+            const element = document.getElementById(cardId);
+            if (element) {
+              element.scrollIntoView({ behavior: "smooth", block: "center" });
+              const activeColor = isGreen ? tokens.colorPaletteGreenBorderActive : tokens.colorPaletteBlueBorderActive;
+              element.style.outline = `3px solid ${activeColor}`;
+              element.style.boxShadow = `0 0 16px ${activeColor}`;
+              element.style.transition = "all 0.15s ease";
+              setTimeout(() => {
+                element.style.outline = "";
+                element.style.boxShadow = "";
+              }, 2200);
+            }
+          };
+
+          // Build the visual blocks to render
+          // 1. Calculate NORMAL (uncompressed) widths
+          const normalItems = allPhasesNormalized.filter(p => p.status === "succeeded" || p.status === "skipped" || p.status === "running" || p.status === "waiting_for_input");
+          const normalMinPct = 5.0;
+          const normalN = normalItems.length || 1;
+          const normalReserved = normalN * normalMinPct;
+          const normalRemaining = Math.max(0, 100 - normalReserved);
+          const normalDurations = normalItems.map(p => {
+            if (p.status === "running" || p.status === "waiting_for_input") return runningPhaseDurationMins;
+            const m = parseDurationMinutes(p.duration);
+            return m > 0 ? m : 0.1;
+          });
+          const normalTotalDur = normalDurations.reduce((s, d) => s + d, 0) || 1;
+          const normalPcts = normalDurations.map(d => normalMinPct + (d / normalTotalDur) * normalRemaining);
+
+          // 2. Calculate COMPRESSED widths
+          const compressedMinPct = 5.0;
+          const compressedRestCount = activePhases.length + futurePhases.length;
+          const hasCompletedSummary = completedPhases.length > 0;
+          const summaryWidth = hasCompletedSummary ? 16.0 : 0.0;
+          
+          let compressedPctsMap = new Map<string, number>();
+          if (compressedRestCount === 0) {
+            if (hasCompletedSummary) {
+              compressedPctsMap.set("summary", 100.0);
+            }
+          } else {
+            const reserved = compressedRestCount * compressedMinPct;
+            const remaining = Math.max(0, (100.0 - summaryWidth) - reserved);
+            const activeAndFutureDurations = [...activePhases, ...futurePhases].map(p => {
+              if (p.status === "running" || p.status === "waiting_for_input") return runningPhaseDurationMins;
+              return 0.1;
+            });
+            const totalRestDur = activeAndFutureDurations.reduce((s, d) => s + d, 0) || 1;
+            const restPcts = activeAndFutureDurations.map(d => compressedMinPct + (d / totalRestDur) * remaining);
+            
+            let rIdx = 0;
+            activePhases.forEach(p => {
+              compressedPctsMap.set(p.phase, restPcts[rIdx++]);
+            });
+            futurePhases.forEach(p => {
+              compressedPctsMap.set(p.phase, restPcts[rIdx++]);
+            });
+          }
+
+          return (
+            <>
+              <div style={{
+                maxHeight: showGantt ? "180px" : "0px",
+                opacity: showGantt ? 1 : 0,
+                overflow: "hidden",
+                transition: "max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin-top 0.4s ease, padding-top 0.4s ease",
+                marginTop: showGantt ? tokens.spacingVerticalM : "0px",
+                borderTop: showGantt ? `1px dashed ${tokens.colorNeutralStroke2}` : "none",
+                paddingTop: showGantt ? tokens.spacingVerticalS : "0px"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <Text size={100} weight="semibold" style={{ color: tokens.colorNeutralForeground4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Phase Duration Timeline Analysis (Gantt)
+                    </Text>
+                    <Checkbox
+                      label={<span style={{ fontSize: "10px" }}>Summarize Completed</span>}
+                      checked={compressCompleted}
+                      onChange={(_, data) => setCompressCompleted(!!data.checked)}
+                      style={{
+                        marginLeft: tokens.spacingHorizontalM,
+                        color: tokens.colorNeutralForeground3,
+                      }}
+                    />
+                  </div>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setShowGantt(false)}
+                    style={{ height: "auto", padding: "2px 4px", fontSize: "10px", color: tokens.colorNeutralForeground4 }}
+                  >
+                    Hide
+                  </Button>
+                </div>
+                <div style={{
+                  display: "flex",
+                  height: "26px",
+                  borderRadius: tokens.borderRadiusMedium,
+                  overflow: "hidden",
+                  backgroundColor: tokens.colorNeutralBackground3,
+                  marginTop: tokens.spacingVerticalXXS,
+                  boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                  border: `1px solid ${tokens.colorNeutralStroke1}`
+                }}>
+                  {/* 1. Completed Summary Block */}
+                  {(() => {
+                    const hasSummary = completedPhases.length > 0;
+                    const summaryPct = compressCompleted && hasSummary ? (compressedRestCount === 0 ? 100.0 : 16.0) : 0.0;
+                    const summaryOpacity = compressCompleted && hasSummary ? 1 : 0;
+                    
+                    const tooltipNode = (
+                      <div style={{ padding: "6px" }}>
+                        <Text weight="bold" style={{ display: "block", marginBottom: "4px" }}>
+                          Completed Phases ({completedPhases.length}):
+                        </Text>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                          {completedPhases.map((cp) => {
+                            const mins = parseDurationMinutes(cp.duration);
+                            const durStr = cp.status === "skipped" ? "skipped" : mins > 0.1 ? `${mins.toFixed(1)} min` : "<0.1 min";
+                            return (
+                              <div key={cp.phase} style={{ display: "flex", justifyContent: "space-between", gap: "16px", fontSize: "11px" }}>
+                                <span style={{ color: tokens.colorNeutralForeground2 }}>{cp.phase}:</span>
+                                <span style={{ fontWeight: tokens.fontWeightBold }}>{durStr}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ borderTop: `1px solid ${tokens.colorNeutralStroke2}`, marginTop: "6px", paddingTop: "6px", display: "flex", justifyContent: "space-between", fontSize: "11px", fontWeight: tokens.fontWeightBold }}>
+                          <span>Total Time:</span>
+                          <span>{completedPhasesSumMins.toFixed(1)} min</span>
+                        </div>
+                      </div>
+                    );
+
+                    const handleSummaryClick = () => {
+                      const firstCompleted = completedPhases[0];
+                      if (firstCompleted) {
+                        scrollToCard(firstCompleted.phase, true);
+                      }
+                    };
+
+                    return (
+                      <Tooltip key="completed-summary-block" content={tooltipNode} relationship="label">
+                        <div
+                          onClick={handleSummaryClick}
+                          style={{
+                            width: `${summaryPct}%`,
+                            opacity: summaryOpacity,
+                            pointerEvents: summaryPct > 0.5 ? "auto" : "none",
+                            backgroundColor: tokens.colorPaletteGreenBackground2,
+                            borderRight: summaryPct > 0.5 ? `1.5px solid ${tokens.colorNeutralBackground1}` : "0px solid transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            overflow: "hidden",
+                            cursor: "pointer",
+                            transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-right-width 0.4s ease",
+                            position: "relative",
+                            boxShadow: "inset 0 0 6px rgba(0, 0, 0, 0.15)",
+                            height: "100%",
+                            flexShrink: 0
+                          }}
+                        >
+                          <span style={{
+                            fontSize: "9px",
+                            fontWeight: tokens.fontWeightBold,
+                            color: "#ffffff",
+                            textShadow: "0 1px 2px rgba(0, 0, 0, 0.6)",
+                            whiteSpace: "nowrap",
+                            textOverflow: "ellipsis",
+                            overflow: "hidden",
+                            padding: "0 4px"
+                          }}>
+                            {summaryPct < 7.0 ? "✓" : `✓ ${completedPhases.length} Done`}
+                          </span>
+                        </div>
+                      </Tooltip>
+                    );
+                  })()}
+
+                  {/* 2. Individual Phase Blocks */}
+                  {allPhasesNormalized.map((p, pIdx) => {
+                    const isComp = p.status === "succeeded" || p.status === "skipped";
+                    const isActive = p.status === "running" || p.status === "waiting_for_input";
+                    const isFut = p.status === "pending";
+
+                    // Determine normal and compressed widths
+                    let normalPct = 0;
+                    const nIdx = normalItems.findIndex(ni => ni.phase === p.phase);
+                    if (nIdx >= 0) {
+                      normalPct = normalPcts[nIdx];
+                    }
+
+                    let compressedPct = 0;
+                    if (compressCompleted) {
+                      if (isComp) {
+                        compressedPct = 0;
+                      } else {
+                        compressedPct = compressedPctsMap.get(p.phase) ?? 5.0;
+                      }
+                    } else {
+                      compressedPct = 0;
+                    }
+
+                    const pct = compressCompleted ? compressedPct : normalPct;
+                    const opacity = compressCompleted ? (isComp ? 0 : 1) : (isFut ? 0 : 1);
+                    const pointerEvents = pct > 0.5 && opacity > 0.1 ? "auto" : "none";
+
+                    // Styles and color coding
+                    let bgColor = tokens.colorPaletteBlueBackground2;
+                    let textColor = "#ffffff";
+                    const mins = isActive ? runningPhaseDurationMins : parseDurationMinutes(p.duration);
+                    let label = `${mins.toFixed(1)}m`;
+
+                    if (isActive) {
+                      bgColor = tokens.colorPaletteYellowBackground2;
+                      textColor = "#111111";
+                      label = "⋯";
+                    } else if (p.status === "skipped") {
+                      bgColor = tokens.colorNeutralBackground3;
+                      textColor = "#333333";
+                      label = "—";
+                    } else if (isFut) {
+                      bgColor = tokens.colorNeutralBackground2;
+                      textColor = tokens.colorNeutralForeground4;
+                      label = "⏱";
+                    } else if (mins > 6.0) {
+                      bgColor = tokens.colorPaletteRedBackground2;
+                    }
+
+                    const tooltipContent = isFut 
+                      ? `${p.phase}: Pending / Not started yet (Click to scroll)`
+                      : `${p.phase}: ${mins > 0.1 ? `${mins.toFixed(1)} min` : isActive ? "active / in progress" : p.status === "skipped" ? "skipped" : "completed"} (Click to scroll)`;
+
+                    return (
+                      <Tooltip key={`gantt-item-${p.phase}-${pIdx}`} content={tooltipContent} relationship="label">
+                        <div
+                          onClick={() => scrollToCard(p.phase)}
+                          className={isActive ? "gantt-running-striped" : ""}
+                          style={{
+                            width: `${pct}%`,
+                            opacity: opacity,
+                            pointerEvents,
+                            backgroundColor: bgColor,
+                            borderRight: pct > 0.5 ? `1.5px solid ${tokens.colorNeutralBackground1}` : "0px solid transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            overflow: "hidden",
+                            cursor: "pointer",
+                            transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-right-width 0.4s ease, background-color 0.3s ease",
+                            position: "relative",
+                            flexShrink: 0,
+                            height: "100%",
+                            ...(mins > 6.0 && !isActive && !isFut ? { boxShadow: "inset 0 0 8px rgba(255, 77, 77, 0.4)" } : {}),
+                            ...(isFut ? { border: `1px dashed ${tokens.colorNeutralStroke1}`, boxSizing: "border-box" } : {})
+                          }}
+                        >
+                          <span style={{
+                            fontSize: "9px",
+                            fontWeight: tokens.fontWeightBold,
+                            color: textColor,
+                            textShadow: textColor === "#ffffff" ? "0 1px 2px rgba(0, 0, 0, 0.6)" : "none",
+                            whiteSpace: "nowrap",
+                            textOverflow: "ellipsis",
+                            overflow: "hidden",
+                            padding: "0 4px"
+                          }}>
+                            {pct < 7.0 ? (isActive ? "⋯" : isComp ? "✓" : "—") : label}
+                          </span>
+                        </div>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+                
+                {/* Gantt Timeline Status Legend */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM, marginTop: tokens.spacingVerticalS, justifyContent: "center" }}>
+                  {compressCompleted && completedPhases.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                      <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: tokens.colorPaletteGreenBackground2 }} />
+                      <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Completed Summary</Text>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                    <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: tokens.colorPaletteBlueBackground2 }} />
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Succeeded</Text>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                    <div className="gantt-running-striped" style={{
+                      width: "12px",
+                      height: "12px",
+                      borderRadius: "3px",
+                      backgroundColor: tokens.colorPaletteYellowBackground2
+                    }} />
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>In Progress (Live Growth)</Text>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                    <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: tokens.colorNeutralBackground3, border: `1px solid ${tokens.colorNeutralStroke2}` }} />
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Skipped</Text>
+                  </div>
+                  {compressCompleted && futurePhases.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                      <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: tokens.colorNeutralBackground2, border: `1px dashed ${tokens.colorNeutralStroke1}` }} />
+                      <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Pending</Text>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS }}>
+                    <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: tokens.colorPaletteRedBackground2, boxShadow: "0 0 4px rgba(255, 77, 77, 0.4)" }} />
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Slow Phase ({">"}6m)</Text>
+                  </div>
+                </div>
+              </div>
+
+              {!showGantt && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: tokens.spacingVerticalS }}>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setShowGantt(true)}
+                    style={{ height: "auto", padding: "2px 4px", fontSize: "10px", color: tokens.colorBrandForeground1 }}
+                  >
+                    Show Duration Timeline (Gantt)
+                  </Button>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       <Card className={styles.configCard} size="small">
@@ -1091,7 +1633,7 @@ export function PhaseMonitor() {
           { key: "skip_imaging", label: "Imaging Toolkit", phase: 3 },
           { key: "skip_ontology", label: "Ontology", phase: 4 },
           { key: "skip_activator", label: "Data Activator", phase: 4 },
-          { key: "skip_quality_measures", label: "CMS Quality Scorecard", phase: 5 },
+          { key: "skip_quality_measures", label: "Population Health & Quality Dashboard", phase: 5 },
         ];
         const enabled = COMPONENTS.filter((c) => !cfg[c.key]);
         const skipped = COMPONENTS.filter((c) => cfg[c.key]);
@@ -1133,6 +1675,32 @@ export function PhaseMonitor() {
           <MessageBarBody>{error}</MessageBarBody>
         </MessageBar>
       )}
+
+      {/* Direct Lake Connection Authorization Prompt */}
+      {(() => {
+        const cs = status?.customStatus as Record<string, unknown> | null;
+        const links = cs?.links as Record<string, string> | undefined;
+        const settingsUrl = links?.imagingReportSettings;
+        if (!settingsUrl) return null;
+        return (
+          <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalM, border: `1px solid ${tokens.colorPaletteYellowBorder1}` }}>
+            <MessageBarBody>
+              <Text weight="semibold">Action Required:</Text> Authorize the Direct Lake connection to populate the dashboard with data.
+              <Button
+                as="a"
+                appearance="subtle"
+                href={settingsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                icon={<OpenRegular />}
+                style={{ marginLeft: tokens.spacingHorizontalS }}
+              >
+                Sign in to Fabric Portal
+              </Button>
+            </MessageBarBody>
+          </MessageBar>
+        );
+      })()}
 
       {/* HDS Manual Step Gate */}
       {isWaitingForHds && (
@@ -1240,6 +1808,119 @@ export function PhaseMonitor() {
       </div>
       )}
 
+      {showAfterActionReport && (
+        <Card style={{ marginTop: tokens.spacingVerticalL, padding: tokens.spacingVerticalL, border: `1px solid ${tokens.colorPaletteBlueBorderActive}`, boxShadow: `0 0 16px ${tokens.colorPaletteBlueBorderActive}` }}>
+          <CardHeader
+            header={
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <ShieldRegular style={{ color: tokens.colorPaletteBlueBorderActive, fontSize: "24px" }} />
+                <Subtitle1 style={{ fontWeight: "bold" }}>After Action Security & Resources Report</Subtitle1>
+              </div>
+            }
+            description={
+              <Text size={200} style={{ color: tokens.colorNeutralForeground4 }}>
+                Governance, audit, and credential mappings for the deployed cloud environment
+              </Text>
+            }
+          />
+
+          {afterActionLoading ? (
+            <div style={{ padding: "20px", textAlign: "center" }}>
+              <Text>Compiling live security audit report...</Text>
+            </div>
+          ) : afterActionReport ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
+              <MessageBar intent="success" layout="multiline">
+                <MessageBarBody>
+                  <Text weight="semibold">Service-to-Service Security Architecture:</Text> Services
+                  prefer <Text weight="bold">Managed Identities / Workspace Identities</Text> (no stored secrets) for cross-resource data flows. A 
+                  dedicated <Text weight="bold">Service Principal (SPN)</Text> is utilized strictly for automated MS Fabric Direct Lake 
+                  semantic model data connection authentication.
+                </MessageBarBody>
+              </MessageBar>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px" }}>
+                <Card style={{ backgroundColor: tokens.colorNeutralBackground2 }}>
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Active Governance Group</Text>
+                  <Text size={500} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2 }}>{afterActionReport.adminGroup}</Text>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground4, marginTop: "4px" }}>
+                    Members of this security group have full administrative and secret access.
+                  </Text>
+                </Card>
+                <Card style={{ backgroundColor: tokens.colorNeutralBackground2 }}>
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Secret Key Store</Text>
+                  <Text size={500} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2 }}>{afterActionReport.keyVaultName}</Text>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground4, marginTop: "4px" }}>
+                    Azure Key Vault storing SPN appId/appKey and connection strings securely.
+                  </Text>
+                </Card>
+              </div>
+
+              <div style={{ marginTop: "8px" }}>
+                <Text weight="semibold" block style={{ marginBottom: "8px" }}>Deployed Cloud Resource Identity Matrix</Text>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: `2px solid ${tokens.colorNeutralStroke2}`, paddingBottom: "8px" }}>
+                        <th style={{ padding: "8px" }}>Resource / Item</th>
+                        <th style={{ padding: "8px" }}>Platform</th>
+                        <th style={{ padding: "8px" }}>Type</th>
+                        <th style={{ padding: "8px" }}>Active Identity Strategy</th>
+                        <th style={{ padding: "8px" }}>Secrets/Credentials Stored</th>
+                        <th style={{ padding: "8px" }}>Access Governance & Role</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {afterActionReport.resources.map((res, i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${tokens.colorNeutralStroke1}`, backgroundColor: i % 2 === 0 ? "transparent" : tokens.colorNeutralBackground2 }}>
+                          <td style={{ padding: "8px", fontWeight: "semibold" }}>{res.name}</td>
+                          <td style={{ padding: "8px" }}>
+                            <Badge color={res.category === "Azure" ? "informative" : "brand"}>{res.category}</Badge>
+                          </td>
+                          <td style={{ padding: "8px", color: tokens.colorNeutralForeground3 }}>{res.type}</td>
+                          <td style={{ padding: "8px", color: tokens.colorPaletteBlueForeground2 }}>{res.identity}</td>
+                          <td style={{ padding: "8px" }}>
+                            <code style={{ fontSize: "10px", padding: "2px 4px", backgroundColor: tokens.colorNeutralBackground3, borderRadius: "4px" }}>
+                              {res.credentialDetails}
+                            </code>
+                          </td>
+                          <td style={{ padding: "8px", color: tokens.colorNeutralForeground2, maxWidth: "250px" }}>{res.accessControlDetails}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                {afterActionReport.azurePortalUrl && (
+                  <Button
+                    appearance="subtle"
+                    icon={<OpenRegular />}
+                    onClick={() => window.open(afterActionReport.azurePortalUrl, "_blank")}
+                  >
+                    View in Azure Portal
+                  </Button>
+                )}
+                {afterActionReport.fabricWorkspaceUrl && (
+                  <Button
+                    appearance="subtle"
+                    icon={<OpenRegular />}
+                    onClick={() => window.open(afterActionReport.fabricWorkspaceUrl, "_blank")}
+                  >
+                    Open Fabric Workspace
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: "20px", textAlign: "center" }}>
+              <Text>No security report available for this instance.</Text>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Deployed Resources */}
       {(isComplete || completedCount > 0) && !isMock && (
         <DeployedResourcesPanel
@@ -1266,8 +1947,13 @@ export function PhaseMonitor() {
             }
             setRedeploying(true);
             try {
-              const { instanceId: newId } = await startDeployment(deployConfig);
-              navigate(`/monitor/${newId}`);
+              if (isMock) {
+                const newId = startMockDeployment(deployConfig);
+                navigate(`/monitor/${newId}`);
+              } else {
+                const { instanceId: newId } = await startDeployment(deployConfig);
+                navigate(`/monitor/${newId}`);
+              }
             } catch (e) {
               setError(e instanceof Error ? e.message : "Failed to redeploy");
             } finally {

@@ -1,0 +1,82 @@
+/// Star Rating Detail — per-measure star rating breakdown with weights
+table star_rating_detail
+	lineageTag: a1000001-aaaa-bbbb-cccc-a10000000001
+
+	partition 'star_rating_detail' = entity
+		mode: directLake
+		source
+			entityName: star_rating_detail
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column measure_id
+		dataType: string
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000002
+		sourceColumn: measure_id
+		summarizeBy: none
+
+	column measure_name
+		dataType: string
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000003
+		sourceColumn: measure_name
+		summarizeBy: none
+
+	column total_met
+		dataType: int64
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000004
+		sourceColumn: total_met
+		summarizeBy: none
+
+	column total_denom
+		dataType: int64
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000005
+		sourceColumn: total_denom
+		summarizeBy: none
+
+	column quality_rate
+		dataType: double
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000006
+		sourceColumn: quality_rate
+		summarizeBy: none
+
+	column benchmark_rate
+		dataType: double
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000007
+		sourceColumn: benchmark_rate
+		summarizeBy: none
+
+	column star_rating
+		dataType: int64
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000008
+		sourceColumn: star_rating
+		summarizeBy: none
+
+	column measure_weight
+		dataType: int64
+		lineageTag: a1000001-aaaa-bbbb-cccc-a10000000009
+		sourceColumn: measure_weight
+		summarizeBy: none
+
+	column weighted_score
+		dataType: int64
+		lineageTag: a1000001-aaaa-bbbb-cccc-a1000000000a
+		sourceColumn: weighted_score
+		summarizeBy: none
+
+	column rate_to_next_star
+		dataType: double
+		lineageTag: a1000001-aaaa-bbbb-cccc-a1000000000b
+		sourceColumn: rate_to_next_star
+		summarizeBy: none
+
+	column overall_weighted_star
+		dataType: double
+		lineageTag: a1000001-aaaa-bbbb-cccc-a1000000000c
+		sourceColumn: overall_weighted_star
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: a1000001-aaaa-bbbb-cccc-a1000000000d
+		sourceColumn: load_timestamp
+		summarizeBy: none

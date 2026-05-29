@@ -18,7 +18,7 @@ import {
   ArrowSyncCircleRegular,
 } from "@fluentui/react-icons";
 import { typeBadge } from "../components/TypeBadges";
-import { requestJson, requestVoid } from "../api";
+import { requestJson, requestVoid, listDeployments } from "../api";
 import {
   listMockTeardowns,
   getMockTeardownInstance,
@@ -319,9 +319,62 @@ export function TeardownMonitor() {
   };
 
   const poll = useCallback(() => {
-    const all = listMockTeardowns();
-    const updated = all.map((inst) => getMockTeardownInstance(inst.instanceId) ?? inst);
-    setInstances(updated);
+    // 1. Gather mock teardowns
+    const allMocks = listMockTeardowns();
+    const mockInstances = allMocks.map((inst) => getMockTeardownInstance(inst.instanceId) ?? inst);
+
+    // 2. Fetch real teardowns from the backend
+    listDeployments()
+      .then((realDeployments) => {
+        const realTeardowns = realDeployments.filter((d) => {
+          const cs = d.customStatus;
+          return (
+            (cs?.runType as string) === "teardown" ||
+            d.name === "teardown_orchestrator" ||
+            d.instanceId.toLowerCase().startsWith("teardown")
+          );
+        });
+
+        const mappedReal: TeardownInstance[] = realTeardowns.map((d) => {
+          const cs = d.customStatus || {};
+          const logs = (cs.logs as Array<{ level: "info" | "warn" | "error" | "success"; message: string }>) || [];
+          const outputPhases = (d as any).output?.phases || [];
+
+          // Map backend runtimeStatus to teardown instance status
+          let status: "running" | "completed" | "failed" = "running";
+          if (d.runtimeStatus === "Completed") status = "completed";
+          else if (d.runtimeStatus === "Failed" || d.runtimeStatus === "Terminated") status = "failed";
+
+          // Map candidate type
+          let candidateType: "fabric" | "azure" | "spn" = "azure";
+          if (d.instanceId.toLowerCase().includes("fabric")) candidateType = "fabric";
+          else if (d.instanceId.toLowerCase().includes("spn")) candidateType = "spn";
+
+          return {
+            instanceId: d.instanceId,
+            candidateName: (cs.displayName as string) || d.instanceId,
+            candidateType,
+            status,
+            steps: outputPhases.map((p: any) => ({
+              name: p.phase,
+              status: p.status === "succeeded" ? "deleted" : p.status === "running" ? "running" : p.status === "skipped" ? "skipped" : "pending",
+              logs: logs.map((l) => ({
+                timestamp: d.lastUpdatedTime || new Date().toISOString(),
+                level: l.level || "info",
+                message: l.message
+              }))
+            })),
+            startedAt: d.createdTime || new Date().toISOString()
+          };
+        });
+
+        // Combine both real and mock instances
+        setInstances([...mappedReal, ...mockInstances]);
+      })
+      .catch(() => {
+        // Fall back to just mock instances if API is down
+        setInstances(mockInstances);
+      });
   }, []);
 
   useEffect(() => {

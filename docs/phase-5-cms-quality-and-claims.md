@@ -1,6 +1,6 @@
-# Stage 6 — CMS Quality & Performance
+# Stage 6 — Population Health & Quality
 
-⏱️ **Typical Duration:** ~10 minutes | 🛠️ **Fabric Workloads:** Healthcare Data Solutions, Power BI | 🔑 **Min Roles:** Azure Owner, Fabric Admin
+⏱️ **Typical Duration:** ~15 minutes | 🛠️ **Fabric Workloads:** Healthcare Data Solutions, Power BI, Data Activator | 🔑 **Min Roles:** Azure Owner, Fabric Admin
 
 ---
 
@@ -10,29 +10,55 @@
 
 ---
 
-Stage 6 implements the CMS Quality & Performance standard, adding **claims analytics** and **CMS quality measurement** capabilities to the platform. It materializes Silver FHIR data into a Gold star schema, computes 7 CMS electronic Clinical Quality Measures (eCQMs) and 3 HEDIS medication adherence scores, and deploys a 6-page CMS Quality Scorecard Power BI report.
+Stage 6 implements Population Health & Quality analytics, adding **claims analytics**, **CMS quality measurement**, **Star Rating simulation**, **HCC risk adjustment**, **readmission risk prediction**, and **cost & utilization analytics** to the platform. It materializes Silver FHIR data into a Gold star schema (23 tables), and deploys a 10-page Population Health & Quality Dashboard Power BI report.
 
 ## Architecture
 
 ```
-Silver Lakehouse (FHIR R4)                      Gold Reporting Lakehouse
+Silver Lakehouse (FHIR R4)                      Gold Reporting Lakehouse (23 tables)
 ┌──────────────────────┐                         ┌──────────────────────────┐
 │ ExplanationOfBenefit │─── materialize ─────────▶│ fact_claim               │
 │ Coverage             │─── materialize ─────────▶│ dim_payer                │
 │ Condition            │─── materialize ─────────▶│ dim_diagnosis            │
 │                      │─── materialize ─────────▶│ fact_diagnosis           │
-│ Patient              │                          │                          │
-│ Observation          │─── quality compute ─────▶│ agg_quality_measures     │
-│ MedicationRequest    │                          │ agg_quality_summary      │
-│ Immunization         │─── adherence calc ──────▶│ agg_medication_adherence │
-│ Encounter            │─── gap analysis ────────▶│ care_gaps                │
+│                      │                          │                          │
+│ Patient              │─── quality compute ─────▶│ agg_quality_measures     │
+│ Observation          │                          │ agg_quality_summary      │
+│ MedicationRequest    │─── adherence calc ──────▶│ agg_medication_adherence │
+│ Immunization         │─── gap analysis ────────▶│ care_gaps                │
+│                      │                          │                          │
+│                      │─── star rating ─────────▶│ star_rating_detail       │
+│                      │                          │ star_rating_simulation   │
+│                      │                          │                          │
+│                      │─── HCC risk adj ────────▶│ dim_hcc                  │
+│                      │                          │ fact_patient_hcc         │
+│                      │                          │ agg_risk_scores          │
+│                      │                          │ agg_risk_summary         │
+│                      │                          │ revenue_opportunity      │
+│                      │                          │                          │
+│ Encounter            │─── readmission ML ──────▶│ readmission_risk_scores  │
+│                      │                          │ readmission_risk_summary │
+│                      │                          │ readmission_model_perf   │
+│                      │                          │                          │
+│                      │─── utilization ─────────▶│ agg_utilization_summary  │
+│                      │                          │ agg_utilization_by_payer │
+│                      │                          │ agg_cost_by_category     │
+│                      │                          │ agg_high_cost_claimants  │
+│                      │                          │ agg_condition_pmpm       │
 └──────────────────────┘                         └──────────┬───────────────┘
                                                             │
                                                             ▼
                                                  ┌──────────────────────┐
-                                                 │ CMS Quality Scorecard│
+                                                 │ Pop Health & Quality │
                                                  │ (Direct Lake Report) │
-                                                 │  6 pages, 14 DAX     │
+                                                 │  10 pages, 58 DAX   │
+                                                 └─────────┬────────────┘
+                                                           │
+                                                           ▼
+                                                 ┌──────────────────────┐
+                                                 │ Data Activator       │
+                                                 │ ReadmissionRiskAlert │
+                                                 │ (daily email digest) │
                                                  └──────────────────────┘
 ```
 
@@ -41,8 +67,9 @@ Silver Lakehouse (FHIR R4)                      Gold Reporting Lakehouse
 1. **Synthea** generates patients with `Claim`, `ExplanationOfBenefit`, and `Coverage` FHIR resources (enabled via `synthea.properties`)
 2. **FHIR Loader** uploads all resources to FHIR Service (no filtering by type)
 3. **FHIR $export** → ADLS Gen2 → Bronze Lakehouse → Silver Lakehouse (standard HDS pipeline)
-4. **Materialization notebook** ([`phase-5/materialize_claims_quality.py`](../phase-5/materialize_claims_quality.py)) transforms Silver → Gold star schema
-5. **CMS Quality Scorecard** report binds to Gold Lakehouse via Direct Lake
+4. **Materialization notebook** ([`phase-5/materialize_claims_quality.py`](../phase-5/materialize_claims_quality.py)) transforms Silver → Gold star schema (Steps 1-11)
+5. **Population Health & Quality Dashboard** report binds to Gold Lakehouse via Direct Lake
+6. **Data Activator** triggers daily email alert for high-risk readmission patients
 
 ## CMS Quality Measures Computed
 
@@ -66,18 +93,95 @@ Silver Lakehouse (FHIR R4)                      Gold Reporting Lakehouse
 
 PDC (Proportion of Days Covered) ≥ 80% = **Adherent**; < 80% = **Non-Adherent**
 
+## Star Rating Simulator (Step 8)
+
+Computes weighted CMS Star Ratings using 2025 cut points:
+
+| Star | Performance Range | Weight |
+|------|------------------|--------|
+| ⭐⭐⭐⭐⭐ | ≥ 86% | — |
+| ⭐⭐⭐⭐ | 75–86% | — |
+| ⭐⭐⭐ | 64–75% | — |
+| ⭐⭐ | 52–64% | — |
+| ⭐ | < 52% | — |
+
+Measures are weighted: **1×** (process measures like BMI Screening) or **3×** (intermediate outcomes like Diabetes HbA1c, PDC adherence). The simulator shows what-if scenarios: "if we close N gaps, what's the new star rating?"
+
+## HCC Risk Adjustment (Step 9)
+
+Implements CMS-HCC V28 model with:
+- **~36 condition mappings** (SNOMED + ICD-10 → HCC codes) across Diabetes, Heart Failure, COPD, CKD, Stroke, Cancer, and more
+- **Hierarchy rules** — keeps only the most severe HCC per disease group per patient
+- **Demographic RAF coefficients** (22 age/sex bands, Community Non-Dual)
+- **Revenue-at-risk** calculation ($1,000 PMPM county benchmark)
+- **Revenue opportunity** — patients with coding gaps (≥2 HCCs but RAF < 1.5)
+
+## Readmission Risk ML Model (Step 10)
+
+Scikit-learn LogisticRegression trained on 12 clinical features:
+
+| Feature | Source |
+|---------|--------|
+| Age, Sex | Patient |
+| Length of Stay | Encounter |
+| Comorbidity Count | Condition |
+| Medication Count | MedicationRequest |
+| Prior Admits (12mo) | Encounter |
+| Prior ED Visits (6mo) | Encounter |
+| Diabetes flag | Condition (SNOMED) |
+| CHF flag | Condition (SNOMED) |
+| COPD flag | Condition (SNOMED) |
+| Medicare/Medicaid flags | Coverage |
+
+Risk tiers: **Low** (<15%), **Medium** (15-30%), **High** (≥30%). Model performance metrics (AUC, accuracy, precision, recall) and feature coefficients are stored for transparency.
+
+> [!IMPORTANT]
+> **Data Activator Alert:** A daily email digest at 8:00 AM ET is sent to the configured `AlertEmail` address listing all patients flagged as HIGH readmission risk (≥30% probability).
+
+## Cost & Utilization Analytics (Step 11)
+
+Standard utilization metrics with benchmark comparisons:
+
+| Metric | Benchmark |
+|--------|-----------|
+| PMPM (Per Member Per Month) | $950 |
+| IP Admits / 1K | 300 |
+| ED Visits / 1K | 500 |
+| ALOS (Average Length of Stay) | 5.0 days |
+| Bed Days / 1K | 1,500 |
+
+Additional analytics:
+- **High-cost claimants** — top 5% by total paid with condition profiles and stop-loss flags
+- **Condition-specific PMPM** — cost per member for 7 chronic conditions (Diabetes, HF, COPD, Hypertension, CKD, Asthma, Depression)
+- **Cost by service category** — Inpatient / Emergency / Outpatient / Pharmacy / Professional
+
 ## Gold Lakehouse Tables
 
-| Table | Type | Row Estimate | Description |
-|-------|------|-------------|-------------|
-| `dim_payer` | Dimension | ~8 | Medicare, Medicaid, Commercial, Uninsured |
-| `dim_diagnosis` | Dimension | ~1,250 | ICD-10 / SNOMED codes with chronic flag |
-| `fact_claim` | Fact | ~48,000 | Claims from ExplanationOfBenefit with amounts |
-| `fact_diagnosis` | Fact | ~125,000 | Encounter-level diagnoses |
-| `agg_quality_measures` | Aggregate | ~35,000 | Patient × measure results |
-| `agg_quality_summary` | Aggregate | 7 | Measure-level rates vs benchmarks |
-| `agg_medication_adherence` | Aggregate | ~6,200 | PDC scores by drug class |
-| `care_gaps` | Aggregate | ~12,400 | Open gaps with recommended actions |
+| Table | Type | Step | Description |
+|-------|------|------|-------------|
+| `dim_payer` | Dimension | 1 | Medicare, Medicaid, Commercial, Uninsured |
+| `dim_diagnosis` | Dimension | 2 | ICD-10 / SNOMED codes with chronic flag |
+| `fact_claim` | Fact | 3 | Claims from ExplanationOfBenefit with amounts |
+| `fact_diagnosis` | Fact | 4 | Encounter-level diagnoses |
+| `agg_quality_measures` | Aggregate | 5 | Patient × measure results |
+| `agg_quality_summary` | Aggregate | 6 | Measure-level rates vs benchmarks |
+| `agg_medication_adherence` | Aggregate | 6 | PDC scores by drug class |
+| `care_gaps` | Aggregate | 7 | Open gaps with recommended actions |
+| `star_rating_detail` | Aggregate | 8 | Per-measure star rating with weights |
+| `star_rating_simulation` | Aggregate | 8 | What-if gap closure scenarios |
+| `dim_hcc` | Dimension | 9 | HCC reference (code, name, coefficient) |
+| `fact_patient_hcc` | Fact | 9 | Patient-level HCC assignments |
+| `agg_risk_scores` | Aggregate | 9 | Per-patient RAF scores with risk tier |
+| `agg_risk_summary` | Aggregate | 9 | RAF summary by payer × risk tier |
+| `revenue_opportunity` | Aggregate | 9 | Patients with suspected coding gaps |
+| `readmission_risk_scores` | Fact | 10 | Scored encounters with risk probability |
+| `readmission_risk_summary` | Aggregate | 10 | Summary by risk tier × payer |
+| `readmission_model_performance` | Aggregate | 10 | Model metrics + feature coefficients |
+| `agg_utilization_summary` | Aggregate | 11 | Monthly utilization with benchmarks |
+| `agg_utilization_by_payer` | Aggregate | 11 | Utilization metrics by payer |
+| `agg_cost_by_category` | Aggregate | 11 | Cost by service category |
+| `agg_high_cost_claimants` | Aggregate | 11 | Top 5% patients by cost |
+| `agg_condition_pmpm` | Aggregate | 11 | Condition-specific PMPM |
 
 ## Power BI Report Pages
 
@@ -89,6 +193,10 @@ PDC (Proportion of Days Covered) ≥ 80% = **Adherent**; < 80% = **Non-Adherent*
 | 4 | Medication Adherence | PDC gauges (3 classes), adherent vs non-adherent |
 | 5 | Care Gap Closure | Priority list, gap status by measure |
 | 6 | Payer Performance | Quality rate by payer, denial vs quality scatter |
+| 7 | Star Rating Simulator | Overall star KPI, per-measure stars, what-if slider |
+| 8 | Risk Adjustment & RAF | RAF distribution, risk tier donut, revenue-at-risk |
+| 9 | Readmission Risk | Risk tier funnel, feature importance, model AUC card |
+| 10 | Cost & Utilization | PMPM trend, IP/ED/1K KPIs, high-cost claimant table |
 
 ## Payer-Specific Quality Stratification
 
@@ -103,13 +211,10 @@ Every patient is mapped to a primary payer through the latest active `Coverage` 
 | Collection efficiency | `Collection Rate (Medicare)`, `Collection Rate (Medicaid)`, `Collection Rate (Commercial)` |
 | Denial risk | `Denial Rate (Medicare)`, `Denial Rate (Medicaid)`, `Denial Rate (Commercial)` |
 | Population size | `Patients Measured (Medicare)`, `Patients Measured (Medicaid)`, `Patients Measured (Commercial)` |
-
-### Suggested visuals for **Payer Performance** (page 6)
-1. Clustered column: `Quality Rate (Medicare/Medicaid/Commercial)` × measure_id
-2. Scatter: `Denial Rate` vs `Quality Rate` per payer (bubble size = `Total Paid`)
-3. Slicer: `dim_payer[payer_category]` with cross-page filtering enabled
-4. KPI cards: `Total Paid` per payer with YoY trend
-5. Matrix: rows = measure_name, columns = payer_category, values = quality_rate (with conditional formatting against benchmark)
+| Star Rating | `Overall Star Rating`, `Weighted Score`, `Max Possible Score`, `Star Improvement Opportunity` |
+| HCC Risk | `Average RAF Score`, `Average RAF (Medicare/Medicaid/Commercial)`, `High Risk Members`, `Total Revenue at Risk`, `Coding Gap Count`, `Total Annual Revenue`, `Average HCC Count` |
+| Readmission | `High Risk Encounters`, `Avg Readmission Risk`, `Actual Readmission Rate`, `Model AUC`, `Model Accuracy` |
+| Cost & Utilization | `PMPM`, `PMPM (Medicare/Medicaid/Commercial)`, `IP per 1K`, `ED per 1K`, `ALOS`, `Bed Days per 1K`, `High Cost Member Count`, `High Cost Total Paid`, `PMPM vs Benchmark` |
 
 ## Ontology Extensions
 
@@ -126,7 +231,7 @@ Phase 5 adds 5 entities to the `ClinicalDeviceOntology` (bringing total to 14):
 ## Deployment
 
 ### Via Orchestrator UI
-Toggle **Phase 5: CMS Quality & Claims** → "CMS Quality Scorecard" checkbox.
+Toggle **Phase 5: Population Health & Quality** → "Population Health & Quality Dashboard" checkbox.
 
 ### Via CLI
 ```powershell
@@ -138,6 +243,9 @@ Toggle **Phase 5: CMS Quality & Claims** → "CMS Quality Scorecard" checkbox.
 
 # Skip Phase 5
 .\Deploy-All.ps1 ... -SkipQualityMeasures
+
+# With Readmission Risk alerting
+.\Deploy-All.ps1 ... -AlertEmail "care-team@contoso.com"
 ```
 
 ## Inspiration
@@ -153,12 +261,17 @@ Ensure all of the following components are verified before finalizing your deplo
 > [!IMPORTANT]
 > **Stage 6 Verification Checkpoints:**
 > - [ ] **Claims Data Loaded:** Confirm Silver Lakehouse contains raw claims tables, such as `ExplanationOfBenefit` and `Coverage`.
-> - [ ] **Star Schema Materialized:** Spark notebook ran successfully and populated the 8 Gold star schema reporting tables inside the Gold lakehouse.
+> - [ ] **Star Schema Materialized:** Spark notebook ran successfully and populated the 23 Gold star schema reporting tables inside the Gold lakehouse.
 > - [ ] **Data Volume Check:** Run SQL queries to ensure `dbo.fact_claim` and chronic diagnoses in `dbo.dim_diagnosis` are populated.
 > - [ ] **Quality Metrics computed:** Confirm measure aggregation tables like `dbo.agg_quality_summary` show results for eCQMs (CMS122, CMS165, etc.).
 > - [ ] **PDC Medication Adherence calculated:** Verification that `dbo.agg_medication_adherence` contains computed values for statins, diabetes meds, and RAS antagonists.
-> - [ ] **CMS Quality Scorecard Live:** Power BI scorecard report is successfully deployed, using Direct Lake connections to Gold tables.
+> - [ ] **Star Ratings computed:** Confirm `dbo.star_rating_detail` shows per-measure star ratings and overall weighted star.
+> - [ ] **HCC Risk Adjustment:** Confirm `dbo.agg_risk_scores` contains patient-level RAF scores with risk tier assignments.
+> - [ ] **Readmission Risk Model:** Confirm `dbo.readmission_risk_scores` shows scored encounters with risk tiers and `dbo.readmission_model_performance` shows AUC > 0.5.
+> - [ ] **Cost & Utilization:** Confirm `dbo.agg_utilization_summary` shows PMPM and utilization metrics with benchmark comparisons.
+> - [ ] **Population Health Dashboard Live:** Power BI 10-page report is successfully deployed, using Direct Lake connections to Gold tables.
 > - [ ] **Payer Stratification Active:** Confirm Payer performance visuals compute stratified quality metrics correctly across Commercial, Medicare, and Medicaid.
+> - [ ] **Readmission Alert Active:** Confirm Data Activator ReadmissionRiskAlert reflex sends daily email digest to configured alert email.
 > - [ ] **Extended Ontology Online:** The Fabric IQ `ClinicalDeviceOntology` is extended to 14 total entities (including Claims, Payers, and Diagnoses) with successful bindings to your Data Agents.
 
 ---

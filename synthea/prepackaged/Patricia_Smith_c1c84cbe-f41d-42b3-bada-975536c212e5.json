@@ -1,0 +1,177 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:c1c84cbe-f41d-42b3-bada-975536c212e5",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "c1c84cbe-f41d-42b3-bada-975536c212e5",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": [
+              "Patricia"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1951-11-23",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "6009 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e6fa980a-0286-4924-934f-e662020e583a",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "e6fa980a-0286-4924-934f-e662020e583a",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:c1c84cbe-f41d-42b3-bada-975536c212e5"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d928af20-a7c1-4588-9be1-40124ef3b480",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "d928af20-a7c1-4588-9be1-40124ef3b480",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "233604007",
+              "display": "Pneumonia"
+            }
+          ],
+          "text": "Pneumonia"
+        },
+        "subject": {
+          "reference": "urn:uuid:c1c84cbe-f41d-42b3-bada-975536c212e5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e6fa980a-0286-4924-934f-e662020e583a"
+        },
+        "recordedDate": "2026-05-28T15:24:32Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:90fb35aa-ae23-49eb-8155-688cdae2df65",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "90fb35aa-ae23-49eb-8155-688cdae2df65",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:c1c84cbe-f41d-42b3-bada-975536c212e5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e6fa980a-0286-4924-934f-e662020e583a"
+        },
+        "effectiveDateTime": "2026-05-28T15:24:32Z",
+        "valueQuantity": {
+          "value": 98.3,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    }
+  ]
+}

@@ -3,7 +3,10 @@ param (
     [string]$ResourceGroupName = "rg-medtech",
     [string]$Location = "eastus",
     [string]$AdminSecurityGroup = "sg-azure-admins",
-    [hashtable]$Tags = @{}
+    [hashtable]$Tags = @{},
+    [string]$SpnClientId = "",
+    [string]$SpnClientSecret = "",
+    [string]$SpnTenantId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -352,65 +355,89 @@ CMD ["python", "-u", "emulator.py"]
 "@
 Set-Content -Path "Dockerfile" -Value $dockerfile
 
+# Helper to check if a deployment succeeded and retrieve its outputs
+function Get-ExistingDeploymentOutputs {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$DeploymentName
+    )
+    $showResult = az deployment group show --resource-group $ResourceGroup --name $DeploymentName --query "{state:properties.provisioningState, outputs:properties.outputs}" -o json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $showResult) {
+        $dep = $showResult | ConvertFrom-Json
+        if ($dep.state -eq "Succeeded") {
+            return $dep.outputs
+        }
+    }
+    return $null
+}
+
 Write-Host "--- STEP 2: DEPLOYING INFRASTRUCTURE ---" -ForegroundColor Cyan
 az group create --name $ResourceGroupName --location $Location | Out-Null
 
-# Check for and purge any soft-deleted Key Vaults with matching name pattern
-$deletedVaults = az keyvault list-deleted --query "[?starts_with(name, 'masimo')].name" -o tsv 2>$null
-foreach ($vault in $deletedVaults) {
-    if ($vault) {
-        Write-Host "Purging soft-deleted Key Vault: $vault" -ForegroundColor Yellow
-        az keyvault purge --name $vault --no-wait 2>$null
-        Start-Sleep -Seconds 5
+$existingInfraOutputs = Get-ExistingDeploymentOutputs -ResourceGroup $ResourceGroupName -DeploymentName "infra"
+$infra = $null
+
+if ($existingInfraOutputs) {
+    Write-Host "  [Bypass] Infrastructure deployment 'infra' is already Succeeded. Skipping Bicep execution." -ForegroundColor Green
+    $infra = $existingInfraOutputs | ConvertTo-Json -Depth 10
+} else {
+    # Check for and purge any soft-deleted Key Vaults with matching name pattern
+    $deletedVaults = az keyvault list-deleted --query "[?starts_with(name, 'masimo')].name" -o tsv 2>$null
+    foreach ($vault in $deletedVaults) {
+        if ($vault) {
+            Write-Host "Purging soft-deleted Key Vault: $vault" -ForegroundColor Yellow
+            az keyvault purge --name $vault --no-wait 2>$null
+            Start-Sleep -Seconds 5
+        }
     }
-}
 
-# Get admin group object ID if specified
-$adminGroupObjectId = ""
-if ($AdminSecurityGroup) {
-    $adminGroupObjectId = az ad group show --group $AdminSecurityGroup --query id -o tsv 2>$null
-    if ($adminGroupObjectId) {
-        Write-Host "Admin security group found: $AdminSecurityGroup ($adminGroupObjectId)"
-    } else {
-        Write-Host "WARNING: Admin security group '$AdminSecurityGroup' not found" -ForegroundColor Yellow
+    # Get admin group object ID if specified
+    $adminGroupObjectId = ""
+    if ($AdminSecurityGroup) {
+        $adminGroupObjectId = az ad group show --group $AdminSecurityGroup --query id -o tsv 2>$null
+        if ($adminGroupObjectId) {
+            Write-Host "Admin security group found: $AdminSecurityGroup ($adminGroupObjectId)"
+        } else {
+            Write-Host "WARNING: Admin security group '$AdminSecurityGroup' not found" -ForegroundColor Yellow
+        }
     }
-}
 
-$infra = Invoke-ArmGroupDeployment `
-    -ResourceGroup $ResourceGroupName `
-    -DeploymentName "infra" `
-    -TemplateFile "bicep/infra.bicep" `
-    -ParameterArgs @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef) `
-    -Query "properties.outputs" `
-    -OnlyShowErrors
+    $infra = Invoke-ArmGroupDeployment `
+        -ResourceGroup $ResourceGroupName `
+        -DeploymentName "infra" `
+        -TemplateFile "bicep/infra.bicep" `
+        -ParameterArgs @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef) `
+        -Query "properties.outputs" `
+        -OnlyShowErrors
 
-if ($LASTEXITCODE -ne 0) {
-    $infraStr = $infra -join "`n"
-    if ($infraStr -match 'DeploymentActive') {
-        Write-Host "  A previous deployment is still active. Waiting 60s and retrying..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 60
-        $infra = Invoke-ArmGroupDeployment `
-            -ResourceGroup $ResourceGroupName `
-            -DeploymentName "infra" `
-            -TemplateFile "bicep/infra.bicep" `
-            -ParameterArgs @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef) `
-            -Query "properties.outputs" `
-            -OnlyShowErrors
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Infrastructure deployment failed after retry." -ForegroundColor Red
+    if ($LASTEXITCODE -ne 0) {
+        $infraStr = $infra -join "`n"
+        if ($infraStr -match 'DeploymentActive') {
+            Write-Host "  A previous deployment is still active. Waiting 60s and retrying..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 60
+            $infra = Invoke-ArmGroupDeployment `
+                -ResourceGroup $ResourceGroupName `
+                -DeploymentName "infra" `
+                -TemplateFile "bicep/infra.bicep" `
+                -ParameterArgs @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef) `
+                -Query "properties.outputs" `
+                -OnlyShowErrors
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "ERROR: Infrastructure deployment failed after retry." -ForegroundColor Red
+                Write-Host "  $infra" -ForegroundColor Red
+                Write-Host "" -ForegroundColor Red
+                Write-Host "  To retry, wait for the active deployment to finish, then run:" -ForegroundColor Yellow
+                Write-Host "    .\Deploy-All.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location' ..." -ForegroundColor Cyan
+                exit 1
+            }
+        } else {
+            Write-Host "ERROR: Infrastructure deployment failed." -ForegroundColor Red
             Write-Host "  $infra" -ForegroundColor Red
             Write-Host "" -ForegroundColor Red
-            Write-Host "  To retry, wait for the active deployment to finish, then run:" -ForegroundColor Yellow
+            Write-Host "  To retry:" -ForegroundColor Yellow
             Write-Host "    .\Deploy-All.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location' ..." -ForegroundColor Cyan
             exit 1
         }
-    } else {
-        Write-Host "ERROR: Infrastructure deployment failed." -ForegroundColor Red
-        Write-Host "  $infra" -ForegroundColor Red
-        Write-Host "" -ForegroundColor Red
-        Write-Host "  To retry:" -ForegroundColor Yellow
-        Write-Host "    .\Deploy-All.ps1 -ResourceGroupName '$ResourceGroupName' -Location '$Location' ..." -ForegroundColor Cyan
-        exit 1
     }
 }
 
@@ -421,97 +448,117 @@ $ehName = $infraJson.eventHubName.value
 $ehNamespace = $infraJson.eventHubNamespace.value
 $kvName = $infraJson.keyVaultName.value
 
+# Store SPN secrets in Key Vault if provided
+if ($SpnClientId -and $SpnClientSecret) {
+    Write-Host "  [Key Vault] Storing SPN credentials securely in '$kvName'..." -ForegroundColor White
+    az keyvault secret set --vault-name $kvName --name "SpnClientId" --value $SpnClientId --only-show-errors | Out-Null
+    az keyvault secret set --vault-name $kvName --name "SpnClientSecret" --value $SpnClientSecret --only-show-errors | Out-Null
+    if ($SpnTenantId) {
+        az keyvault secret set --vault-name $kvName --name "SpnTenantId" --value $SpnTenantId --only-show-errors | Out-Null
+    }
+    Write-Host "  ✓ SPN credentials saved as Key Vault secrets" -ForegroundColor Green
+}
+
 if (-not $acrName) {
     Write-Host "ERROR: Infrastructure deployment failed - ACR name is empty" -ForegroundColor Red
     exit 1
 }
 
 Write-Host "Infrastructure ready. Event Hub Namespace: $ehNamespace" -ForegroundColor Green
-if ($adminGroupObjectId) {
-    Write-Host "RBAC roles assigned to $AdminSecurityGroup via Bicep deployment" -ForegroundColor Green
+
+$existingEmulator = az deployment group show --resource-group $ResourceGroupName --name "emulator" --query "properties.provisioningState" -o tsv 2>$null
+$skipEmulatorAndBuild = $false
+if ($LASTEXITCODE -eq 0 -and $existingEmulator -eq "Succeeded" -and $existingInfraOutputs) {
+    Write-Host "  [Bypass] Emulator deployment 'emulator' is already Succeeded. Skipping ACR build and emulator deployment." -ForegroundColor Green
+    $skipEmulatorAndBuild = $true
 }
 
-Write-Host "--- STEP 3: BUILDING IMAGE IN AZURE ---" -ForegroundColor Cyan
-Write-Host "  ⏳ This is a long running operation (2-5 min). Building container image in ACR..." -ForegroundColor Yellow
-# Force UTF-8 to avoid charmap encoding errors on Windows (az CLI uses colorama → cp1252 crash)
-$env:PYTHONUTF8 = "1"
-$env:PYTHONIOENCODING = "utf-8"
-$env:PYTHONLEGACYWINDOWSSTDIO = "0"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+if (-not $skipEmulatorAndBuild) {
+    Write-Host "--- STEP 3: BUILDING IMAGE IN AZURE ---" -ForegroundColor Cyan
+    Write-Host "  ⏳ This is a long running operation (2-5 min). Building container image in ACR..." -ForegroundColor Yellow
+    # Force UTF-8 to avoid charmap encoding errors on Windows (az CLI uses colorama → cp1252 crash)
+    $env:PYTHONUTF8 = "1"
+    $env:PYTHONIOENCODING = "utf-8"
+    $env:PYTHONLEGACYWINDOWSSTDIO = "0"
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Build from a clean staging directory containing ONLY the files the Dockerfile needs.
-# `az acr build` ignores `.dockerignore` reliably on Windows, which historically caused
-# 40+ minute hangs uploading the entire 1+ GB repo. Staging keeps the upload to ~5 KB.
-$emulatorStaging = Join-Path $env:TEMP ("masimo-emulator-build-" + [Guid]::NewGuid().ToString())
-New-Item -ItemType Directory -Path $emulatorStaging -Force | Out-Null
-Copy-Item -Path (Join-Path $RepoRoot "Dockerfile")   -Destination $emulatorStaging -Force
-Copy-Item -Path (Join-Path $RepoRoot "emulator.py")  -Destination $emulatorStaging -Force
-Write-Host "  Build context: $emulatorStaging (Dockerfile + emulator.py only)" -ForegroundColor DarkGray
+    # Build from a clean staging directory containing ONLY the files the Dockerfile needs.
+    # `az acr build` ignores `.dockerignore` reliably on Windows, which historically caused
+    # 40+ minute hangs uploading the entire 1+ GB repo. Staging keeps the upload to ~5 KB.
+    $emulatorStaging = Join-Path $env:TEMP ("masimo-emulator-build-" + [Guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Path $emulatorStaging -Force | Out-Null
+    Copy-Item -Path (Join-Path $RepoRoot "Dockerfile")   -Destination $emulatorStaging -Force
+    Copy-Item -Path (Join-Path $RepoRoot "emulator.py")  -Destination $emulatorStaging -Force
+    Write-Host "  Build context: $emulatorStaging (Dockerfile + emulator.py only)" -ForegroundColor DarkGray
 
-$acrBuildErrLog = Join-Path $env:TEMP ("acr-build-" + [Guid]::NewGuid().ToString() + ".log")
-Push-Location $emulatorStaging
-try {
-    $acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --no-logs 2>$acrBuildErrLog
-    $acrBuildExitCode = $LASTEXITCODE
-} finally {
-    Pop-Location
-    Remove-Item -Recurse -Force $emulatorStaging -ErrorAction SilentlyContinue
-}
-$acrBuildOutput | ForEach-Object {
-    $line = $_ -replace '[^\x20-\x7E]', ''
-    if ($line.Trim()) { Write-Host "  $line" }
-}
-if ($acrBuildExitCode -ne 0) {
-    Write-Host "  ⚠ ACR build may have failed (exit code $acrBuildExitCode) — checking if image exists..." -ForegroundColor Yellow
+    $acrBuildErrLog = Join-Path $env:TEMP ("acr-build-" + [Guid]::NewGuid().ToString() + ".log")
+    Push-Location $emulatorStaging
+    try {
+        $acrBuildOutput = az acr build --registry $acrName --image "masimo-emulator:v1" . --no-logs 2>$acrBuildErrLog
+        $acrBuildExitCode = $LASTEXITCODE
+    } finally {
+        Pop-Location
+        Remove-Item -Recurse -Force $emulatorStaging -ErrorAction SilentlyContinue
+    }
+    $acrBuildOutput | ForEach-Object {
+        $line = $_ -replace '[^\x20-\x7E]', ''
+        if ($line.Trim()) { Write-Host "  $line" }
+    }
+    if ($acrBuildExitCode -ne 0) {
+        Write-Host "  ⚠ ACR build may have failed (exit code $acrBuildExitCode) — checking if image exists..." -ForegroundColor Yellow
 
-    if (Test-Path $acrBuildErrLog) {
-        $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 20
-        if ($stderrTail) {
-            Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
-            $stderrTail | ForEach-Object {
-                $errLine = $_ -replace '[^\x20-\x7E]', ''
-                if ($errLine.Trim()) { Write-Host "    $errLine" -ForegroundColor Yellow }
+        if (Test-Path $acrBuildErrLog) {
+            $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 20
+            if ($stderrTail) {
+                Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
+                $stderrTail | ForEach-Object {
+                    $errLine = $_ -replace '[^\x20-\x7E]', ''
+                    if ($errLine.Trim()) { Write-Host "    $errLine" -ForegroundColor Yellow }
+                }
             }
+        }
+
+        $imageExists = $null
+        for ($attempt = 1; $attempt -le 6; $attempt++) {
+            $imageExists = az acr repository show-tags --name $acrName --repository "masimo-emulator" --query "[?contains(@, 'v1')]" -o tsv 2>$null
+            if ($imageExists) { break }
+            Write-Host "  Waiting for ACR tag visibility (attempt $attempt/6)..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+        }
+
+        if ($imageExists) {
+            Write-Host "  ✓ Image masimo-emulator:v1 exists in ACR (build succeeded despite log error)" -ForegroundColor Green
+        } else {
+            throw "ACR build failed and image not found. Check Azure portal for build logs."
         }
     }
 
-    $imageExists = $null
-    for ($attempt = 1; $attempt -le 6; $attempt++) {
-        $imageExists = az acr repository show-tags --name $acrName --repository "masimo-emulator" --query "[?contains(@, 'v1')]" -o tsv 2>$null
-        if ($imageExists) { break }
-        Write-Host "  Waiting for ACR tag visibility (attempt $attempt/6)..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 10
+    if (Test-Path $acrBuildErrLog) {
+        Remove-Item $acrBuildErrLog -ErrorAction SilentlyContinue
     }
 
-    if ($imageExists) {
-        Write-Host "  ✓ Image masimo-emulator:v1 exists in ACR (build succeeded despite log error)" -ForegroundColor Green
-    } else {
-        throw "ACR build failed and image not found. Check Azure portal for build logs."
+    Write-Host "--- STEP 4: DEPLOYING SYSTEM-IDENTITY EMULATOR ---" -ForegroundColor Cyan
+    $fullImageTag = "$acrLoginServer/masimo-emulator:v1"
+
+    $null = Invoke-ArmGroupDeployment `
+        -ResourceGroup $ResourceGroupName `
+        -DeploymentName "emulator" `
+        -TemplateFile "bicep/emulator.bicep" `
+        -ParameterArgs @(
+            "--parameters", "acrName=$acrName",
+            "imageName=$fullImageTag",
+            "eventHubName=$ehName",
+            "eventHubNamespace=$ehNamespace",
+            "--parameters", $tagsParamRef
+        )
+
+    if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Emulator deployment failed." -ForegroundColor Red
+            exit 1
     }
-}
-
-if (Test-Path $acrBuildErrLog) {
-    Remove-Item $acrBuildErrLog -ErrorAction SilentlyContinue
-}
-
-Write-Host "--- STEP 4: DEPLOYING SYSTEM-IDENTITY EMULATOR ---" -ForegroundColor Cyan
-$fullImageTag = "$acrLoginServer/masimo-emulator:v1"
-
-$null = Invoke-ArmGroupDeployment `
-    -ResourceGroup $ResourceGroupName `
-    -DeploymentName "emulator" `
-    -TemplateFile "bicep/emulator.bicep" `
-    -ParameterArgs @(
-        "--parameters", "acrName=$acrName",
-        "imageName=$fullImageTag",
-        "eventHubName=$ehName",
-        "eventHubNamespace=$ehNamespace",
-        "--parameters", $tagsParamRef
-    )
-
-if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Emulator deployment failed." -ForegroundColor Red
-        exit 1
+} else {
+    Write-Host "--- STEP 3: BUILDING IMAGE IN AZURE (BYPASSED) ---" -ForegroundColor Cyan
+    Write-Host "--- STEP 4: DEPLOYING SYSTEM-IDENTITY EMULATOR (BYPASSED) ---" -ForegroundColor Cyan
 }
 
 Write-Host "--- SUCCESS ---" -ForegroundColor Green

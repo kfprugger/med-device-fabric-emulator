@@ -841,11 +841,12 @@ $step8Timer.Stop()
 $shortcutStatus = if ($existingShortcut) { 'EXISTS' } else { 'OK' }
 Record-Step -Name 'Create Lakehouse Shortcut' -Status $shortcutStatus -Seconds $step8Timer.Elapsed.TotalSeconds
 
-# ── Step 9: Run Imaging pipeline, then Clinical pipeline, then OMOP ──
-# Sequence: Imaging (wait) → Clinical (wait) → OMOP (fire-and-forget)
-# Each must complete before the next starts — HDS pipelines cannot run in parallel.
+# ── Step 9: Run Imaging and Clinical pipelines concurrently, then OMOP ──
+# Both pipelines operate on independent sets of data and can run in parallel, 
+# cutting total execution time in half. OMOP must run after both complete successfully.
 $step9Timer = [System.Diagnostics.Stopwatch]::StartNew()
-Write-Log '─── Step 9: Running Imaging with Clinical Foundation pipeline ───' 'INFO'
+$step9bTimer = [System.Diagnostics.Stopwatch]::StartNew()
+Write-Log '─── Step 9: Running Imaging and Clinical pipelines concurrently ───' 'INFO'
 
 # Refresh token
 $fabricToken = Get-FabricApiAccessToken
@@ -861,47 +862,75 @@ if ($pipelineResult.Response.PSObject.Properties['value']) {
     $pipelines = @($pipelineResult.Response.value)
 }
 
-# Find imaging pipeline (includes clinical data foundation)
+# Find pipelines
 $imagingPipeline = $pipelines | Where-Object { $_.displayName -eq $ImagingPipelineName } | Select-Object -First 1
-if (-not $imagingPipeline) {
-    Write-Log "  Imaging pipeline '$ImagingPipelineName' not found." 'ERROR'
-    Write-Log "  Available pipelines:" 'INFO'
-    foreach ($p in $pipelines) { Write-Log "    - $($p.displayName) ($($p.id))" 'INFO' }
-    $step9Timer.Stop()
-    Record-Step -Name 'Imaging Pipeline' -Status 'NOT FOUND' -Seconds $step9Timer.Elapsed.TotalSeconds
-    throw "Pipeline '$ImagingPipelineName' does not exist in workspace '$FabricWorkspaceName'."
-}
+$clinicalPipeline = $pipelines | Where-Object { $_.displayName -eq $ClinicalPipelineName } | Select-Object -First 1
 
-$imagingId = $imagingPipeline.id
-Write-Log "  Found '$ImagingPipelineName' (ID: $imagingId)" 'INFO'
+$imgInvoked = $false
+$clinInvoked = $false
 
-$imgRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/Pipeline/instances"
-Write-Log "  Invoking imaging pipeline run..." 'INFO'
-
-try {
-    Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
-    Write-Log "  Imaging pipeline invoked successfully (202 Accepted)." 'INFO'
-    $imgInvoked = $true
-} catch {
-    $errMsg = $_.Exception.Message
-    if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-        Write-Log "  Imaging pipeline is already running or recently invoked." 'WARN'
+if ($imagingPipeline) {
+    $imagingId = $imagingPipeline.id
+    Write-Log "  Found '$ImagingPipelineName' (ID: $imagingId)" 'INFO'
+    $imgRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/Pipeline/instances"
+    Write-Log "  Invoking imaging pipeline run..." 'INFO'
+    try {
+        Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
+        Write-Log "  ✓ Imaging pipeline invoked successfully." 'INFO'
         $imgInvoked = $true
-    } else {
-        $step9Timer.Stop()
-        Record-Step -Name 'Imaging Pipeline' -Status 'FAILED' -Seconds $step9Timer.Elapsed.TotalSeconds
-        throw
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+            Write-Log "  Imaging pipeline is already running or recently invoked — will poll for completion." 'WARN'
+            $imgInvoked = $true
+        } else {
+            Write-Log "  ⚠ Could not invoke imaging pipeline: $errMsg" 'WARN'
+        }
     }
+} else {
+    Write-Log "  Imaging pipeline '$ImagingPipelineName' not found." 'ERROR'
 }
 
-# Wait for imaging pipeline to complete before starting OMOP (OMOP cannot run in parallel)
-if ($imgInvoked) {
-    Write-Log "  Waiting for imaging pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
+if ($clinicalPipeline) {
+    $clinicalId = $clinicalPipeline.id
+    Write-Log "  Found '$ClinicalPipelineName' (ID: $clinicalId)" 'INFO'
+    $clinRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/Pipeline/instances"
+    Write-Log "  Invoking clinical pipeline run..." 'INFO'
+    try {
+        Invoke-FabricApiRequest -Method Post -Uri $clinRunUri -Headers $fabHeaders -Description "Run pipeline '$ClinicalPipelineName'"
+        Write-Log "  ✓ Clinical pipeline invoked successfully." 'INFO'
+        $clinInvoked = $true
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+            Write-Log "  Clinical pipeline is already running or recently invoked — will poll for completion." 'WARN'
+            $clinInvoked = $true
+        } else {
+            Write-Log "  ⚠ Could not invoke clinical pipeline: $errMsg" 'WARN'
+        }
+    }
+} else {
+    Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found." 'WARN'
+}
+
+$imgCompleted = $false
+$clinicalCompleted = $false
+$imgFailed = $false
+$clinicalFailed = $false
+
+if ($imgInvoked -or $clinInvoked) {
+    Write-Log "  Waiting for active pipelines to complete (polling every 30s, max 60 min)..." 'INFO'
     $maxPollMin = 60
     $pollStart = Get-Date
-    $imgCompleted = $false
 
     while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt $maxPollMin) {
+        # Check if both are terminal
+        $imgTerminal = $imgCompleted -or $imgFailed -or (-not $imgInvoked)
+        $clinTerminal = $clinicalCompleted -or $clinicalFailed -or (-not $clinInvoked)
+        if ($imgTerminal -and $clinTerminal) {
+            break
+        }
+
         Start-Sleep -Seconds 30
         $pollElapsed = [math]::Round((New-TimeSpan -Start $pollStart).TotalMinutes, 1)
 
@@ -911,97 +940,38 @@ if ($imgInvoked) {
             $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
         }
 
-        try {
-            $jobsResult = Invoke-FabricApiRequest -Method Get `
-                -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/instances?limit=1" `
-                -Headers $fabHeaders -Description 'Poll imaging pipeline status'
-            $latestJob = $null
-            if ($jobsResult.Response.PSObject.Properties['value']) {
-                $latestJob = $jobsResult.Response.value | Select-Object -First 1
-            }
-
-            if ($latestJob) {
-                $jobStatus = $latestJob.status
-                Write-Log "  Imaging pipeline status: $jobStatus ($pollElapsed min elapsed)" 'INFO'
-
-                if ($jobStatus -eq 'Completed') {
-                    Write-Log "  ✓ Imaging pipeline completed successfully!" 'INFO'
-                    $imgCompleted = $true
-                    break
-                } elseif ($jobStatus -eq 'Failed') {
-                    Write-Log "  ✗ Imaging pipeline FAILED. OMOP pipeline will NOT be started." 'WARN'
-                    break
-                } elseif ($jobStatus -eq 'Cancelled') {
-                    Write-Log "  Imaging pipeline was cancelled. OMOP pipeline will NOT be started." 'WARN'
-                    break
+        # Poll Imaging Pipeline
+        if ($imgInvoked -and -not $imgCompleted -and -not $imgFailed) {
+            try {
+                $jobsResult = Invoke-FabricApiRequest -Method Get `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/instances?limit=1" `
+                    -Headers $fabHeaders -Description 'Poll imaging pipeline status'
+                $latestJob = $null
+                if ($jobsResult.Response.PSObject.Properties['value']) {
+                    $latestJob = $jobsResult.Response.value | Select-Object -First 1
                 }
+
+                if ($latestJob) {
+                    $jobStatus = $latestJob.status
+                    Write-Log "  Imaging pipeline status: $jobStatus ($pollElapsed min elapsed)" 'INFO'
+
+                    if ($jobStatus -eq 'Completed') {
+                        Write-Log "  ✓ Imaging pipeline completed successfully!" 'INFO'
+                        $imgCompleted = $true
+                        $step9Timer.Stop()
+                    } elseif ($jobStatus -in @('Failed', 'Cancelled')) {
+                        Write-Log "  ✗ Imaging pipeline $jobStatus!" 'WARN'
+                        $imgFailed = $true
+                        $step9Timer.Stop()
+                    }
+                }
+            } catch {
+                Write-Log "  Poll error for Imaging pipeline: $($_.Exception.Message). Retrying..." 'WARN'
             }
-        } catch {
-            Write-Log "  Poll error: $($_.Exception.Message). Retrying..." 'WARN'
         }
-    }
 
-    if (-not $imgCompleted -and (New-TimeSpan -Start $pollStart).TotalMinutes -ge $maxPollMin) {
-        Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min. OMOP will NOT be started." 'WARN'
-    }
-}
-
-$step9Timer.Stop()
-Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' } else { 'TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
-
-# ── Step 9b: Run Clinical Data Foundation pipeline (wait for completion before OMOP) ──
-# The imaging pipeline covers imaging-related FHIR resources, but the standalone
-# clinical pipeline flattens additional resource types (Encounter, Condition,
-# MedicationRequest, etc.) into Silver tables. OMOP depends on these Silver tables,
-# so we must wait for clinical pipeline completion before invoking OMOP.
-
-$step9bTimer = [System.Diagnostics.Stopwatch]::StartNew()
-$clinicalCompleted = $false
-
-Write-Log '─── Step 9b: Running Clinical Data Foundation pipeline ───' 'INFO'
-
-$clinicalPipeline = $pipelines | Where-Object { $_.displayName -eq $ClinicalPipelineName } | Select-Object -First 1
-if ($clinicalPipeline) {
-    $clinicalId = $clinicalPipeline.id
-    Write-Log "  Found '$ClinicalPipelineName' (ID: $clinicalId)" 'INFO'
-
-    $clinRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/Pipeline/instances"
-    $clinInvoked = $false
-    try {
-        # Refresh token
-        $fabricToken = Get-FabricApiAccessToken
-        $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
-
-        Invoke-FabricApiRequest -Method Post -Uri $clinRunUri -Headers $fabHeaders -Description "Run pipeline '$ClinicalPipelineName'"
-        Write-Log "  ✓ Clinical pipeline invoked." 'INFO'
-        $clinInvoked = $true
-    } catch {
-        $errMsg = $_.Exception.Message
-        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log "  Clinical pipeline is already running — will poll for completion." 'WARN'
-            $clinInvoked = $true
-        } else {
-            Write-Log "  ⚠ Could not invoke clinical pipeline: $errMsg" 'WARN'
-            Write-Log "    Run manually: $ClinicalPipelineName" 'WARN'
-        }
-    }
-
-    # Wait for clinical pipeline to complete
-    if ($clinInvoked) {
-        Write-Log "  Waiting for clinical pipeline to complete (polling every 30s, max 30 min)..." 'INFO'
-        $clinMaxPollMin = 30
-        $clinPollStart = Get-Date
-
-        while ((New-TimeSpan -Start $clinPollStart).TotalMinutes -lt $clinMaxPollMin) {
-            Start-Sleep -Seconds 30
-            $clinPollElapsed = [math]::Round((New-TimeSpan -Start $clinPollStart).TotalMinutes, 1)
-
-            # Refresh token periodically
-            if ([math]::Floor($clinPollElapsed) % 10 -eq 0 -and $clinPollElapsed -gt 0) {
-                $fabricToken = Get-FabricApiAccessToken
-                $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
-            }
-
+        # Poll Clinical Pipeline
+        if ($clinInvoked -and -not $clinicalCompleted -and -not $clinicalFailed) {
             try {
                 $clinJobsResult = Invoke-FabricApiRequest -Method Get `
                     -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/instances?limit=1" `
@@ -1013,32 +983,37 @@ if ($clinicalPipeline) {
 
                 if ($clinLatestJob) {
                     $clinJobStatus = $clinLatestJob.status
-                    Write-Log "  Clinical pipeline status: $clinJobStatus ($clinPollElapsed min elapsed)" 'INFO'
+                    Write-Log "  Clinical pipeline status: $clinJobStatus ($pollElapsed min elapsed)" 'INFO'
 
                     if ($clinJobStatus -eq 'Completed') {
                         Write-Log "  ✓ Clinical pipeline completed successfully!" 'INFO'
                         $clinicalCompleted = $true
-                        break
+                        $step9bTimer.Stop()
                     } elseif ($clinJobStatus -in @('Failed', 'Cancelled')) {
-                        Write-Log "  ⚠ Clinical pipeline $clinJobStatus. OMOP will still attempt to run." 'WARN'
-                        break
+                        Write-Log "  ✗ Clinical pipeline $clinJobStatus!" 'WARN'
+                        $clinicalFailed = $true
+                        $step9bTimer.Stop()
                     }
                 }
             } catch {
-                Write-Log "  Poll error: $($_.Exception.Message). Retrying..." 'WARN'
+                Write-Log "  Poll error for Clinical pipeline: $($_.Exception.Message). Retrying..." 'WARN'
             }
         }
-
-        if (-not $clinicalCompleted -and (New-TimeSpan -Start $clinPollStart).TotalMinutes -ge $clinMaxPollMin) {
-            Write-Log "  ⚠ Clinical pipeline did not complete within $clinMaxPollMin min." 'WARN'
-        }
     }
-} else {
-    Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found — skipping." 'WARN'
-    Write-Log "  Available: $($pipelines | ForEach-Object { $_.displayName } | Join-String -Separator ', ')" 'INFO'
+
+    # Ensure timers are stopped if they timed out
+    if ($step9Timer.IsRunning) { $step9Timer.Stop() }
+    if ($step9bTimer.IsRunning) { $step9bTimer.Stop() }
+
+    if ($imgInvoked -and -not $imgCompleted -and -not $imgFailed) {
+        Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min." 'WARN'
+    }
+    if ($clinInvoked -and -not $clinicalCompleted -and -not $clinicalFailed) {
+        Write-Log "  ⚠ Clinical pipeline did not complete within $maxPollMin min." 'WARN'
+    }
 }
 
-$step9bTimer.Stop()
+Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' } else { 'TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
 Record-Step -Name 'Clinical Pipeline' -Status $(if ($clinicalCompleted) { 'COMPLETED' } elseif ($clinicalPipeline) { 'TIMEOUT/WARN' } else { 'NOT FOUND' }) -Seconds $step9bTimer.Elapsed.TotalSeconds
 
 # ── Step 10: Run OMOP Analytics pipeline (MUST run AFTER imaging + clinical pipelines complete) ──
@@ -1046,12 +1021,12 @@ Record-Step -Name 'Clinical Pipeline' -Status $(if ($clinicalCompleted) { 'COMPL
 $step10Timer = [System.Diagnostics.Stopwatch]::StartNew()
 $omopPipeline = $null  # Initialize to avoid unset variable errors in summary
 
-if (-not $imgCompleted) {
-    Write-Log '─── Step 10: SKIPPING OMOP pipeline (imaging pipeline did not complete) ───' 'WARN'
-    Write-Log "  OMOP cannot run in parallel with other HDS pipelines." 'WARN'
-    Write-Log "  Run OMOP manually after the imaging pipeline finishes." 'WARN'
+if (-not $imgCompleted -or -not $clinicalCompleted) {
+    Write-Log '─── Step 10: SKIPPING OMOP pipeline (imaging or clinical pipeline did not complete successfully) ───' 'WARN'
+    Write-Log "  OMOP cannot run in parallel or if core pipelines are incomplete." 'WARN'
+    Write-Log "  Run OMOP manually after both pipelines finish successfully." 'WARN'
     $step10Timer.Stop()
-    Record-Step -Name 'OMOP Pipeline' -Status 'SKIPPED (imaging incomplete)' -Seconds $step10Timer.Elapsed.TotalSeconds
+    Record-Step -Name 'OMOP Pipeline' -Status 'SKIPPED (prerequisites incomplete)' -Seconds $step10Timer.Elapsed.TotalSeconds
 } else {
 
 Write-Log '─── Step 10: Running OMOP Analytics pipeline ───' 'INFO'

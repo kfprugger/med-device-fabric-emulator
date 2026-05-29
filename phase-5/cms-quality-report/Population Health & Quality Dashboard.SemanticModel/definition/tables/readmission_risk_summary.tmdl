@@ -1,0 +1,52 @@
+/// Readmission Risk Summary — aggregated readmission metrics by tier and payer
+table readmission_risk_summary
+	lineageTag: c2000001-aaaa-bbbb-cccc-c20000000001
+
+	partition 'readmission_risk_summary' = entity
+		mode: directLake
+		source
+			entityName: readmission_risk_summary
+			schemaName: dbo
+			expressionSource: ReportingGoldSource
+
+	column risk_tier
+		dataType: string
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000002
+		sourceColumn: risk_tier
+		summarizeBy: none
+
+	column payer_category
+		dataType: string
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000003
+		sourceColumn: payer_category
+		summarizeBy: none
+
+	column encounter_count
+		dataType: int64
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000004
+		sourceColumn: encounter_count
+		summarizeBy: none
+
+	column avg_risk_probability
+		dataType: double
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000005
+		sourceColumn: avg_risk_probability
+		summarizeBy: none
+
+	column actual_readmissions
+		dataType: int64
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000006
+		sourceColumn: actual_readmissions
+		summarizeBy: none
+
+	column actual_readmission_rate
+		dataType: double
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000007
+		sourceColumn: actual_readmission_rate
+		summarizeBy: none
+
+	column load_timestamp
+		dataType: dateTime
+		lineageTag: c2000001-aaaa-bbbb-cccc-c20000000008
+		sourceColumn: load_timestamp
+		summarizeBy: none

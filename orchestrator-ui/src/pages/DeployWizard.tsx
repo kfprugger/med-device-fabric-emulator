@@ -33,6 +33,7 @@ import { MockDataBanner } from "../components/MockDataBanner";
 import { HistoryInput } from "../components/HistoryInput";
 import { getTagHistory, addTagToHistory } from "../formHistory";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import { AzureIcon, FabricIcon } from "../components/BrandIcons";
 
 const useStyles = makeStyles({
   form: {
@@ -493,6 +494,7 @@ export function DeployWizard() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [config, setConfig] = useState<DeploymentConfig>({
     resource_group_name: "",
     location: "eastus",
@@ -510,6 +512,7 @@ export function DeployWizard() {
     capacity_name: "",
     pause_capacity_after_deploy: false,
     reuse_patients: false,
+    use_cached_synthea: false,
     // Granular component toggles
     skip_synthea: false,
     skip_device_assoc: false,
@@ -695,7 +698,7 @@ export function DeployWizard() {
     { enabled: !config.skip_ontology, type: "Notebook", name: "create_device_association_table" },
     { enabled: !config.skip_ontology, type: "Ontology", name: "ClinicalDeviceOntology" },
     { enabled: !config.skip_activator && !!config.alert_email, type: "Reflex", name: "ClinicalAlertActivator" },
-    { enabled: !config.skip_quality_measures, type: "Notebook / report", name: "CMS Quality Scorecard" },
+    { enabled: !config.skip_quality_measures, type: "Notebook / report", name: "Population Health & Quality Dashboard" },
   ].filter((asset) => asset.enabled);
 
   const graphNodes = [
@@ -713,7 +716,7 @@ export function DeployWizard() {
     { id: "gold", label: "Gold OMOP Lakehouse", group: "Fabric", x: 1015, y: 85, enabled: !config.skip_hds_pipelines },
     { id: "agents", label: "Data Agents\nPatient 360 / Triage", group: "Fabric", x: 1015, y: 290, enabled: !config.skip_data_agents },
     { id: "reporting", label: "Reporting LH\nPower BI / OHIF", group: "Fabric+Azure", x: 1015, y: 505, enabled: !config.skip_imaging },
-    { id: "quality", label: "CMS Quality\nScorecard", group: "Fabric", x: 1215, y: 85, enabled: !config.skip_quality_measures },
+    { id: "quality", label: "Population Health\n& Quality", group: "Fabric", x: 1215, y: 85, enabled: !config.skip_quality_measures },
     { id: "ontology", label: "ClinicalDeviceOntology", group: "Fabric", x: 1215, y: 290, enabled: !config.skip_ontology },
     { id: "activator", label: "Data Activator\nClinicalAlertActivator", group: "Fabric", x: 1215, y: 505, enabled: !config.skip_activator && !!config.alert_email },
   ].filter((node) => node.enabled);
@@ -972,6 +975,7 @@ export function DeployWizard() {
                 alert_email: pc.alert_email || prev.alert_email,
                 patient_count: pc.patient_count || prev.patient_count,
                 reuse_patients: true,
+                use_cached_synthea: pc.use_cached_synthea ?? prev.use_cached_synthea,
               }));
               // Auto-select capacity if it was used before
               if (pc.capacity_name) {
@@ -1959,6 +1963,19 @@ export function DeployWizard() {
                 disabled={config.reuse_patients}
               />
             </Field>
+            <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, marginBottom: tokens.spacingVerticalS }}>
+              <Checkbox
+                checked={config.use_cached_synthea}
+                onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
+                disabled={config.reuse_patients || config.skip_synthea}
+                label="Use Prepackaged Patient Bundles (Skip generation container)"
+              />
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
+                {config.use_cached_synthea
+                  ? "Loads pre-generated high-fidelity clinical patient JSON data from cache, saving 15-30 minutes of ACI container generation time."
+                  : "Generates new randomized patient and medical device telemetry data on-the-fly using an Azure Synthea container."}
+              </Text>
+            </div>
             <Field
               label={
                 <InfoLabel info="Email address for clinical alert notifications via Data Activator (Reflex)." infoButton={{ popover: { positioning: "after" } }}>
@@ -2043,6 +2060,17 @@ export function DeployWizard() {
                     disabled={config.skip_fhir}
                   />
                 </Tooltip>
+                {!config.skip_synthea && (
+                  <Tooltip content="Skip starting ACI patient generator and upload prepackaged patient bundles instead." relationship="description" positioning="after">
+                    <Checkbox
+                      label="Use Prepackaged Patient Bundles"
+                      checked={config.use_cached_synthea}
+                      onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
+                      disabled={config.skip_fhir}
+                      style={{ marginLeft: 24 }}
+                    />
+                  </Tooltip>
+                )}
                 <Tooltip content="Skip Device resource creation + patient associations" relationship="description" positioning="after">
                   <Checkbox
                     label="Device Associations"
@@ -2171,9 +2199,9 @@ export function DeployWizard() {
                   disabled={config.skip_fabric || !config.alert_email}
                 />
               </Tooltip>
-              <Tooltip content="Skip CMS Quality Scorecard — claims materialization, quality measures computation, and Power BI report" relationship="description" positioning="after">
+              <Tooltip content="Skip Population Health & Quality Dashboard — claims materialization, Star Ratings, HCC risk adjustment, readmission risk model, cost & utilization analytics, and Power BI report" relationship="description" positioning="after">
                 <Checkbox
-                  label="CMS Quality Scorecard (Claims + Measures + Report)"
+                  label="Population Health & Quality Dashboard (10-page report)"
                   checked={!config.skip_quality_measures}
                   onChange={(_, d) => update("skip_quality_measures", !d.checked)}
                 />
@@ -2203,6 +2231,51 @@ export function DeployWizard() {
           ))}
         </div>
       )}
+
+      {/* Advanced JSON Configuration Editor */}
+      <div style={{ marginTop: tokens.spacingVerticalM, marginBottom: tokens.spacingVerticalM }}>
+        <Button
+          size="small"
+          appearance="subtle"
+          onClick={() => setShowJsonEditor(v => !v)}
+          style={{ color: tokens.colorBrandForeground1, paddingLeft: 0 }}
+        >
+          {showJsonEditor ? "Hide Raw JSON Configuration" : "Advanced: View/Edit Raw JSON Configuration"}
+        </Button>
+
+        {showJsonEditor && (
+          <div style={{ marginTop: tokens.spacingVerticalS }}>
+            <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: "block", marginBottom: tokens.spacingVerticalXXS }}>
+              Directly edit parameters. Note: invalid JSON will prevent deployment.
+            </Text>
+            <textarea
+              value={JSON.stringify(config, null, 2)}
+              onChange={(e) => {
+                try {
+                  const parsed = JSON.parse(e.target.value);
+                  setConfig(parsed);
+                } catch (err) {
+                  // Keep typing, don't crash on invalid JSON
+                }
+              }}
+              style={{
+                width: "100%",
+                height: "220px",
+                fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                fontSize: tokens.fontSizeBase200,
+                backgroundColor: "#0a0a0a",
+                color: "#00f07f", // console green
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                borderRadius: tokens.borderRadiusMedium,
+                padding: tokens.spacingHorizontalM,
+                boxShadow: "inset 0 0 10px rgba(0,0,0,0.5)",
+                outline: "none",
+                resize: "vertical"
+              }}
+            />
+          </div>
+        )}
+      </div>
       <div className={styles.actions}>
         <Tooltip content="Preview the Azure and Fabric assets that this configuration will deploy" relationship="description">
           <Button
@@ -2316,7 +2389,7 @@ export function DeployWizard() {
                   {!config.skip_imaging && <Text size={100}>✓ Imaging Toolkit</Text>}
                   {!config.skip_ontology && <Text size={100}>✓ Ontology</Text>}
                   {!config.skip_activator && config.alert_email && <Text size={100}>✓ Alerts</Text>}
-                  {!config.skip_quality_measures && <Text size={100}>✓ CMS Quality</Text>}
+                  {!config.skip_quality_measures && <Text size={100}>✓ Pop Health</Text>}
                 </div>
               </div>
               {Object.keys(config.tags).length > 0 && (
@@ -2368,7 +2441,10 @@ export function DeployWizard() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: tokens.spacingHorizontalL }}>
                 <div style={{ border: `2px solid ${tokens.colorPaletteBlueBorderActive}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
-                    <Subtitle1>Azure resource group</Subtitle1>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <AzureIcon size={20} />
+                      <Subtitle1>Azure resource group</Subtitle1>
+                    </div>
                     <Badge color="informative">{prospectiveAzureAssets.length} assets</Badge>
                   </div>
                   <Text weight="semibold" block>{config.resource_group_name || "rg-<deployment>"}</Text>
@@ -2384,7 +2460,10 @@ export function DeployWizard() {
 
                 <div style={{ border: `2px solid ${tokens.colorBrandStroke1}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
-                    <Subtitle1>Fabric workspace</Subtitle1>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <FabricIcon size={20} />
+                      <Subtitle1>Fabric workspace</Subtitle1>
+                    </div>
                     <Badge color="brand">{prospectiveFabricAssets.length} assets</Badge>
                   </div>
                   <Text weight="semibold" block>{config.fabric_workspace_name || "<workspace>"}</Text>

@@ -88,8 +88,21 @@ if ($azModule) {
 try {
     $azVer = az version --output json 2>$null | ConvertFrom-Json
     $cliVer = $azVer.'azure-cli'
-    $checks += @{ name = "Azure CLI"; status = "pass"; detail = "v$cliVer" }
-    Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+    if ($cliVer -match '(\d+)\.(\d+)\.(\d+)') {
+        $major = [int]$Matches[1]
+        $minor = [int]$Matches[2]
+        if ($major -lt 2 -or ($major -eq 2 -and $minor -lt 50)) {
+            $checks += @{ name = "Azure CLI"; status = "fail"; detail = "v$cliVer — need 2.50.0+" }
+            $failures += "Azure CLI version $cliVer is too old. Version 2.50.0 or higher is required."
+            Write-Host "  ✗ Azure CLI $cliVer — version 2.50.0+ required" -ForegroundColor Red
+        } else {
+            $checks += @{ name = "Azure CLI"; status = "pass"; detail = "v$cliVer" }
+            Write-Host "  ✓ Azure CLI $cliVer" -ForegroundColor Green
+        }
+    } else {
+        $checks += @{ name = "Azure CLI"; status = "warn"; detail = "v$cliVer (unrecognized format)" }
+        Write-Host "  ⚠ Azure CLI version unrecognized" -ForegroundColor Yellow
+    }
 } catch {
     $checks += @{ name = "Azure CLI"; status = "fail"; detail = "Not installed" }
     $failures += "Azure CLI not found. Install from https://aka.ms/installazurecli"
@@ -99,9 +112,17 @@ try {
 # 4. Bicep
 try {
     $bicepOutput = (az bicep version 2>$null) -join ' '
-    if ($bicepOutput -match '(\d+\.\d+\.\d+)') {
-        $checks += @{ name = "Bicep"; status = "pass"; detail = "v$($Matches[1])" }
-        Write-Host "  ✓ Bicep $($Matches[1])" -ForegroundColor Green
+    if ($bicepOutput -match '(\d+)\.(\d+)\.(\d+)') {
+        $bMajor = [int]$Matches[1]
+        $bMinor = [int]$Matches[2]
+        if ($bMajor -eq 0 -and $bMinor -lt 20) {
+            $checks += @{ name = "Bicep"; status = "fail"; detail = "v$($Matches[1]).$($Matches[2]).$($Matches[3]) — need 0.20.0+" }
+            $failures += "Bicep CLI version $($Matches[1]).$($Matches[2]).$($Matches[3]) is too old. Version 0.20.0 or higher is required."
+            Write-Host "  ✗ Bicep $($Matches[1]).$($Matches[2]).$($Matches[3]) — version 0.20.0+ required" -ForegroundColor Red
+        } else {
+            $checks += @{ name = "Bicep"; status = "pass"; detail = "v$($Matches[1]).$($Matches[2]).$($Matches[3])" }
+            Write-Host "  ✓ Bicep $($Matches[1]).$($Matches[2]).$($Matches[3])" -ForegroundColor Green
+        }
     } else {
         $checks += @{ name = "Bicep"; status = "warn"; detail = "Version unknown" }
         $warnings += "Bicep version check inconclusive. Run: az bicep install"
