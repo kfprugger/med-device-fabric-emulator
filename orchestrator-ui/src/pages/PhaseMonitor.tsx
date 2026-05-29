@@ -36,6 +36,8 @@ import {
   WarningRegular,
   ErrorCircleRegular,
   CopyRegular,
+  DocumentTableRegular,
+  DocumentTextRegular,
 } from "@fluentui/react-icons";
 import { PhaseCard } from "../components/PhaseCard";
 import { AllLogsStream } from "../components/AllLogsStream";
@@ -459,6 +461,91 @@ export function PhaseMonitor() {
       return () => clearTimeout(t);
     }
   }, [showAfterActionReport]);
+
+  const exportToCSV = () => {
+    if (!afterActionReport) return;
+    const headers = ["Resource / Item", "Platform", "Type", "Active Identity Strategy", "Secrets/Credentials Stored", "Access Governance & Role"];
+    const rows = afterActionReport.resources.map(res => [
+      res.name,
+      res.category,
+      res.type,
+      res.identity,
+      res.credentialDetails,
+      res.accessControlDetails
+    ]);
+    const csvContent = [headers, ...rows]
+      .map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `security_artifacts_report_${instanceId}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToXLSX = () => {
+    if (!afterActionReport) return;
+    const headers = ["Resource / Item", "Platform", "Type", "Active Identity Strategy", "Secrets/Credentials Stored", "Access Governance & Role"];
+    const rows = afterActionReport.resources.map(res => `
+      <tr>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.name}</td>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.category}</td>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.type}</td>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.identity}</td>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.credentialDetails}</td>
+        <td style="border: 1px solid #dddddd; padding: 8px;">${res.accessControlDetails}</td>
+      </tr>
+    `).join("");
+
+    const htmlContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Security & Artifacts</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <meta charset="utf-8">
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr style="background-color: #f2f2f2; font-weight: bold;">
+              ${headers.map(h => `<th style="border: 1px solid #dddddd; padding: 8px; text-align: left;">${h}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `security_artifacts_report_${instanceId}.xls`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const isMock = instanceId ? isMockInstance(instanceId) : false;
 
@@ -1933,6 +2020,25 @@ export function PhaseMonitor() {
             </div>
           ) : afterActionReport ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <Button
+                  appearance="outline"
+                  icon={<DocumentTableRegular style={{ color: "#107c41" }} />}
+                  onClick={exportToXLSX}
+                  size="small"
+                >
+                  Export to .XLSX
+                </Button>
+                <Button
+                  appearance="outline"
+                  icon={<DocumentTextRegular />}
+                  onClick={exportToCSV}
+                  size="small"
+                >
+                  Export to .CSV
+                </Button>
+              </div>
+
               <MessageBar intent="success" layout="multiline">
                 <MessageBarBody>
                   <Text weight="semibold">Service-to-Service Security Architecture:</Text> Services
