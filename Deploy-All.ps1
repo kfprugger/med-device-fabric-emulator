@@ -614,16 +614,17 @@ function Resolve-StorageAccountName {
     return $sanitized
 }
 
-function Move-FabricNotebooksToFolder {
+function Move-FabricItemsToFolder {
     param(
         [Parameter(Mandatory)][string]$FabricWorkspaceName,
         [string]$WorkspaceId,
-        [string]$FolderName = "Notebooks",
+        [Parameter(Mandatory)][string]$FolderName,
+        [Parameter(Mandatory)][array]$ItemTypes,
         [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1"
     )
 
     try {
-        Write-Host "  Organizing Fabric notebooks into folder '$FolderName'..." -ForegroundColor White
+        Write-Host "  Organizing items of type ($($ItemTypes -join ', ')) into folder '$FolderName'..." -ForegroundColor White
         $token = Get-CachedAccessToken "https://api.fabric.microsoft.com"
         $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
 
@@ -635,6 +636,7 @@ function Move-FabricNotebooksToFolder {
             $WorkspaceId = $ws.id
         }
 
+        # Find or create folder
         $folders = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Get).value
         $folder = $folders | Where-Object { $_.displayName -eq $FolderName } | Select-Object -First 1
         if (-not $folder) {
@@ -643,19 +645,28 @@ function Move-FabricNotebooksToFolder {
             Write-Host "  ✓ Created folder '$FolderName'" -ForegroundColor Green
         }
 
-        $notebooks = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items?type=Notebook" -Headers $headers -Method Get).value
-        if (-not $notebooks -or $notebooks.Count -eq 0) {
-            Write-Host "  No notebooks found to organize." -ForegroundColor DarkGray
+        $items = @()
+        foreach ($type in $ItemTypes) {
+            try {
+                $typeItems = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items?type=$type" -Headers $headers -Method Get).value
+                if ($typeItems) { $items += $typeItems }
+            } catch {
+                Write-Host "    ⚠ Could not retrieve items of type '$type': $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+
+        if ($items.Count -eq 0) {
+            Write-Host "  No items found to organize for types: $($ItemTypes -join ', ')." -ForegroundColor DarkGray
             return
         }
 
         $moved = 0
-        foreach ($nb in $notebooks) {
-            if ($nb.folderId -eq $folder.id) { continue }
+        foreach ($item in $items) {
+            if ($item.folderId -eq $folder.id) { continue }
             $moveBody = @{ targetFolderId = $folder.id } | ConvertTo-Json -Depth 3
             for ($attempt = 1; $attempt -le 4; $attempt++) {
                 try {
-                    Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items/$($nb.id)/move" -Headers $headers -Method Post -Body $moveBody | Out-Null
+                    Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/items/$($item.id)/move" -Headers $headers -Method Post -Body $moveBody | Out-Null
                     $moved++
                     break
                 } catch {
@@ -663,19 +674,29 @@ function Move-FabricNotebooksToFolder {
                     try { $errCode = [int]$_.Exception.Response.StatusCode } catch {}
                     if ($errCode -eq 429 -and $attempt -lt 4) {
                         $sleepSec = 10 * $attempt
-                        Write-Host "    Throttled moving '$($nb.displayName)' — retrying in ${sleepSec}s..." -ForegroundColor DarkYellow
+                        Write-Host "    Throttled moving '$($item.displayName)' — retrying in ${sleepSec}s..." -ForegroundColor DarkYellow
                         Start-Sleep -Seconds $sleepSec
                     } else {
-                        Write-Host "    ⚠ Could not move '$($nb.displayName)': $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Host "    ⚠ Could not move '$($item.displayName)': $($_.Exception.Message)" -ForegroundColor Yellow
                         break
                     }
                 }
             }
         }
-        Write-Host "  ✓ Notebook folder '$FolderName' ready ($moved moved, $($notebooks.Count) total)" -ForegroundColor Green
+        Write-Host "  ✓ Folder '$FolderName' ready ($moved moved, $($items.Count) total)" -ForegroundColor Green
     } catch {
-        Write-Host "  ⚠ Could not organize notebooks into a folder: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  ⚠ Could not organize items into folder '$FolderName': $($_.Exception.Message)" -ForegroundColor Yellow
     }
+}
+
+function Move-FabricNotebooksToFolder {
+    param(
+        [Parameter(Mandatory)][string]$FabricWorkspaceName,
+        [string]$WorkspaceId,
+        [string]$FolderName = "Notebooks",
+        [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1"
+    )
+    Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $WorkspaceId -FolderName $FolderName -ItemTypes @("Notebook") -FabricApiBase $FabricApiBase
 }
 
 # ============================================================================
@@ -2648,6 +2669,39 @@ if (-not $SkipQualityMeasures) {
     }
 } else {
     Write-Host "  ⚠ Population Health & Quality skipped (SkipQualityMeasures)" -ForegroundColor Yellow
+}
+
+if (-not $Teardown) {
+    Write-Host ""
+    Write-Host "=============================================================" -ForegroundColor Cyan
+    Write-Host "  ORGANIZING FABRIC WORKSPACE RESOURCES INTO FOLDERS          " -ForegroundColor Cyan
+    Write-Host "=============================================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    try {
+        $pSweepToken = Get-CachedAccessToken "https://api.fabric.microsoft.com"
+        $pSweepHeaders = @{ Authorization = "Bearer $pSweepToken"; "Content-Type" = "application/json" }
+        $pSweepWs = (Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $pSweepHeaders).value |
+            Where-Object { $_.displayName -eq $FabricWorkspaceName } |
+            Select-Object -First 1
+        if ($pSweepWs) {
+            $pSweepWsId = $pSweepWs.id
+            
+            # 1. Move Notebooks
+            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Notebooks" -ItemTypes @("Notebook")
+            
+            # 2. Move Pipelines
+            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "pipelines" -ItemTypes @("DataPipeline")
+            
+            # 3. Move Reports & Semantic Models
+            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Reports and Semantic Models" -ItemTypes @("KQLDashboard", "Report", "SemanticModel")
+            
+            # 4. Move Data Agents
+            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Agents" -ItemTypes @("DataAgent")
+        }
+    } catch {
+        Write-Host "  ⚠ Workspace sweep organization failed: $_" -ForegroundColor Yellow
+    }
 }
 
 # ============================================================================
