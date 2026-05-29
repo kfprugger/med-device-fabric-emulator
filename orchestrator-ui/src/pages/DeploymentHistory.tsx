@@ -62,6 +62,18 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     minWidth: "180px",
   },
+  runName: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground1,
+    minWidth: "180px",
+    cursor: "pointer",
+    transition: "color 0.2s",
+    ":hover": {
+      color: tokens.colorBrandForeground1,
+      textDecoration: "underline",
+    },
+  },
   workspace: {
     flex: 1,
     fontWeight: tokens.fontWeightSemibold,
@@ -402,8 +414,12 @@ export function DeploymentHistory() {
                   onChange={(_, data) => toggleCompare(d.instanceId, !!data.checked)}
                   aria-label={`Compare ${d.instanceId}`}
                 />
-                <div className={styles.instanceId}>
-                  {d.instanceId}
+                <div
+                  className={styles.runName}
+                  onClick={() => navigate(`/monitor/${d.instanceId}`)}
+                  title="Click to view run details"
+                >
+                  {workspace || (cs?.deployConfig as any)?.fabric_workspace_name || d.instanceId}
                   {isMock && (
                     <Badge color="informative" size="small" style={{ marginLeft: 6 }}>mock</Badge>
                   )}
