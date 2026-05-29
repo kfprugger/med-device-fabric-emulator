@@ -1,0 +1,5 @@
+expression GoldOMOPSource =
+	let
+		Source = Value.Metadata(ReportingGoldSource)
+	in
+		Source

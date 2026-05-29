@@ -1,0 +1,19 @@
+relationship person_to_condition
+	fromColumn: condition_occurrence.person_id
+	toColumn: person.person_id
+
+relationship person_to_drug
+	fromColumn: drug_exposure.person_id
+	toColumn: person.person_id
+
+relationship person_to_measurement
+	fromColumn: measurement.person_id
+	toColumn: person.person_id
+
+relationship concept_to_condition
+	fromColumn: condition_occurrence.condition_concept_id
+	toColumn: concept.concept_id
+
+relationship concept_to_drug
+	fromColumn: drug_exposure.drug_concept_id
+	toColumn: concept.concept_id

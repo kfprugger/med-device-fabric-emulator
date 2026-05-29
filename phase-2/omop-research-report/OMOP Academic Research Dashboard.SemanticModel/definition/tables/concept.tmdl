@@ -1,0 +1,26 @@
+table concept
+	lineageTag: e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b
+
+	column concept_id
+		dataType: int64
+		sourceColumn: concept_id
+
+	column concept_name
+		dataType: string
+		sourceColumn: concept_name
+
+	column domain_id
+		dataType: string
+		sourceColumn: domain_id
+
+	column vocabulary_id
+		dataType: string
+		sourceColumn: vocabulary_id
+
+	partition concept_part = m
+		source =
+			let
+				Source = Sql.Database("masimo-sql-endpoint", "GoldOMOP"),
+				Navigation = Source{[Schema="dbo",Item="concept"]}[Data]
+			in
+				Navigation

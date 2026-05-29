@@ -1,0 +1,30 @@
+table measurement
+	lineageTag: d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a
+
+	column measurement_id
+		dataType: int64
+		sourceColumn: measurement_id
+
+	column person_id
+		dataType: int64
+		sourceColumn: person_id
+
+	column measurement_concept_id
+		dataType: int64
+		sourceColumn: measurement_concept_id
+
+	column measurement_date
+		dataType: dateTime
+		sourceColumn: measurement_date
+
+	column value_as_number
+		dataType: double
+		sourceColumn: value_as_number
+
+	partition measurement_part = m
+		source =
+			let
+				Source = Sql.Database("masimo-sql-endpoint", "GoldOMOP"),
+				Navigation = Source{[Schema="dbo",Item="measurement"]}[Data]
+			in
+				Navigation

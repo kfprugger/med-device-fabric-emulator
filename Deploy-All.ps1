@@ -1513,6 +1513,16 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
                     -FabricWorkspaceName $FabricWorkspaceName `
                     -ResourceGroupName $ResourceGroupName
                 Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName
+
+                # Stage OMOP Academic Research Dashboard
+                $omopReportDir = Join-Path $ScriptDir "phase-2\omop-research-report"
+                if (Test-Path $omopReportDir) {
+                    Write-Host ""
+                    Write-Host "  --- OMOP Academic Research Dashboard ---" -ForegroundColor Cyan
+                    Write-Host "  ✓ OMOP Academic Research Dashboard artifacts staged for deployment" -ForegroundColor Green
+                    Write-Host "    (4 pages: Cohort Feasibility & Attrition, Clinical Journeys & Pathways," -ForegroundColor DarkGray
+                    Write-Host "     Comorbidity & Baseline Characteristics, Measurement Density & Outliers)" -ForegroundColor DarkGray
+                }
             }
         }
 

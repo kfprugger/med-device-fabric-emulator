@@ -1,0 +1,27 @@
+table person
+	lineageTag: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+
+	column person_id
+		dataType: int64
+		lineageTag: 2d3e4f5a-6b7c-8d9e-0f1a-2b3c4d5e6f7a
+		sourceColumn: person_id
+
+	column gender_concept_id
+		dataType: int64
+		sourceColumn: gender_concept_id
+
+	column year_of_birth
+		dataType: int64
+		sourceColumn: year_of_birth
+
+	column race_concept_id
+		dataType: int64
+		sourceColumn: race_concept_id
+
+	partition person_part = m
+		source =
+			let
+				Source = Sql.Database("masimo-sql-endpoint", "GoldOMOP"),
+				Navigation = Source{[Schema="dbo",Item="person"]}[Data]
+			in
+				Navigation

@@ -1,0 +1,26 @@
+table condition_occurrence
+	lineageTag: b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e
+
+	column condition_occurrence_id
+		dataType: int64
+		sourceColumn: condition_occurrence_id
+
+	column person_id
+		dataType: int64
+		sourceColumn: person_id
+
+	column condition_concept_id
+		dataType: int64
+		sourceColumn: condition_concept_id
+
+	column condition_start_date
+		dataType: dateTime
+		sourceColumn: condition_start_date
+
+	partition condition_part = m
+		source =
+			let
+				Source = Sql.Database("masimo-sql-endpoint", "GoldOMOP"),
+				Navigation = Source{[Schema="dbo",Item="condition_occurrence"]}[Data]
+			in
+				Navigation

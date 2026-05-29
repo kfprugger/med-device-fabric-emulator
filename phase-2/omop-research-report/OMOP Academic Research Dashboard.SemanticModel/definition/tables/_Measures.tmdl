@@ -1,0 +1,21 @@
+table _Measures
+	lineageTag: f6a7b8c9-d0e1-2f3a-4b5c-6d7e8f9a0b1c
+
+	measure 'Total Patients (N)' = COUNT(person[person_id])
+		formatString: #,##0
+
+	measure 'Unique Conditions' = DISTINCTCOUNT(condition_occurrence[condition_concept_id])
+		formatString: #,##0
+
+	measure 'Average Measurements per Patient' = DIVIDE(COUNT(measurement[measurement_id]), DISTINCTCOUNT(person[person_id]), 0)
+		formatString: #,##0.0
+
+	measure 'Drug Exposures Count' = COUNT(drug_exposure[drug_exposure_id])
+		formatString: #,##0
+
+	partition Measures_part = m
+		source =
+			let
+				Source = #table({"Dummy"}, {{1}})
+			in
+				Source

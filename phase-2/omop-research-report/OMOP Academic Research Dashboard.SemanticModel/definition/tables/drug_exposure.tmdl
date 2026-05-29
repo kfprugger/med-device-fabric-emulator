@@ -1,0 +1,26 @@
+table drug_exposure
+	lineageTag: c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f
+
+	column drug_exposure_id
+		dataType: int64
+		sourceColumn: drug_exposure_id
+
+	column person_id
+		dataType: int64
+		sourceColumn: person_id
+
+	column drug_concept_id
+		dataType: int64
+		sourceColumn: drug_concept_id
+
+	column drug_exposure_start_date
+		dataType: dateTime
+		sourceColumn: drug_exposure_start_date
+
+	partition drug_part = m
+		source =
+			let
+				Source = Sql.Database("masimo-sql-endpoint", "GoldOMOP"),
+				Navigation = Source{[Schema="dbo",Item="drug_exposure"]}[Data]
+			in
+				Navigation

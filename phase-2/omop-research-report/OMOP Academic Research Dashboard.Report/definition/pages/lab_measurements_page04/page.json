@@ -1,0 +1,8 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json",
+  "name": "lab_measurements_page04",
+  "displayName": "Measurement Density & Outliers",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280
+}
