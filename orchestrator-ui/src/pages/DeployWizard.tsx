@@ -552,7 +552,7 @@ export function DeployWizard() {
     : !useNamingConvention && (!config.resource_group_name || !config.fabric_workspace_name) ? 1
     : !selectedCapacity || !config.admin_security_group ? 1
     : !config.fabric_workspace_name && !useNamingConvention ? 2
-    : !config.patient_count || !config.alert_email?.trim() ? 3
+    : !config.patient_count || (!config.skip_activator && !config.alert_email?.trim()) ? 3
     : -1; // all filled — no glow
 
   // Calculate completion status for cards
@@ -567,7 +567,11 @@ export function DeployWizard() {
       case 2: // Fabric Config
         return { complete: config.fabric_workspace_name ? 1 : 0, total: 1 };
       case 3: // Data Config
-        return { complete: [config.patient_count, config.alert_email?.trim()].filter(Boolean).length, total: 2 };
+        const requiredDataFields: (string | number | null)[] = [config.patient_count];
+        if (!config.skip_activator) {
+          requiredDataFields.push(config.alert_email?.trim() || null);
+        }
+        return { complete: requiredDataFields.filter(Boolean).length, total: requiredDataFields.length };
       default:
         return { complete: 0, total: 0 };
     }
@@ -1143,7 +1147,7 @@ export function DeployWizard() {
     if (useNamingConvention && !namingPrefix.trim()) issues.push("Deployment Name is required when naming convention is enabled.");
     if (!useNamingConvention && !config.resource_group_name?.trim()) issues.push("Resource Group Name is required.");
     if (!config.fabric_workspace_name?.trim()) issues.push("Fabric workspace name is required.");
-    if (!config.alert_email?.trim()) issues.push("Alert email is required.");
+    if (!config.skip_activator && !config.alert_email?.trim()) issues.push("Alert email is required.");
     if (!config.patient_count || config.patient_count < 1) issues.push("Patient count must be at least 1.");
     if (locationUnsupported) issues.push(`Not an acceptable region. Please select a supported AHDS region.`);
     return issues;
