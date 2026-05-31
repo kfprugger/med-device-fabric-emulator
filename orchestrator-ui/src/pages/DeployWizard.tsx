@@ -717,23 +717,23 @@ export function DeployWizard() {
   ].filter((asset) => asset.enabled);
 
   const graphNodes = [
-    { id: "synthea", label: "Synthea\nPatient generator", group: "External", x: 25, y: 70, enabled: !config.skip_synthea },
-    { id: "tcia", label: "TCIA\nDICOM studies", group: "External", x: 25, y: 260, enabled: !config.skip_dicom },
-    { id: "emulator", label: "Masimo Emulator\nACI", group: "Azure", x: 25, y: 505, enabled: !config.skip_base_infra },
-    { id: "fhir", label: `FHIR Service\n${fhirServiceName}`, group: "Azure", x: 220, y: 70, enabled: !config.skip_fhir },
-    { id: "dicom", label: `DICOM Service\n${dicomServiceName}`, group: "Azure", x: 220, y: 260, enabled: !config.skip_dicom },
-    { id: "eventhub", label: "Event Hub\ntelemetry-stream", group: "Azure", x: 220, y: 505, enabled: !config.skip_base_infra },
-    { id: "adls", label: `ADLS Gen2\n${storageAccountName}`, group: "Azure", x: 415, y: 165, enabled: !config.skip_fhir || !config.skip_dicom },
-    { id: "eventstream", label: "Eventstream\nMasimoTelemetryStream", group: "Fabric", x: 415, y: 505, enabled: !config.skip_fabric },
-    { id: "bronze", label: "Bronze Lakehouse\nHDS", group: "Fabric", x: 615, y: 85, enabled: !config.skip_hds_pipelines },
-    { id: "eventhouse", label: "Eventhouse / KQL\nMasimoKQLDB", group: "Fabric", x: 615, y: 385, enabled: !config.skip_fabric },
-    { id: "silver", label: "Silver Lakehouse\nHDS", group: "Fabric", x: 815, y: 85, enabled: !config.skip_hds_pipelines },
-    { id: "gold", label: "Gold OMOP Lakehouse", group: "Fabric", x: 1015, y: 85, enabled: !config.skip_hds_pipelines },
-    { id: "agents", label: "Data Agents\nPatient 360 / Triage", group: "Fabric", x: 1015, y: 290, enabled: !config.skip_data_agents },
-    { id: "reporting", label: "Reporting LH\nPower BI / OHIF", group: "Fabric+Azure", x: 1015, y: 505, enabled: !config.skip_imaging },
-    { id: "quality", label: "Population Health\n& Quality", group: "Fabric", x: 1215, y: 85, enabled: !config.skip_quality_measures },
-    { id: "ontology", label: "ClinicalDeviceOntology", group: "Fabric", x: 1215, y: 290, enabled: !config.skip_ontology },
-    { id: "activator", label: "Data Activator\nClinicalAlertActivator", group: "Fabric", x: 1215, y: 505, enabled: !config.skip_activator && !!config.alert_email },
+    { id: "synthea", label: "Synthea\nPatient generator", group: "External", x: 30, y: 60, enabled: !config.skip_synthea },
+    { id: "tcia", label: "TCIA\nDICOM studies", group: "External", x: 30, y: 210, enabled: !config.skip_dicom },
+    { id: "emulator", label: "Masimo Emulator\nACI", group: "Azure", x: 30, y: 520, enabled: !config.skip_base_infra },
+    { id: "fhir", label: `FHIR Service\n${fhirServiceName}`, group: "Azure", x: 320, y: 60, enabled: !config.skip_fhir },
+    { id: "dicom", label: `DICOM Service\n${dicomServiceName}`, group: "Azure", x: 320, y: 210, enabled: !config.skip_dicom },
+    { id: "eventhub", label: "Event Hub\ntelemetry-stream", group: "Azure", x: 320, y: 520, enabled: !config.skip_base_infra },
+    { id: "adls", label: `ADLS Gen2\n${storageAccountName}`, group: "Azure", x: 610, y: 210, enabled: !config.skip_fhir || !config.skip_dicom },
+    { id: "eventstream", label: "Eventstream\nMasimoTelemetryStream", group: "Fabric", x: 610, y: 520, enabled: !config.skip_fabric },
+    { id: "bronze", label: "Bronze Lakehouse\nHDS", group: "Fabric", x: 900, y: 60, enabled: !config.skip_hds_pipelines },
+    { id: "eventhouse", label: "Eventhouse / KQL\nMasimoKQLDB", group: "Fabric", x: 900, y: 365, enabled: !config.skip_fabric },
+    { id: "silver", label: "Silver Lakehouse\nHDS", group: "Fabric", x: 1190, y: 60, enabled: !config.skip_hds_pipelines },
+    { id: "gold", label: "Gold OMOP Lakehouse", group: "Fabric", x: 1480, y: 60, enabled: !config.skip_hds_pipelines },
+    { id: "agents", label: "Data Agents\nPatient 360 / Triage", group: "Fabric", x: 1480, y: 365, enabled: !config.skip_data_agents },
+    { id: "reporting", label: "Reporting LH\nPower BI / OHIF", group: "Fabric+Azure", x: 1480, y: 520, enabled: !config.skip_imaging },
+    { id: "quality", label: "Population Health\n& Quality", group: "Fabric", x: 1770, y: 60, enabled: !config.skip_quality_measures },
+    { id: "ontology", label: "ClinicalDeviceOntology", group: "Fabric", x: 1770, y: 365, enabled: !config.skip_ontology },
+    { id: "activator", label: "Data Activator\nClinicalAlertActivator", group: "Fabric", x: 1770, y: 520, enabled: !config.skip_activator && !!config.alert_email },
   ].filter((node) => node.enabled);
 
   const positionedGraphNodes = graphNodes.map((node) => {
@@ -743,29 +743,29 @@ export function DeployWizard() {
   const graphNodeIds = new Set(positionedGraphNodes.map((node) => node.id));
   const graphEdges = [
     { id: "synthea-fhir", from: "synthea", to: "fhir", label: "FHIR bundles", lx: 0, ly: -36 },
-    { id: "fhir-adls", from: "fhir", to: "adls", label: "$export NDJSON", lx: -18, ly: -54 },
+    { id: "fhir-adls", from: "fhir", to: "adls", label: "$export NDJSON", lx: -15, ly: -30 },
     { id: "tcia-dicom", from: "tcia", to: "dicom", label: "re-tag/upload", lx: 0, ly: -36 },
-    { id: "dicom-adls", from: "dicom", to: "adls", label: "dicom-output", lx: 8, ly: 45 },
+    { id: "dicom-adls", from: "dicom", to: "adls", label: "dicom-output", lx: 0, ly: -36 },
     { id: "emulator-eventhub", from: "emulator", to: "eventhub", label: "telemetry", lx: 0, ly: -36 },
-    { id: "eventhub-eventstream", from: "eventhub", to: "eventstream", label: "source", lx: 0, ly: 35 },
-    { id: "eventstream-eventhouse", from: "eventstream", to: "eventhouse", label: "TelemetryRaw", lx: -18, ly: 58, curvature: 35 },
-    { id: "adls-bronze", from: "adls", to: "bronze", label: "OneLake shortcut", lx: -18, ly: -60 },
-    { id: "bronze-silver", from: "bronze", to: "silver", label: "HDS pipelines", lx: 0, ly: -38 },
-    { id: "silver-gold", from: "silver", to: "gold", label: "OMOP", lx: 0, ly: -38 },
-    { id: "silver-eventhouse", from: "silver", to: "eventhouse", label: "KQL shortcuts", lx: -70, ly: 0, curvature: -70 },
-    { id: "eventhouse-agents", from: "eventhouse", to: "agents", label: "alerts", lx: -18, ly: 62, curvature: 60 },
-    { id: "silver-agents", from: "silver", to: "agents", label: "clinical data", lx: -55, ly: -72, curvature: -75 },
-    { id: "gold-reporting", from: "gold", to: "reporting", label: "cohorts", lx: 120, ly: -8, curvature: -200 },
-    { id: "silver-reporting", from: "silver", to: "reporting", label: "Direct Lake", lx: -108, ly: 78, curvature: -110 },
-    { id: "ontology-agents", from: "ontology", to: "agents", label: "semantic binding", lx: 0, ly: -76, curvature: -45 },
-    { id: "ontology-reporting", from: "ontology", to: "reporting", label: "semantic binding", lx: 42, ly: 72, curvature: -35 },
-    { id: "eventhouse-activator", from: "eventhouse", to: "activator", label: "fn_ClinicalAlerts", lx: 28, ly: 80, curvature: -70 },
-    { id: "silver-quality", from: "silver", to: "quality", label: "FHIR/claims", lx: 40, ly: -20, curvature: -110 },
-    { id: "gold-quality", from: "gold", to: "quality", label: "quality measures", lx: 0, ly: -38 },
+    { id: "eventhub-eventstream", from: "eventhub", to: "eventstream", label: "source", lx: 0, ly: -36 },
+    { id: "eventstream-eventhouse", from: "eventstream", to: "eventhouse", label: "TelemetryRaw", lx: -18, ly: -35 },
+    { id: "adls-bronze", from: "adls", to: "bronze", label: "OneLake shortcut", lx: -18, ly: -35 },
+    { id: "bronze-silver", from: "bronze", to: "silver", label: "HDS pipelines", lx: 0, ly: -36 },
+    { id: "silver-gold", from: "silver", to: "gold", label: "OMOP", lx: 0, ly: -36 },
+    { id: "silver-eventhouse", from: "silver", to: "eventhouse", label: "KQL shortcuts", lx: -50, ly: -10, curvature: -45 },
+    { id: "eventhouse-agents", from: "eventhouse", to: "agents", label: "alerts", lx: 0, ly: -36 },
+    { id: "silver-agents", from: "silver", to: "agents", label: "clinical data", lx: -30, ly: -30, curvature: -45 },
+    { id: "gold-reporting", from: "gold", to: "reporting", label: "cohorts", lx: 80, ly: 0, curvature: -120 },
+    { id: "silver-reporting", from: "silver", to: "reporting", label: "Direct Lake", lx: -60, ly: 20, curvature: -80 },
+    { id: "ontology-agents", from: "ontology", to: "agents", label: "semantic binding", lx: 0, ly: -36 },
+    { id: "ontology-reporting", from: "ontology", to: "reporting", label: "semantic binding", lx: 20, ly: -20 },
+    { id: "eventhouse-activator", from: "eventhouse", to: "activator", label: "fn_ClinicalAlerts", lx: 20, ly: 30, curvature: -50 },
+    { id: "silver-quality", from: "silver", to: "quality", label: "FHIR/claims", lx: 0, ly: -45, curvature: -60 },
+    { id: "gold-quality", from: "gold", to: "quality", label: "quality measures", lx: 0, ly: -36 },
   ].filter((edge) => graphNodeIds.has(edge.from) && graphNodeIds.has(edge.to));
 
   const graphNodeById = new Map(positionedGraphNodes.map((node) => [node.id, node]));
-  const GRAPH_WIDTH = 1410;
+  const GRAPH_WIDTH = 1960;
   const GRAPH_HEIGHT = 670;
   const NODE_WIDTH = 165;
   const NODE_HEIGHT = 74;
@@ -2535,20 +2535,20 @@ export function DeployWizard() {
                       <path d="M0,0 L0,6 L9,3 z" fill={tokens.colorNeutralForeground3} />
                     </marker>
                   </defs>
-                  <rect x="205" y="20" width="385" height="620" rx="18" fill={tokens.colorPaletteBlueBackground2} opacity="0.28" />
-                  <text x="225" y="48" fill={tokens.colorPaletteBlueForeground2} fontSize="18" fontWeight="700">Azure resource group: {config.resource_group_name || "rg-<deployment>"}</text>
-                  <rect x="600" y="20" width="790" height="620" rx="18" fill={tokens.colorBrandBackground2} opacity="0.35" />
-                  <text x="620" y="48" fill={tokens.colorBrandForeground1} fontSize="18" fontWeight="700">Fabric workspace: {config.fabric_workspace_name || "<workspace>"}</text>
+                  <rect x="300" y="20" width="490" height="620" rx="18" fill={tokens.colorPaletteBlueBackground2} opacity="0.28" />
+                  <text x="320" y="48" fill={tokens.colorPaletteBlueForeground2} fontSize="18" fontWeight="700">Azure resource group: {config.resource_group_name || "rg-<deployment>"}</text>
+                  <rect x="880" y="20" width="1070" height="620" rx="18" fill={tokens.colorBrandBackground2} opacity="0.35" />
+                  <text x="900" y="48" fill={tokens.colorBrandForeground1} fontSize="18" fontWeight="700">Fabric workspace: {config.fabric_workspace_name || "<workspace>"}</text>
                   
                   {/* Fabric Workspace Inner Sub-Group Lanes */}
-                  <rect x="610" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="625" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>STREAMING &amp; KQL</text>
+                  <rect x="890" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="905" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>STREAMING &amp; KQL</text>
 
-                  <rect x="810" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="825" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>DELTA LAKE</text>
+                  <rect x="1180" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="1195" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>DELTA LAKE</text>
 
-                  <rect x="1010" y="62" width="370" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="1025" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>SEMANTIC &amp; APPLICATIONS</text>
+                  <rect x="1380" y="62" width="560" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                  <text x="1395" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>SEMANTIC &amp; APPLICATIONS</text>
                   {/* 1. Render all edge paths */}
                   {graphEdges.map((edge) => {
                     const { pathD } = getEdgeGeom(edge);
