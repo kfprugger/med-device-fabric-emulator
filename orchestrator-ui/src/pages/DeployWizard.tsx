@@ -550,10 +550,10 @@ export function DeployWizard() {
   // Determine which card needs attention next
   const activeCardIndex = useNamingConvention && !namingPrefix ? 0
     : !useNamingConvention && (!config.resource_group_name || !config.fabric_workspace_name) ? 1
-    : !selectedCapacity || !config.admin_security_group ? 1
-    : !config.fabric_workspace_name && !useNamingConvention ? 2
-    : !config.patient_count || (!config.skip_activator && !config.alert_email?.trim()) ? 3
-    : -1; // all filled — no glow
+      : !selectedCapacity || !config.admin_security_group ? 1
+        : !config.fabric_workspace_name && !useNamingConvention ? 2
+          : !config.patient_count || (!config.skip_activator && !config.alert_email?.trim()) ? 3
+            : -1; // all filled — no glow
 
   // Calculate completion status for cards
   const getCardCompletion = (cardIndex: number): { complete: number; total: number } => {
@@ -1324,1005 +1324,1005 @@ export function DeployWizard() {
         }
       `}</style>
 
-      {initializing ? (
-        <div className={`${styles.form} deploy-form-grid`}>
-          <Card className={styles.section}><CardHeader header={<Subtitle1>Loading deployment configuration...</Subtitle1>} /></Card>
-          <Card className={styles.section}><CardHeader header={<Subtitle1>Loading capacities and subscriptions...</Subtitle1>} /></Card>
-          <Card className={styles.section}><CardHeader header={<Subtitle1>Preparing defaults...</Subtitle1>} /></Card>
-        </div>
-      ) : (
-
-      <div className={`${styles.form} deploy-form-grid deploy-compact-padding`}>
-        {/* Deployment Presets */}
-        <Card className={`${styles.section} ${styles.sectionFullWidth}`} style={{ overflow: "visible" }}>
-          <CardHeader
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Deployment Presets</Subtitle1>
-                <Badge color="brand" size="small" icon={<FlashRegular />}>Fast start</Badge>
-              </div>
-            }
-            description="Choose a safe default profile, then fine-tune individual components below."
-          />
-          <div className={styles.fieldGroup}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: tokens.spacingHorizontalS }}>
-              <Button appearance="outline" onClick={() => applyPreset("demo")}>Demo / fastest</Button>
-              <Button appearance="outline" onClick={() => applyPreset("full")}>Full platform</Button>
-              <Button appearance="outline" onClick={() => applyPreset("infra")}>Infra only</Button>
-              <Button appearance="outline" onClick={() => applyPreset("repair")}>Resume / repair</Button>
-              <Button appearance="outline" onClick={() => applyPreset("data")}>Data pipeline only</Button>
-            </div>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Current plan enables {enabledComponents.length} component(s): {enabledComponents.slice(0, 8).join(", ")}{enabledComponents.length > 8 ? ` +${enabledComponents.length - 8} more` : ""}.
-            </Text>
+        {initializing ? (
+          <div className={`${styles.form} deploy-form-grid`}>
+            <Card className={styles.section}><CardHeader header={<Subtitle1>Loading deployment configuration...</Subtitle1>} /></Card>
+            <Card className={styles.section}><CardHeader header={<Subtitle1>Loading capacities and subscriptions...</Subtitle1>} /></Card>
+            <Card className={styles.section}><CardHeader header={<Subtitle1>Preparing defaults...</Subtitle1>} /></Card>
           </div>
-        </Card>
+        ) : (
 
-        <div className="deploy-columns-row">
-        <div className="deploy-column">
-        {/* Naming Convention */}
-        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
-          <CardHeader
-            className={styles.sectionHeader}
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Naming Convention</Subtitle1>
-                {(() => {
-                  const { complete, total } = getCardCompletion(0);
-                  return complete === total ? (
-                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
-                  ) : (
-                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
-                  );
-                })()}
-              </div>
-            }
-            description="Auto-generate consistent names for Azure and Fabric resources"
-          />
-          <div className={styles.fieldGroup}>
-            <Checkbox
-              checked={useNamingConvention}
-              onChange={(_, d) => handleNamingToggle(!!d.checked)}
-              label="Use naming convention (recommended)"
-            />
-            {useNamingConvention && (
-              <>
-                <Field
-                  label={
-                    <InfoLabel info="Enter a short prefix like 'rojo-0404'. The Resource Group will be 'rg-rojo-0404' and the Fabric Workspace will be 'rojo-0404'." infoButton={{ popover: { positioning: "after" } }}>
-                      <span className={styles.fieldLabelWithIcon}>
-                        <img src="/icon-deployment.svg" alt="" width={16} height={16} />
-                        <span className={styles.labelSeparator} />
-                        Deployment Name
-                      </span>
-                    </InfoLabel>
-                  }
-                  required
-                >
-                  <HistoryInput
-                    field="naming-prefix"
-                    value={namingPrefix}
-                    onChange={(v) => handleNamingChange(v)}
-                    placeholder="e.g. rojo-0404"
-                  />
-                </Field>
-                {namingPrefix && (
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: tokens.spacingVerticalXXS,
-                    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
-                    backgroundColor: tokens.colorNeutralBackground3,
-                    borderRadius: tokens.borderRadiusMedium,
-                    fontSize: tokens.fontSizeBase200,
-                  }}>
-                    <Text size={200}>
-                      <Text weight="semibold" size={200}>Resource Group:</Text> rg-{namingPrefix}
-                    </Text>
-                    <Text size={200}>
-                      <Text weight="semibold" size={200}>Fabric Workspace:</Text> {namingPrefix}
-                    </Text>
+          <div className={`${styles.form} deploy-form-grid deploy-compact-padding`}>
+            {/* Deployment Presets */}
+            <Card className={`${styles.section} ${styles.sectionFullWidth}`} style={{ overflow: "visible" }}>
+              <CardHeader
+                header={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Subtitle1>Deployment Presets</Subtitle1>
+                    <Badge color="brand" size="small" icon={<FlashRegular />}>Fast start</Badge>
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        </Card>
-
-        {/* Azure Configuration */}
-        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 1 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
-          <CardHeader
-            className={styles.sectionHeader}
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Azure Configuration</Subtitle1>
-                {(() => {
-                  const { complete, total } = getCardCompletion(1);
-                  return complete === total ? (
-                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
-                  ) : (
-                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
-                  );
-                })()}
-              </div>
-            }
-            description="Target Azure subscription and resource group settings"
-          />
-          <div className={styles.fieldGroup}>
-
-            {existingDeploy?.priorConfig && (
-              <div style={{
-                padding: tokens.spacingHorizontalM,
-                backgroundColor: tokens.colorNeutralBackground4,
-                borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
-                borderRadius: tokens.borderRadiusMedium,
-                marginBottom: tokens.spacingVerticalS,
-              }}>
-                <div
-                  onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
-                >
-                  <Text size={200} weight="semibold">
-                    <Badge color="informative" size="small" style={{ marginRight: 6 }}>Auto-populated</Badge>
-                    Settings from prior deployment
-                  </Text>
-                  {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
-                </div>
-                <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
-                  style={{ maxHeight: existingDeployCollapsed ? "0" : "200px" }}
-                >
-                  <Text size={200} block style={{ marginTop: 8 }}>
-                    Restored from deployment <strong>{existingDeploy.instanceId}</strong>
-                  </Text>
-                  <Checkbox
-                    checked={overridePriorSettings}
-                    onChange={(_, d) => setOverridePriorSettings(!!d.checked)}
-                    label="Override previous settings"
-                    style={{ marginTop: tokens.spacingVerticalXS }}
-                  />
-                </div>
-              </div>
-            )}
-            <Field
-                label={
-                  <InfoLabel info="Azure subscription where infrastructure resources will be deployed. This selection also applies to the Teardown tab." infoButton={{ popover: { positioning: "after" } }}>
-                    <span className={styles.fieldLabelWithIcon}>
-                      <img src="/azure_logo.svg" alt="" width={16} height={16} />
-                      <span className={styles.labelSeparator} />
-                      Azure Subscription
-                    </span>
-                  </InfoLabel>
                 }
-              >
-                <Dropdown
-                  value={subscriptions.find((s) => s.id === selectedSubscription)?.name ?? "Select…"}
-                  selectedOptions={[selectedSubscription]}
-                  onOptionSelect={(_, data) => setSelectedSubscription(data.optionValue as string)}
-                >
-                  {subscriptions.map((s) => (
-                    <Option key={s.id} value={s.id}>{s.name}</Option>
-                  ))}
-                </Dropdown>
-              </Field>
-              <Field
-                label={
-                  <InfoLabel info="The Fabric capacity backing the workspace. Used to pause billing after deployment. Capacities are scanned across all subscriptions." infoButton={{ popover: { positioning: "after" } }}>
-                    <span className={styles.fieldLabelWithIcon}>
-                      <img src="/fabric_16_color.svg" alt="" width={16} height={16} />
-                      <span className={styles.labelSeparator} />
-                      Fabric Capacity
-                    </span>
-                  </InfoLabel>
-                }
-              >
-                <div className={styles.capacityFieldRow}>
-                  <Dropdown
-                    style={{ flex: 1 }}
-                    value={
-                      selectedCapacity
-                        ? (() => {
-                            return formatSelectedCapacityLabel(selectedCapacity);
-                          })()
-                        : capacityRefreshing
-                          ? "Refreshing capacity status..."
-                          : capacities.length === 0 ? "No capacities found" : "Select…"
-                    }
-                    selectedOptions={selectedCapacity ? [selectedCapacity] : []}
-                    onOptionSelect={(_, data) => setSelectedCapacity(data.optionValue as string)}
-                    disabled={capacities.length === 0 && capacityRefreshing}
-                  >
-                    {capacities.map((c) => (
-                      <Option key={getCapacitySelectionValue(c)} value={getCapacitySelectionValue(c)} text={formatCapacityMenuLabel(c)}>
-                        {formatCapacityMenuLabel(c)}
-                      </Option>
-                    ))}
-                  </Dropdown>
-                  <Tooltip content="Refresh capacity status" relationship="label">
-                    <Button
-                      appearance="subtle"
-                      icon={<ArrowSyncRegular />}
-                      size="small"
-                      onClick={refreshCapacities}
-                      disabled={capacityRefreshing}
-                      style={capacityRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
-                    />
-                  </Tooltip>
-                  {(() => {
-                    const cap = findCapacity(selectedCapacity);
-                    if (!cap) return null;
-                    const isActive = cap.state === "Active";
-                    const isPaused = cap.state === "Paused" || cap.state === "Suspended";
-                    const isResuming = cap.state === "Resuming" || resumingCapacity;
-                    return (
-                      <>
-                      {/* Status badge — always visible */}
-                      {isActive && !resumingCapacity && (
-                        <Badge color="success" size="small">Active</Badge>
-                      )}
-                      {isResuming && (
-                        <Badge color="warning" size="small" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>
-                          {cap.state === "Active" ? "Active ✓" : "Resuming…"}
-                        </Badge>
-                      )}
-                      {isPaused && !resumingCapacity && (
-                        <Badge color="danger" size="small">{cap.state}</Badge>
-                      )}
-                      {/* Resume button — only when not active and not already resuming */}
-                      {!isActive && (
-                        <Tooltip content={`Resume capacity "${cap.name}" (currently ${cap.state})`} relationship="label">
-                          <Button
-                            appearance="primary"
-                            icon={<PlayRegular />}
-                            size="small"
-                            disabled={resumingCapacity}
-                            onClick={async () => {
-                              setResumingCapacity(true);
-                              setError("");
-                              try {
-                                if (usingMock) {
-                                  // Mock: set state to Resuming, then Active after a delay
-                                  setCapacities((prev) => prev.map((c) =>
-                                    c.name === cap.name ? { ...c, state: "Resuming" } : c
-                                  ));
-                                  setTimeout(() => {
-                                    setCapacities((prev) => prev.map((c) =>
-                                      c.name === cap.name ? { ...c, state: "Active" } : c
-                                    ));
-                                    setResumingCapacity(false);
-                                  }, 5000);
-                                  return;
-                                }
-                                await resumeCapacity(cap.subscription, cap.resourceGroup, cap.name);
-                                // Poll capacity status until Active (max 3 min)
-                                let elapsed = 0;
-                                const capName = cap.name;
-                                const poll = setInterval(() => {
-                                  elapsed += 5;
-                                  refreshCapacities();
-                                  if (elapsed >= 180) {
-                                    clearInterval(poll);
-                                    setResumingCapacity(false);
-                                  }
-                                }, 5000);
-                                const checkActive = setInterval(() => {
-                                  setCapacities((current) => {
-                                    const fresh = current.find((c) => c.name === capName);
-                                    if (fresh?.state === "Active") {
-                                      clearInterval(poll);
-                                      clearInterval(checkActive);
-                                      setResumingCapacity(false);
-                                    }
-                                    return current;
-                                  });
-                                }, 3000);
-                                setTimeout(() => clearInterval(checkActive), 180000);
-                              } catch (e) {
-                                setError(e instanceof Error ? e.message : "Failed to resume capacity");
-                                setResumingCapacity(false);
-                              }
-                            }}
-                          >
-                            {resumingCapacity ? "Resuming…" : "Resume"}
-                          </Button>
-                        </Tooltip>
-                      )}
-                      </>
-                    );
-                  })()}
+                description="Choose a safe default profile, then fine-tune individual components below."
+              />
+              <div className={styles.fieldGroup}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: tokens.spacingHorizontalS }}>
+                  <Button appearance="outline" onClick={() => applyPreset("demo")}>Demo / fastest</Button>
+                  <Button appearance="outline" onClick={() => applyPreset("full")}>Full platform</Button>
+                  <Button appearance="outline" onClick={() => applyPreset("infra")}>Infra only</Button>
+                  <Button appearance="outline" onClick={() => applyPreset("repair")}>Resume / repair</Button>
+                  <Button appearance="outline" onClick={() => applyPreset("data")}>Data pipeline only</Button>
                 </div>
-              </Field>
-            <Field
-              label={
-                <InfoLabel info="Azure resource group where Event Hub, ACR, FHIR Service, and ACI containers are deployed." infoButton={{ popover: { positioning: "after" } }}>
-                  <span className={styles.fieldLabelWithIcon}>
-                    <img src="/icon-resource-group.svg" alt="" width={16} height={16} />
-                    <span className={styles.labelSeparator} />
-                    Resource Group Name
-                  </span>
-                </InfoLabel>
-              }
-            >
-              <HistoryInput
-                field="resource-group"
-                value={config.resource_group_name}
-                onChange={(v) => update("resource_group_name", v)}
-                disabled={useNamingConvention}
-                placeholder={useNamingConvention ? "Set via naming convention above" : "e.g. rg-medtech-rti-fhir"}
-              />
-            </Field>
-            <Field
-              label={
-                <InfoLabel info="Azure region for all resources. Must support FHIR Service and Event Hubs." infoButton={{ popover: { positioning: "after" } }}>
-                  <span className={styles.fieldLabelWithIcon}>
-                    <img src="/icon-location.svg" alt="" width={16} height={16} />
-                    <span className={styles.labelSeparator} />
-                    Location
-                  </span>
-                </InfoLabel>
-              }
-              validationState={locationUnsupported ? "error" : undefined}
-              validationMessage={locationUnsupported
-                ? `Not an acceptable region. Please select from the following: ${ahdsRegions?.join(", ")}`
-                : undefined}
-            >
-              <HistoryInput
-                field="location"
-                value={config.location}
-                onChange={(v) => update("location", v)}
-                disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
-                suggestions={ahdsRegions ?? undefined}
-                suggestionsLabel="Supported AHDS regions"
-              />
-            </Field>
-            <Field
-              label={
-                <InfoLabel info="Entra ID security group granted admin access to FHIR Service and Key Vault." infoButton={{ popover: { positioning: "after" } }}>
-                  <span className={styles.fieldLabelWithIcon}>
-                    <img src="/icon-groups.svg" alt="" width={16} height={16} />
-                    <span className={styles.labelSeparator} />
-                    Admin Security Group
-                  </span>
-                </InfoLabel>
-              }
-            >
-              <HistoryInput
-                field="admin-security-group"
-                value={config.admin_security_group}
-                onChange={(v) => update("admin_security_group", v)}
-                disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
-              />
-            </Field>
-            {/* Advanced Options Toggle */}
-            <div className="deploy-advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <SettingsRegular style={{ fontSize: 16, color: tokens.colorBrandForeground1 }} />
-                <Text weight="semibold" size={300}>Advanced Options</Text>
-              </div>
-              {showAdvanced ? <ChevronUpRegular /> : <ChevronDownRegular />}
-            </div>
-            <div className={`deploy-collapsible-content${!showAdvanced ? " deploy-collapsible-collapsed" : ""}`}
-              style={{ maxHeight: showAdvanced ? "800px" : "0" }}
-            >
-            <Checkbox
-              checked={useTags}
-              onChange={(_, d) => {
-                setUseTags(!!d.checked);
-                if (!d.checked) {
-                  update("tags", {});
-                  setTagRows([{ name: "", value: "" }]);
-                }
-              }}
-              label="Add resource tags"
-            />
-            {useTags && (
-              <div>
-                <TagHistoryPanel
-                  onSelect={(tags) => {
-                    const rows = Object.entries(tags).map(([name, value]) => ({ name, value }));
-                    if (rows.length === 0) rows.push({ name: "", value: "" });
-                    setTagRows(rows);
-                    syncTags(rows);
-                  }}
-                />
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto 1fr auto",
-                  gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
-                  alignItems: "center",
-                  marginBottom: tokens.spacingVerticalXS,
-                }}>
-                  <Text weight="semibold" size={200}>Name</Text>
-                  <span />
-                  <Text weight="semibold" size={200}>Value</Text>
-                  <span />
-                </div>
-                {tagRows.map((row, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto 1fr auto",
-                      gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
-                      alignItems: "center",
-                      marginBottom: tokens.spacingVerticalXS,
-                    }}
-                  >
-                    <Input
-                      value={row.name}
-                      onChange={(_, d) => updateTagRow(i, "name", d.value)}
-                      placeholder="e.g. SecurityControl"
-                      size="small"
-                    />
-                    <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>:</Text>
-                    <Input
-                      value={row.value}
-                      onChange={(_, d) => updateTagRow(i, "value", d.value)}
-                      placeholder="e.g. Ignore"
-                      size="small"
-                    />
-                    <Button
-                      appearance="subtle"
-                      icon={<DismissRegular />}
-                      size="small"
-                      onClick={() => removeTagRow(i)}
-                      disabled={tagRows.length === 1 && !row.name && !row.value}
-                    />
-                  </div>
-                ))}
-                <Button
-                  appearance="subtle"
-                  icon={<AddRegular />}
-                  size="small"
-                  onClick={addTagRow}
-                  style={{ marginTop: tokens.spacingVerticalXS }}
-                >
-                  Add tag
-                </Button>
-              </div>
-            )}
-            </div>
-          </div>
-        </Card>
-        </div>
-
-        <div className="deploy-column">
-        {/* Fabric Configuration */}
-        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
-          <CardHeader
-            className={styles.sectionHeader}
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Fabric Configuration</Subtitle1>
-                {(() => {
-                  const { complete, total } = getCardCompletion(2);
-                  return complete === total ? (
-                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
-                  ) : (
-                    <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
-                  );
-                })()}
-              </div>
-            }
-            description="Microsoft Fabric workspace where RTI, Lakehouses, and Data Agents are deployed"
-          />
-          <div className={styles.fieldGroup}>
-            <Field
-              label={
-                <InfoLabel info="The Fabric workspace must already exist. Eventhouse, KQL databases, Eventstream, Lakehouses, and Data Agents will be created here." infoButton={{ popover: { positioning: "after" } }}>
-                  <span className={styles.fieldLabelWithIcon}>
-                    <img src="/fabric_16_color.svg" alt="" width={16} height={16} />
-                    <span className={styles.labelSeparator} />
-                    Fabric Workspace Name
-                  </span>
-                </InfoLabel>
-              }
-              required={!useNamingConvention}
-            >
-              <HistoryInput
-                field="fabric-workspace"
-                value={config.fabric_workspace_name}
-                onChange={(v) => update("fabric_workspace_name", v)}
-                disabled={useNamingConvention}
-                placeholder={useNamingConvention ? "Set via naming convention above" : "e.g. med-device-rti-hds"}
-              />
-            </Field>
-            {selectedCapacity && showAdvanced && (
-              <Checkbox
-                checked={pauseAfterDeploy}
-                onChange={(_, d) => setPauseAfterDeploy(!!d.checked)}
-                label={`Pause capacity "${formatSelectedCapacityLabel(selectedCapacity)}" after successful deployment`}
-              />
-            )}
-          </div>
-        </Card>
-
-        {/* Data Configuration */}
-        <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 3 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
-          <CardHeader
-            className={styles.sectionHeader}
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Data Configuration</Subtitle1>
-                {(() => {
-                  const { complete, total } = getCardCompletion(3);
-                  return complete === total ? (
-                    <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
-                  ) : (
-                    <Badge color="danger" size="small">Required</Badge>
-                  );
-                })()}
-              </div>
-            }
-            description="Synthetic patient data generation and alerting"
-          />
-          <div className={styles.fieldGroup}>
-
-            {/* Existing deployment detection banner */}
-            {checkingExisting && (
-              <div style={{
-                padding: tokens.spacingHorizontalS,
-                backgroundColor: tokens.colorNeutralBackground4,
-                borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
-                borderRadius: tokens.borderRadiusMedium,
-                marginBottom: tokens.spacingVerticalS,
-                display: "flex",
-                alignItems: "center",
-                gap: tokens.spacingHorizontalS,
-              }}>
-                <Badge color="informative" size="small">Checking</Badge>
-                <Text size={200}>Checking local deployment history...</Text>
-              </div>
-            )}
-
-            {existingDeploy && (
-              <div style={{
-                padding: tokens.spacingHorizontalM,
-                backgroundColor: tokens.colorStatusWarningBackground1,
-                borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
-                borderRadius: tokens.borderRadiusMedium,
-                marginBottom: tokens.spacingVerticalS,
-              }}>
-                <div
-                  onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
-                >
-                  <Text weight="semibold">
-                    Previous deployment detected
-                  </Text>
-                  {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
-                </div>
-                <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
-                  style={{ maxHeight: existingDeployCollapsed ? "0" : "400px" }}
-                >
-                <Text size={200} block style={{ marginTop: 4, color: tokens.colorNeutralForeground2 }}>
-                  Workspace <strong>{existingDeploy.workspaceName}</strong> was deployed on{" "}
-                  {new Date(existingDeploy.createdTime).toLocaleString()}
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                  Current plan enables {enabledComponents.length} component(s): {enabledComponents.slice(0, 8).join(", ")}{enabledComponents.length > 8 ? ` +${enabledComponents.length - 8} more` : ""}.
                 </Text>
-                <Button size="small" appearance="outline" onClick={runLiveExistingValidation} disabled={deepCheckingExisting} style={{ marginTop: tokens.spacingVerticalS }}>
-                  {deepCheckingExisting ? "Validating live Azure/FHIR state…" : "Run live Azure/FHIR validation"}
-                </Button>
-                {existingDeploy.azureRgExists && (
-                  <>
-                  <Text size={200} block style={{ marginTop: 4 }}>
-                    FHIR: <strong>{existingDeploy.fhirPatientCount}</strong> patients,{" "}
-                    <strong>{existingDeploy.fhirDeviceCount}</strong> Masimo devices
-                  </Text>
-                  <Tooltip
-                    content="FHIR $export writes NDJSON files to ADLS Gen2. HDS pipelines, Bronze Lakehouse shortcuts, and Silver/Gold tables all depend on this data. If 0, the $export has not run yet — it will be triggered automatically on deploy."
-                    relationship="description"
-                    positioning="above"
-                  >
-                    <Text size={200} block style={{
-                      marginTop: 4,
-                      padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`,
-                      borderRadius: tokens.borderRadiusMedium,
-                      backgroundColor: (existingDeploy.exportedFiles ?? 0) === 0
-                        ? tokens.colorStatusDangerBackground1
-                        : "transparent",
-                      cursor: "help",
-                    }}>
-                      {(existingDeploy.exportedFiles ?? 0) === 0 && (
-                        <Badge color="danger" size="small" style={{ marginRight: 6 }}>Critical</Badge>
-                      )}
-                      Storage: <strong>{existingDeploy.exportedFiles ?? 0}</strong> exported FHIR files,{" "}
-                      <strong>{existingDeploy.dicomStudies ?? 0}</strong> DICOM imaging blobs
-                      {(existingDeploy.exportedFiles ?? 0) === 0 && (
-                        <span style={{ color: tokens.colorStatusDangerForeground1, marginLeft: 6 }}>
-                          — $export required for HDS pipelines
-                        </span>
-                      )}
-                    </Text>
-                  </Tooltip>
-                  <Text size={200} block style={{ marginTop: 2 }}>
-                    {existingDeploy.emulatorRunning ? (
-                      <>Emulator: <strong style={{ color: tokens.colorPaletteGreenForeground1 }}>running</strong> ({existingDeploy.emulatorDeviceCount ?? 100} devices streaming telemetry)</>
-                    ) : (
-                      <>Emulator: <strong style={{ color: tokens.colorStatusDangerForeground1 }}>stopped</strong></>
-                    )}
-                  </Text>
-                  </>
-                )}
-                <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
-                  <Checkbox
-                    checked={config.reuse_patients}
-                    onChange={(_, d) => update("reuse_patients", !!d.checked)}
-                    label={`Reuse existing ${existingDeploy.fhirPatientCount} patients and ${existingDeploy.fhirDeviceCount} devices`}
-                  />
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
-                    {config.reuse_patients
-                      ? "Synthea generation, FHIR Loader, and DICOM Loader will be skipped. Emulator stays running."
-                      : `New batch of ${config.patient_count} patients will be generated with ${config.patient_count} new device associations. Existing data will be cleared and replaced.`}
-                  </Text>
-                </div>
-                </div>
               </div>
-            )}
+            </Card>
 
-            <Field
-              label={
-                <InfoLabel info="Number of synthetic patients generated by Synthea. More patients = longer FHIR load time. 100 patients ≈ 15 min." infoButton={{ popover: { positioning: "after" } }}>
-                  <span className={styles.fieldLabelWithIcon}>
-                    <img src="/icon-patient.svg" alt="" width={14} height={14} />
-                    <span className={styles.labelSeparator} />
-                    Patient Count{config.reuse_patients ? " (ignored — reusing existing)" : existingDeploy ? " (new batch)" : " (to be generated)"}
-                  </span>
-                </InfoLabel>
-              }
-            >
-              <SpinButton
-                value={config.patient_count}
-                min={10}
-                max={10000}
-                step={10}
-                onChange={(_, d) => update("patient_count", d.value ?? 100)}
-                disabled={config.reuse_patients}
-              />
-            </Field>
-            <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, marginBottom: tokens.spacingVerticalS }}>
-              <Checkbox
-                checked={config.use_cached_synthea}
-                onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
-                disabled={config.reuse_patients || config.skip_synthea}
-                label="Use Prepackaged Patient Bundles (Skip generation container)"
-              />
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
-                {config.use_cached_synthea
-                  ? "Loads pre-generated high-fidelity clinical patient JSON data from cache, saving 15-30 minutes of ACI container generation time."
-                  : "Generates new randomized patient and medical device telemetry data on-the-fly using an Azure Synthea container."}
-              </Text>
-            </div>
-            <Field
-              label={
-                <InfoLabel info="Email address for clinical alert notifications via Data Activator (Reflex)." infoButton={{ popover: { positioning: "after" } }}>
-                  Alert Email
-                </InfoLabel>
-              }
-              required
-            >
-              <HistoryInput
-                field="alert-email"
-                value={config.alert_email}
-                onChange={(v) => update("alert_email", v)}
-                placeholder="operator@example.com"
-                type="email"
-              />
-            </Field>
-          </div>
-        </Card>
-
-        {/* Phase & Component Control */}
-        <Card className={`${styles.section} ${styles.cardOptional}`}>
-          <CardHeader
-            className={styles.sectionHeader}
-            header={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Subtitle1>Phase &amp; Component Control</Subtitle1>
-                <Badge color="informative" size="small">Optional</Badge>
-              </div>
-            }
-            description={
-              <span className={styles.fieldLabelWithIcon}>
-                <img src="/icon-phases.svg" alt="" width={14} height={14} />
-                <span className={styles.labelSeparator} />
-                Toggle individual components — dependencies auto-adjust
-              </span>
-            }
-          />
-          <div className={styles.checkboxGroup}>
-            {/* ── Group 1: Infrastructure & Data Ingestion (Phase 1) ── */}
-            <div
-              onClick={() => setSkipGroup1Collapsed(!skipGroup1Collapsed)}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 12px",
-                backgroundColor: tokens.colorNeutralBackground3,
-                borderRadius: tokens.borderRadiusMedium,
-                cursor: "pointer",
-                userSelect: "none",
-                marginTop: tokens.spacingVerticalXS,
-                borderLeft: `4px solid ${tokens.colorBrandStroke1}`
-              }}
-            >
-              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
-                1. Data Fabric Foundation
-              </Text>
-              {skipGroup1Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
-            </div>
-            <div className={`deploy-collapsible-content ${skipGroup1Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
-              <Tooltip content="Skip Event Hub, ACR, emulator ACI, Storage, and Bicep infra" relationship="description" positioning="after">
-                <Checkbox
-                  label={`Azure Emulator Infrastructure${existingDeploy ? " (already deployed)" : ""}`}
-                  checked={!config.skip_base_infra}
-                  onChange={(_, d) => update("skip_base_infra", !d.checked)}
-                />
-              </Tooltip>
-              <Tooltip content="Skip FHIR R4 service deployment and data loading" relationship="description" positioning="after">
-                <Checkbox
-                  label={`FHIR Service + Data Loading${existingDeploy ? " (already deployed)" : ""}`}
-                  checked={!config.skip_fhir}
-                  onChange={(_, d) => update("skip_fhir", !d.checked)}
-                  disabled={config.skip_base_infra}
-                />
-              </Tooltip>
-              <div style={{ paddingLeft: 24, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
-                <Tooltip content="Skip Synthea patient generation — use existing patients" relationship="description" positioning="after">
-                  <Checkbox
-                    label="Synthea Patient Generation"
-                    checked={!config.skip_synthea}
-                    onChange={(_, d) => update("skip_synthea", !d.checked)}
-                    disabled={config.skip_fhir}
+            <div className="deploy-columns-row">
+              <div className="deploy-column">
+                {/* Naming Convention */}
+                <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 0 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+                  <CardHeader
+                    className={styles.sectionHeader}
+                    header={
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Subtitle1>Naming Convention</Subtitle1>
+                        {(() => {
+                          const { complete, total } = getCardCompletion(0);
+                          return complete === total ? (
+                            <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                          ) : (
+                            <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                          );
+                        })()}
+                      </div>
+                    }
+                    description="Auto-generate consistent names for Azure and Fabric resources"
                   />
-                </Tooltip>
-                {!config.skip_synthea && (
-                  <Tooltip content="Skip starting ACI patient generator and upload prepackaged patient bundles instead." relationship="description" positioning="after">
+                  <div className={styles.fieldGroup}>
                     <Checkbox
-                      label="Use Prepackaged Patient Bundles"
-                      checked={config.use_cached_synthea}
-                      onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
-                      disabled={config.skip_fhir}
-                      style={{ marginLeft: 24 }}
+                      checked={useNamingConvention}
+                      onChange={(_, d) => handleNamingToggle(!!d.checked)}
+                      label="Use naming convention (recommended)"
                     />
-                  </Tooltip>
-                )}
-                <Tooltip content="Skip Device and/or DICOM patient cohort association mapping" relationship="description" positioning="after">
-                  <Checkbox
-                    label="Device and/or DICOM Association"
-                    checked={!config.skip_device_assoc}
-                    onChange={(_, d) => update("skip_device_assoc", !d.checked)}
-                    disabled={config.skip_synthea || config.skip_fhir}
+                    {useNamingConvention && (
+                      <>
+                        <Field
+                          label={
+                            <InfoLabel info="Enter a short prefix like 'rojo-0404'. The Resource Group will be 'rg-rojo-0404' and the Fabric Workspace will be 'rojo-0404'." infoButton={{ popover: { positioning: "after" } }}>
+                              <span className={styles.fieldLabelWithIcon}>
+                                <img src="/icon-deployment.svg" alt="" width={16} height={16} />
+                                <span className={styles.labelSeparator} />
+                                Deployment Name
+                              </span>
+                            </InfoLabel>
+                          }
+                          required
+                        >
+                          <HistoryInput
+                            field="naming-prefix"
+                            value={namingPrefix}
+                            onChange={(v) => handleNamingChange(v)}
+                            placeholder="e.g. rojo-0404"
+                          />
+                        </Field>
+                        {namingPrefix && (
+                          <div style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: tokens.spacingVerticalXXS,
+                            padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+                            backgroundColor: tokens.colorNeutralBackground3,
+                            borderRadius: tokens.borderRadiusMedium,
+                            fontSize: tokens.fontSizeBase200,
+                          }}>
+                            <Text size={200}>
+                              <Text weight="semibold" size={200}>Resource Group:</Text> rg-{namingPrefix}
+                            </Text>
+                            <Text size={200}>
+                              <Text weight="semibold" size={200}>Fabric Workspace:</Text> {namingPrefix}
+                            </Text>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Azure Configuration */}
+                <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 1 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+                  <CardHeader
+                    className={styles.sectionHeader}
+                    header={
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Subtitle1>Azure Configuration</Subtitle1>
+                        {(() => {
+                          const { complete, total } = getCardCompletion(1);
+                          return complete === total ? (
+                            <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                          ) : (
+                            <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                          );
+                        })()}
+                      </div>
+                    }
+                    description="Target Azure subscription and resource group settings"
                   />
-                </Tooltip>
+                  <div className={styles.fieldGroup}>
+
+                    {existingDeploy?.priorConfig && (
+                      <div style={{
+                        padding: tokens.spacingHorizontalM,
+                        backgroundColor: tokens.colorNeutralBackground4,
+                        borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
+                        borderRadius: tokens.borderRadiusMedium,
+                        marginBottom: tokens.spacingVerticalS,
+                      }}>
+                        <div
+                          onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
+                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                        >
+                          <Text size={200} weight="semibold">
+                            <Badge color="informative" size="small" style={{ marginRight: 6 }}>Auto-populated</Badge>
+                            Settings from prior deployment
+                          </Text>
+                          {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                        </div>
+                        <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
+                          style={{ maxHeight: existingDeployCollapsed ? "0" : "200px" }}
+                        >
+                          <Text size={200} block style={{ marginTop: 8 }}>
+                            Restored from deployment <strong>{existingDeploy.instanceId}</strong>
+                          </Text>
+                          <Checkbox
+                            checked={overridePriorSettings}
+                            onChange={(_, d) => setOverridePriorSettings(!!d.checked)}
+                            label="Override previous settings"
+                            style={{ marginTop: tokens.spacingVerticalXS }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <Field
+                      label={
+                        <InfoLabel info="Azure subscription where infrastructure resources will be deployed. This selection also applies to the Teardown tab." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/azure_logo.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Azure Subscription
+                          </span>
+                        </InfoLabel>
+                      }
+                    >
+                      <Dropdown
+                        value={subscriptions.find((s) => s.id === selectedSubscription)?.name ?? "Select…"}
+                        selectedOptions={[selectedSubscription]}
+                        onOptionSelect={(_, data) => setSelectedSubscription(data.optionValue as string)}
+                      >
+                        {subscriptions.map((s) => (
+                          <Option key={s.id} value={s.id}>{s.name}</Option>
+                        ))}
+                      </Dropdown>
+                    </Field>
+                    <Field
+                      label={
+                        <InfoLabel info="The Fabric capacity backing the workspace. Used to pause billing after deployment. Capacities are scanned across all subscriptions." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/fabric_16_color.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Fabric Capacity
+                          </span>
+                        </InfoLabel>
+                      }
+                    >
+                      <div className={styles.capacityFieldRow}>
+                        <Dropdown
+                          style={{ flex: 1 }}
+                          value={
+                            selectedCapacity
+                              ? (() => {
+                                return formatSelectedCapacityLabel(selectedCapacity);
+                              })()
+                              : capacityRefreshing
+                                ? "Refreshing capacity status..."
+                                : capacities.length === 0 ? "No capacities found" : "Select…"
+                          }
+                          selectedOptions={selectedCapacity ? [selectedCapacity] : []}
+                          onOptionSelect={(_, data) => setSelectedCapacity(data.optionValue as string)}
+                          disabled={capacities.length === 0 && capacityRefreshing}
+                        >
+                          {capacities.map((c) => (
+                            <Option key={getCapacitySelectionValue(c)} value={getCapacitySelectionValue(c)} text={formatCapacityMenuLabel(c)}>
+                              {formatCapacityMenuLabel(c)}
+                            </Option>
+                          ))}
+                        </Dropdown>
+                        <Tooltip content="Refresh capacity status" relationship="label">
+                          <Button
+                            appearance="subtle"
+                            icon={<ArrowSyncRegular />}
+                            size="small"
+                            onClick={refreshCapacities}
+                            disabled={capacityRefreshing}
+                            style={capacityRefreshing ? { animation: "spin 1s linear infinite" } : undefined}
+                          />
+                        </Tooltip>
+                        {(() => {
+                          const cap = findCapacity(selectedCapacity);
+                          if (!cap) return null;
+                          const isActive = cap.state === "Active";
+                          const isPaused = cap.state === "Paused" || cap.state === "Suspended";
+                          const isResuming = cap.state === "Resuming" || resumingCapacity;
+                          return (
+                            <>
+                              {/* Status badge — always visible */}
+                              {isActive && !resumingCapacity && (
+                                <Badge color="success" size="small">Active</Badge>
+                              )}
+                              {isResuming && (
+                                <Badge color="warning" size="small" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>
+                                  {cap.state === "Active" ? "Active ✓" : "Resuming…"}
+                                </Badge>
+                              )}
+                              {isPaused && !resumingCapacity && (
+                                <Badge color="danger" size="small">{cap.state}</Badge>
+                              )}
+                              {/* Resume button — only when not active and not already resuming */}
+                              {!isActive && (
+                                <Tooltip content={`Resume capacity "${cap.name}" (currently ${cap.state})`} relationship="label">
+                                  <Button
+                                    appearance="primary"
+                                    icon={<PlayRegular />}
+                                    size="small"
+                                    disabled={resumingCapacity}
+                                    onClick={async () => {
+                                      setResumingCapacity(true);
+                                      setError("");
+                                      try {
+                                        if (usingMock) {
+                                          // Mock: set state to Resuming, then Active after a delay
+                                          setCapacities((prev) => prev.map((c) =>
+                                            c.name === cap.name ? { ...c, state: "Resuming" } : c
+                                          ));
+                                          setTimeout(() => {
+                                            setCapacities((prev) => prev.map((c) =>
+                                              c.name === cap.name ? { ...c, state: "Active" } : c
+                                            ));
+                                            setResumingCapacity(false);
+                                          }, 5000);
+                                          return;
+                                        }
+                                        await resumeCapacity(cap.subscription, cap.resourceGroup, cap.name);
+                                        // Poll capacity status until Active (max 3 min)
+                                        let elapsed = 0;
+                                        const capName = cap.name;
+                                        const poll = setInterval(() => {
+                                          elapsed += 5;
+                                          refreshCapacities();
+                                          if (elapsed >= 180) {
+                                            clearInterval(poll);
+                                            setResumingCapacity(false);
+                                          }
+                                        }, 5000);
+                                        const checkActive = setInterval(() => {
+                                          setCapacities((current) => {
+                                            const fresh = current.find((c) => c.name === capName);
+                                            if (fresh?.state === "Active") {
+                                              clearInterval(poll);
+                                              clearInterval(checkActive);
+                                              setResumingCapacity(false);
+                                            }
+                                            return current;
+                                          });
+                                        }, 3000);
+                                        setTimeout(() => clearInterval(checkActive), 180000);
+                                      } catch (e) {
+                                        setError(e instanceof Error ? e.message : "Failed to resume capacity");
+                                        setResumingCapacity(false);
+                                      }
+                                    }}
+                                  >
+                                    {resumingCapacity ? "Resuming…" : "Resume"}
+                                  </Button>
+                                </Tooltip>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </Field>
+                    <Field
+                      label={
+                        <InfoLabel info="Azure resource group where Event Hub, ACR, FHIR Service, and ACI containers are deployed." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/icon-resource-group.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Resource Group Name
+                          </span>
+                        </InfoLabel>
+                      }
+                    >
+                      <HistoryInput
+                        field="resource-group"
+                        value={config.resource_group_name}
+                        onChange={(v) => update("resource_group_name", v)}
+                        disabled={useNamingConvention}
+                        placeholder={useNamingConvention ? "Set via naming convention above" : "e.g. rg-medtech-rti-fhir"}
+                      />
+                    </Field>
+                    <Field
+                      label={
+                        <InfoLabel info="Azure region for all resources. Must support FHIR Service and Event Hubs." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/icon-location.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Location
+                          </span>
+                        </InfoLabel>
+                      }
+                      validationState={locationUnsupported ? "error" : undefined}
+                      validationMessage={locationUnsupported
+                        ? `Not an acceptable region. Please select from the following: ${ahdsRegions?.join(", ")}`
+                        : undefined}
+                    >
+                      <HistoryInput
+                        field="location"
+                        value={config.location}
+                        onChange={(v) => update("location", v)}
+                        disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
+                        suggestions={ahdsRegions ?? undefined}
+                        suggestionsLabel="Supported AHDS regions"
+                      />
+                    </Field>
+                    <Field
+                      label={
+                        <InfoLabel info="Entra ID security group granted admin access to FHIR Service and Key Vault." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/icon-groups.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Admin Security Group
+                          </span>
+                        </InfoLabel>
+                      }
+                    >
+                      <HistoryInput
+                        field="admin-security-group"
+                        value={config.admin_security_group}
+                        onChange={(v) => update("admin_security_group", v)}
+                        disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
+                      />
+                    </Field>
+                    {/* Advanced Options Toggle */}
+                    <div className="deploy-advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <SettingsRegular style={{ fontSize: 16, color: tokens.colorBrandForeground1 }} />
+                        <Text weight="semibold" size={300}>Advanced Options</Text>
+                      </div>
+                      {showAdvanced ? <ChevronUpRegular /> : <ChevronDownRegular />}
+                    </div>
+                    <div className={`deploy-collapsible-content${!showAdvanced ? " deploy-collapsible-collapsed" : ""}`}
+                      style={{ maxHeight: showAdvanced ? "800px" : "0" }}
+                    >
+                      <Checkbox
+                        checked={useTags}
+                        onChange={(_, d) => {
+                          setUseTags(!!d.checked);
+                          if (!d.checked) {
+                            update("tags", {});
+                            setTagRows([{ name: "", value: "" }]);
+                          }
+                        }}
+                        label="Add resource tags"
+                      />
+                      {useTags && (
+                        <div>
+                          <TagHistoryPanel
+                            onSelect={(tags) => {
+                              const rows = Object.entries(tags).map(([name, value]) => ({ name, value }));
+                              if (rows.length === 0) rows.push({ name: "", value: "" });
+                              setTagRows(rows);
+                              syncTags(rows);
+                            }}
+                          />
+                          <div style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto 1fr auto",
+                            gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+                            alignItems: "center",
+                            marginBottom: tokens.spacingVerticalXS,
+                          }}>
+                            <Text weight="semibold" size={200}>Name</Text>
+                            <span />
+                            <Text weight="semibold" size={200}>Value</Text>
+                            <span />
+                          </div>
+                          {tagRows.map((row, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr auto 1fr auto",
+                                gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
+                                alignItems: "center",
+                                marginBottom: tokens.spacingVerticalXS,
+                              }}
+                            >
+                              <Input
+                                value={row.name}
+                                onChange={(_, d) => updateTagRow(i, "name", d.value)}
+                                placeholder="e.g. SecurityControl"
+                                size="small"
+                              />
+                              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>:</Text>
+                              <Input
+                                value={row.value}
+                                onChange={(_, d) => updateTagRow(i, "value", d.value)}
+                                placeholder="e.g. Ignore"
+                                size="small"
+                              />
+                              <Button
+                                appearance="subtle"
+                                icon={<DismissRegular />}
+                                size="small"
+                                onClick={() => removeTagRow(i)}
+                                disabled={tagRows.length === 1 && !row.name && !row.value}
+                              />
+                            </div>
+                          ))}
+                          <Button
+                            appearance="subtle"
+                            icon={<AddRegular />}
+                            size="small"
+                            onClick={addTagRow}
+                            style={{ marginTop: tokens.spacingVerticalXS }}
+                          >
+                            Add tag
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
               </div>
-              <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
-                <Checkbox
-                  label="DICOM Download + Upload"
-                  checked={!config.skip_dicom}
-                  onChange={(_, d) => update("skip_dicom", !d.checked)}
-                  disabled={config.skip_base_infra}
-                />
-              </Tooltip>
-              <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
-                <Checkbox
-                  label="Fabric RTI (Eventhouse + Eventstream)"
-                  checked={!config.skip_fabric}
-                  onChange={(_, d) => update("skip_fabric", !d.checked)}
-                />
-              </Tooltip>
-              <div style={{ paddingLeft: 24 }}>
-                <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
-                  <Checkbox
-                    label="FHIR $export to ADLS"
-                    checked={!config.skip_fhir_export}
-                    onChange={(_, d) => update("skip_fhir_export", !d.checked)}
-                    disabled={config.skip_fabric || config.skip_fhir}
+
+              <div className="deploy-column">
+                {/* Fabric Configuration */}
+                <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 2 ? " deploy-card-active" : ""}`}>
+                  <CardHeader
+                    className={styles.sectionHeader}
+                    header={
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Subtitle1>Fabric Configuration</Subtitle1>
+                        {(() => {
+                          const { complete, total } = getCardCompletion(2);
+                          return complete === total ? (
+                            <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                          ) : (
+                            <Badge color="informative" size="small" icon={<CircleRegular />}>{complete}/{total}</Badge>
+                          );
+                        })()}
+                      </div>
+                    }
+                    description="Microsoft Fabric workspace where RTI, Lakehouses, and Data Agents are deployed"
                   />
-                </Tooltip>
+                  <div className={styles.fieldGroup}>
+                    <Field
+                      label={
+                        <InfoLabel info="The Fabric workspace must already exist. Eventhouse, KQL databases, Eventstream, Lakehouses, and Data Agents will be created here." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/fabric_16_color.svg" alt="" width={16} height={16} />
+                            <span className={styles.labelSeparator} />
+                            Fabric Workspace Name
+                          </span>
+                        </InfoLabel>
+                      }
+                      required={!useNamingConvention}
+                    >
+                      <HistoryInput
+                        field="fabric-workspace"
+                        value={config.fabric_workspace_name}
+                        onChange={(v) => update("fabric_workspace_name", v)}
+                        disabled={useNamingConvention}
+                        placeholder={useNamingConvention ? "Set via naming convention above" : "e.g. med-device-rti-hds"}
+                      />
+                    </Field>
+                    {selectedCapacity && showAdvanced && (
+                      <Checkbox
+                        checked={pauseAfterDeploy}
+                        onChange={(_, d) => setPauseAfterDeploy(!!d.checked)}
+                        label={`Pause capacity "${formatSelectedCapacityLabel(selectedCapacity)}" after successful deployment`}
+                      />
+                    )}
+                  </div>
+                </Card>
+
+                {/* Data Configuration */}
+                <Card className={`${styles.section} ${styles.cardRequired}${activeCardIndex === 3 ? " deploy-card-active" : ""}`} style={{ overflow: "visible" }}>
+                  <CardHeader
+                    className={styles.sectionHeader}
+                    header={
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Subtitle1>Data Configuration</Subtitle1>
+                        {(() => {
+                          const { complete, total } = getCardCompletion(3);
+                          return complete === total ? (
+                            <Badge color="success" size="small" icon={<CheckmarkCircleRegular />}>Complete</Badge>
+                          ) : (
+                            <Badge color="danger" size="small">Required</Badge>
+                          );
+                        })()}
+                      </div>
+                    }
+                    description="Synthetic patient data generation and alerting"
+                  />
+                  <div className={styles.fieldGroup}>
+
+                    {/* Existing deployment detection banner */}
+                    {checkingExisting && (
+                      <div style={{
+                        padding: tokens.spacingHorizontalS,
+                        backgroundColor: tokens.colorNeutralBackground4,
+                        borderLeft: `4px solid ${tokens.colorBrandStroke1}`,
+                        borderRadius: tokens.borderRadiusMedium,
+                        marginBottom: tokens.spacingVerticalS,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: tokens.spacingHorizontalS,
+                      }}>
+                        <Badge color="informative" size="small">Checking</Badge>
+                        <Text size={200}>Checking local deployment history...</Text>
+                      </div>
+                    )}
+
+                    {existingDeploy && (
+                      <div style={{
+                        padding: tokens.spacingHorizontalM,
+                        backgroundColor: tokens.colorStatusWarningBackground1,
+                        borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
+                        borderRadius: tokens.borderRadiusMedium,
+                        marginBottom: tokens.spacingVerticalS,
+                      }}>
+                        <div
+                          onClick={() => setExistingDeployCollapsed(!existingDeployCollapsed)}
+                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                        >
+                          <Text weight="semibold">
+                            Previous deployment detected
+                          </Text>
+                          {existingDeployCollapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                        </div>
+                        <div className={`deploy-collapsible-content${existingDeployCollapsed ? " deploy-collapsible-collapsed" : ""}`}
+                          style={{ maxHeight: existingDeployCollapsed ? "0" : "400px" }}
+                        >
+                          <Text size={200} block style={{ marginTop: 4, color: tokens.colorNeutralForeground2 }}>
+                            Workspace <strong>{existingDeploy.workspaceName}</strong> was deployed on{" "}
+                            {new Date(existingDeploy.createdTime).toLocaleString()}
+                          </Text>
+                          <Button size="small" appearance="outline" onClick={runLiveExistingValidation} disabled={deepCheckingExisting} style={{ marginTop: tokens.spacingVerticalS }}>
+                            {deepCheckingExisting ? "Validating live Azure/FHIR state…" : "Run live Azure/FHIR validation"}
+                          </Button>
+                          {existingDeploy.azureRgExists && (
+                            <>
+                              <Text size={200} block style={{ marginTop: 4 }}>
+                                FHIR: <strong>{existingDeploy.fhirPatientCount}</strong> patients,{" "}
+                                <strong>{existingDeploy.fhirDeviceCount}</strong> Masimo devices
+                              </Text>
+                              <Tooltip
+                                content="FHIR $export writes NDJSON files to ADLS Gen2. HDS pipelines, Bronze Lakehouse shortcuts, and Silver/Gold tables all depend on this data. If 0, the $export has not run yet — it will be triggered automatically on deploy."
+                                relationship="description"
+                                positioning="above"
+                              >
+                                <Text size={200} block style={{
+                                  marginTop: 4,
+                                  padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`,
+                                  borderRadius: tokens.borderRadiusMedium,
+                                  backgroundColor: (existingDeploy.exportedFiles ?? 0) === 0
+                                    ? tokens.colorStatusDangerBackground1
+                                    : "transparent",
+                                  cursor: "help",
+                                }}>
+                                  {(existingDeploy.exportedFiles ?? 0) === 0 && (
+                                    <Badge color="danger" size="small" style={{ marginRight: 6 }}>Critical</Badge>
+                                  )}
+                                  Storage: <strong>{existingDeploy.exportedFiles ?? 0}</strong> exported FHIR files,{" "}
+                                  <strong>{existingDeploy.dicomStudies ?? 0}</strong> DICOM imaging blobs
+                                  {(existingDeploy.exportedFiles ?? 0) === 0 && (
+                                    <span style={{ color: tokens.colorStatusDangerForeground1, marginLeft: 6 }}>
+                                      — $export required for HDS pipelines
+                                    </span>
+                                  )}
+                                </Text>
+                              </Tooltip>
+                              <Text size={200} block style={{ marginTop: 2 }}>
+                                {existingDeploy.emulatorRunning ? (
+                                  <>Emulator: <strong style={{ color: tokens.colorPaletteGreenForeground1 }}>running</strong> ({existingDeploy.emulatorDeviceCount ?? 100} devices streaming telemetry)</>
+                                ) : (
+                                  <>Emulator: <strong style={{ color: tokens.colorStatusDangerForeground1 }}>stopped</strong></>
+                                )}
+                              </Text>
+                            </>
+                          )}
+                          <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
+                            <Checkbox
+                              checked={config.reuse_patients}
+                              onChange={(_, d) => update("reuse_patients", !!d.checked)}
+                              label={`Reuse existing ${existingDeploy.fhirPatientCount} patients and ${existingDeploy.fhirDeviceCount} devices`}
+                            />
+                            <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
+                              {config.reuse_patients
+                                ? "Synthea generation, FHIR Loader, and DICOM Loader will be skipped. Emulator stays running."
+                                : `New batch of ${config.patient_count} patients will be generated with ${config.patient_count} new device associations. Existing data will be cleared and replaced.`}
+                            </Text>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <Field
+                      label={
+                        <InfoLabel info="Number of synthetic patients generated by Synthea. More patients = longer FHIR load time. 100 patients ≈ 15 min." infoButton={{ popover: { positioning: "after" } }}>
+                          <span className={styles.fieldLabelWithIcon}>
+                            <img src="/icon-patient.svg" alt="" width={14} height={14} />
+                            <span className={styles.labelSeparator} />
+                            Patient Count{config.reuse_patients ? " (ignored — reusing existing)" : existingDeploy ? " (new batch)" : " (to be generated)"}
+                          </span>
+                        </InfoLabel>
+                      }
+                    >
+                      <SpinButton
+                        value={config.patient_count}
+                        min={10}
+                        max={10000}
+                        step={10}
+                        onChange={(_, d) => update("patient_count", d.value ?? 100)}
+                        disabled={config.reuse_patients}
+                      />
+                    </Field>
+                    <div style={{ marginTop: tokens.spacingVerticalS, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, marginBottom: tokens.spacingVerticalS }}>
+                      <Checkbox
+                        checked={config.use_cached_synthea}
+                        onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
+                        disabled={config.reuse_patients || config.skip_synthea}
+                        label="Use Prepackaged Patient Bundles (Skip generation container)"
+                      />
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, paddingLeft: 28 }}>
+                        {config.use_cached_synthea
+                          ? "Loads pre-generated high-fidelity clinical patient JSON data from cache, saving 15-30 minutes of ACI container generation time."
+                          : "Generates new randomized patient and medical device telemetry data on-the-fly using an Azure Synthea container."}
+                      </Text>
+                    </div>
+                    <Field
+                      label={
+                        <InfoLabel info="Email address for clinical alert notifications via Data Activator (Reflex)." infoButton={{ popover: { positioning: "after" } }}>
+                          Alert Email
+                        </InfoLabel>
+                      }
+                      required
+                    >
+                      <HistoryInput
+                        field="alert-email"
+                        value={config.alert_email}
+                        onChange={(v) => update("alert_email", v)}
+                        placeholder="operator@example.com"
+                        type="email"
+                      />
+                    </Field>
+                  </div>
+                </Card>
+
+                {/* Phase & Component Control */}
+                <Card className={`${styles.section} ${styles.cardOptional}`}>
+                  <CardHeader
+                    className={styles.sectionHeader}
+                    header={
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Subtitle1>Phase &amp; Component Control</Subtitle1>
+                        <Badge color="informative" size="small">Optional</Badge>
+                      </div>
+                    }
+                    description={
+                      <span className={styles.fieldLabelWithIcon}>
+                        <img src="/icon-phases.svg" alt="" width={14} height={14} />
+                        <span className={styles.labelSeparator} />
+                        Toggle individual components — dependencies auto-adjust
+                      </span>
+                    }
+                  />
+                  <div className={styles.checkboxGroup}>
+                    {/* ── Group 1: Infrastructure & Data Ingestion (Phase 1) ── */}
+                    <div
+                      onClick={() => setSkipGroup1Collapsed(!skipGroup1Collapsed)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        backgroundColor: tokens.colorNeutralBackground3,
+                        borderRadius: tokens.borderRadiusMedium,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        marginTop: tokens.spacingVerticalXS,
+                        borderLeft: `4px solid ${tokens.colorBrandStroke1}`
+                      }}
+                    >
+                      <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                        1. Data Fabric Foundation
+                      </Text>
+                      {skipGroup1Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                    </div>
+                    <div className={`deploy-collapsible-content ${skipGroup1Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip Event Hub, ACR, emulator ACI, Storage, and Bicep infra" relationship="description" positioning="after">
+                        <Checkbox
+                          label={`Azure Synthetic Data Foundation${existingDeploy ? " (already deployed)" : ""}`}
+                          checked={!config.skip_base_infra}
+                          onChange={(_, d) => update("skip_base_infra", !d.checked)}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip FHIR R4 service deployment and data loading" relationship="description" positioning="after">
+                        <Checkbox
+                          label={`FHIR Service + Data Loading${existingDeploy ? " (already deployed)" : ""}`}
+                          checked={!config.skip_fhir}
+                          onChange={(_, d) => update("skip_fhir", !d.checked)}
+                          disabled={config.skip_base_infra}
+                        />
+                      </Tooltip>
+                      <div style={{ paddingLeft: 24, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
+                        <Tooltip content="Skip Synthea patient generation — use existing patients" relationship="description" positioning="after">
+                          <Checkbox
+                            label="Synthea Patient Generation"
+                            checked={!config.skip_synthea}
+                            onChange={(_, d) => update("skip_synthea", !d.checked)}
+                            disabled={config.skip_fhir}
+                          />
+                        </Tooltip>
+                        {!config.skip_synthea && (
+                          <Tooltip content="Skip starting ACI patient generator and upload prepackaged patient bundles instead." relationship="description" positioning="after">
+                            <Checkbox
+                              label="Use Prepackaged Patient Bundles"
+                              checked={config.use_cached_synthea}
+                              onChange={(_, d) => update("use_cached_synthea", !!d.checked)}
+                              disabled={config.skip_fhir}
+                              style={{ marginLeft: 24 }}
+                            />
+                          </Tooltip>
+                        )}
+                        <Tooltip content="Skip Device and/or DICOM patient cohort association mapping" relationship="description" positioning="after">
+                          <Checkbox
+                            label="Device and/or DICOM Association"
+                            checked={!config.skip_device_assoc}
+                            onChange={(_, d) => update("skip_device_assoc", !d.checked)}
+                            disabled={config.skip_synthea || config.skip_fhir}
+                          />
+                        </Tooltip>
+                      </div>
+                      <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
+                        <Checkbox
+                          label="DICOM Download + Upload"
+                          checked={!config.skip_dicom}
+                          onChange={(_, d) => update("skip_dicom", !d.checked)}
+                          disabled={config.skip_base_infra}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Fabric RTI (Eventhouse + Eventstream)"
+                          checked={!config.skip_fabric}
+                          onChange={(_, d) => update("skip_fabric", !d.checked)}
+                        />
+                      </Tooltip>
+                      <div style={{ paddingLeft: 24 }}>
+                        <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
+                          <Checkbox
+                            label="FHIR $export to ADLS"
+                            checked={!config.skip_fhir_export}
+                            onChange={(_, d) => update("skip_fhir_export", !d.checked)}
+                            disabled={config.skip_fabric || config.skip_fhir}
+                          />
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    {/* ── Group 2: Enrichment & Clinical Triage (Phase 2) ── */}
+                    <div
+                      onClick={() => setSkipGroup2Collapsed(!skipGroup2Collapsed)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        backgroundColor: tokens.colorNeutralBackground3,
+                        borderRadius: tokens.borderRadiusMedium,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        marginTop: tokens.spacingVerticalS,
+                        borderLeft: `4px solid ${tokens.colorPalettePurpleBorderActive}`
+                      }}
+                    >
+                      <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                        2. Active Patient Telemetry
+                      </Text>
+                      {skipGroup2Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                    </div>
+                    <div className={`deploy-collapsible-content ${skipGroup2Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
+                        <Checkbox
+                          label="RTI Phase 2 (Shortcuts + Enrichment)"
+                          checked={!config.skip_rti_phase2}
+                          onChange={(_, d) => update("skip_rti_phase2", !d.checked)}
+                          disabled={config.skip_fabric}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
+                        <Checkbox
+                          label="DICOM Shortcut + HDS Pipelines"
+                          checked={!config.skip_hds_pipelines}
+                          onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
+                          disabled={config.skip_dicom}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Data Agents (Patient 360 + Clinical Triage)"
+                          checked={!config.skip_data_agents}
+                          onChange={(_, d) => update("skip_data_agents", !d.checked)}
+                        />
+                      </Tooltip>
+                    </div>
+
+                    {/* ── Group 3: Downstream Analytics & Intelligence (Phases 3, 4, 5) ── */}
+                    <div
+                      onClick={() => setSkipGroup3Collapsed(!skipGroup3Collapsed)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        backgroundColor: tokens.colorNeutralBackground3,
+                        borderRadius: tokens.borderRadiusMedium,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        marginTop: tokens.spacingVerticalS,
+                        borderLeft: `4px solid ${tokens.colorPaletteTealBorderActive}`
+                      }}
+                    >
+                      <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                        3. Advanced Imaging &amp; Value-Based Analytics (Phases 3-6)
+                      </Text>
+                      {skipGroup3Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                    </div>
+                    <div className={`deploy-collapsible-content ${skipGroup3Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Imaging Toolkit (Cohorting, Viewer, Report)"
+                          checked={!config.skip_imaging}
+                          onChange={(_, d) => update("skip_imaging", !d.checked)}
+                          disabled={config.skip_dicom}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip ClinicalDeviceOntology (9 entities), DeviceAssociation table, agent binding" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Ontology + Agent Binding"
+                          checked={!config.skip_ontology}
+                          onChange={(_, d) => update("skip_ontology", !d.checked)}
+                        />
+                      </Tooltip>
+                      <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
+                        <Checkbox
+                          label="Data Activator (Email Alerts)"
+                          checked={!config.skip_activator}
+                          onChange={(_, d) => update("skip_activator", !d.checked)}
+                          disabled={config.skip_fabric || !config.alert_email}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip Population Health & Quality Dashboard — claims materialization, Star Ratings, HCC risk adjustment, readmission risk model, cost & utilization analytics, and Power BI report" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Population Health & Quality Dashboard (10-page report)"
+                          checked={!config.skip_quality_measures}
+                          onChange={(_, d) => update("skip_quality_measures", !d.checked)}
+                        />
+                      </Tooltip>
+                    </div>
+                  </div>
+                </Card>
               </div>
             </div>
 
-            {/* ── Group 2: Enrichment & Clinical Triage (Phase 2) ── */}
-            <div
-              onClick={() => setSkipGroup2Collapsed(!skipGroup2Collapsed)}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 12px",
-                backgroundColor: tokens.colorNeutralBackground3,
-                borderRadius: tokens.borderRadiusMedium,
-                cursor: "pointer",
-                userSelect: "none",
-                marginTop: tokens.spacingVerticalS,
-                borderLeft: `4px solid ${tokens.colorPalettePurpleBorderActive}`
-              }}
-            >
-              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
-                2. Active Patient Telemetry
-              </Text>
-              {skipGroup2Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
-            </div>
-            <div className={`deploy-collapsible-content ${skipGroup2Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
-              <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
-                <Checkbox
-                  label="RTI Phase 2 (Shortcuts + Enrichment)"
-                  checked={!config.skip_rti_phase2}
-                  onChange={(_, d) => update("skip_rti_phase2", !d.checked)}
-                  disabled={config.skip_fabric}
-                />
-              </Tooltip>
-              <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
-                <Checkbox
-                  label="DICOM Shortcut + HDS Pipelines"
-                  checked={!config.skip_hds_pipelines}
-                  onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
-                  disabled={config.skip_dicom}
-                />
-              </Tooltip>
-              <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
-                <Checkbox
-                  label="Data Agents (Patient 360 + Clinical Triage)"
-                  checked={!config.skip_data_agents}
-                  onChange={(_, d) => update("skip_data_agents", !d.checked)}
-                />
-              </Tooltip>
-            </div>
-
-            {/* ── Group 3: Downstream Analytics & Intelligence (Phases 3, 4, 5) ── */}
-            <div
-              onClick={() => setSkipGroup3Collapsed(!skipGroup3Collapsed)}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 12px",
-                backgroundColor: tokens.colorNeutralBackground3,
-                borderRadius: tokens.borderRadiusMedium,
-                cursor: "pointer",
-                userSelect: "none",
-                marginTop: tokens.spacingVerticalS,
-                borderLeft: `4px solid ${tokens.colorPaletteTealBorderActive}`
-              }}
-            >
-              <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
-                3. Advanced Imaging &amp; Value-Based Analytics (Phases 3-6)
-              </Text>
-              {skipGroup3Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
-            </div>
-            <div className={`deploy-collapsible-content ${skipGroup3Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
-              <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
-                <Checkbox
-                  label="Imaging Toolkit (Cohorting, Viewer, Report)"
-                  checked={!config.skip_imaging}
-                  onChange={(_, d) => update("skip_imaging", !d.checked)}
-                  disabled={config.skip_dicom}
-                />
-              </Tooltip>
-              <Tooltip content="Skip ClinicalDeviceOntology (9 entities), DeviceAssociation table, agent binding" relationship="description" positioning="after">
-                <Checkbox
-                  label="Ontology + Agent Binding"
-                  checked={!config.skip_ontology}
-                  onChange={(_, d) => update("skip_ontology", !d.checked)}
-                />
-              </Tooltip>
-              <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
-                <Checkbox
-                  label="Data Activator (Email Alerts)"
-                  checked={!config.skip_activator}
-                  onChange={(_, d) => update("skip_activator", !d.checked)}
-                  disabled={config.skip_fabric || !config.alert_email}
-                />
-              </Tooltip>
-              <Tooltip content="Skip Population Health & Quality Dashboard — claims materialization, Star Ratings, HCC risk adjustment, readmission risk model, cost & utilization analytics, and Power BI report" relationship="description" positioning="after">
-                <Checkbox
-                  label="Population Health & Quality Dashboard (10-page report)"
-                  checked={!config.skip_quality_measures}
-                  onChange={(_, d) => update("skip_quality_measures", !d.checked)}
-                />
-              </Tooltip>
-            </div>
-          </div>
-        </Card>
-        </div>
-        </div>
-
-        {error && <div className={styles.error} ref={(el) => el?.scrollIntoView({ behavior: "smooth" })}>{error}</div>}
-      </div>
-      )}
-
-      {/* Actions */}
-      {validationErrors.length > 0 && !initializing && (
-        <div style={{
-          marginTop: tokens.spacingVerticalL,
-          padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
-          backgroundColor: tokens.colorStatusWarningBackground1,
-          borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
-          borderRadius: tokens.borderRadiusMedium,
-        }}>
-          <Text weight="semibold" size={200} block>Complete these required fields before deployment:</Text>
-          {validationErrors.map((issue) => (
-            <Text key={issue} size={200} block style={{ color: tokens.colorNeutralForeground2 }}>• {issue}</Text>
-          ))}
-        </div>
-      )}
-
-      {/* Advanced JSON Configuration Editor */}
-      <div style={{ marginTop: tokens.spacingVerticalM, marginBottom: tokens.spacingVerticalM }}>
-        <Button
-          size="small"
-          appearance="subtle"
-          onClick={() => setShowJsonEditor(v => !v)}
-          style={{ color: tokens.colorBrandForeground1, paddingLeft: 0 }}
-        >
-          {showJsonEditor ? "Hide Raw JSON Configuration" : "Advanced: View/Edit Raw JSON Configuration"}
-        </Button>
-
-        {showJsonEditor && (
-          <div style={{ marginTop: tokens.spacingVerticalS }}>
-            <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: "block", marginBottom: tokens.spacingVerticalXXS }}>
-              Directly edit parameters. Note: invalid JSON will prevent deployment.
-            </Text>
-            <textarea
-              value={JSON.stringify(config, null, 2)}
-              onChange={(e) => {
-                try {
-                  const parsed = JSON.parse(e.target.value);
-                  setConfig(parsed);
-                } catch (err) {
-                  // Keep typing, don't crash on invalid JSON
-                }
-              }}
-              style={{
-                width: "100%",
-                height: "220px",
-                fontFamily: "'Cascadia Code', 'Consolas', monospace",
-                fontSize: tokens.fontSizeBase200,
-                backgroundColor: "#0a0a0a",
-                color: "#00f07f", // console green
-                border: `1px solid ${tokens.colorNeutralStroke1}`,
-                borderRadius: tokens.borderRadiusMedium,
-                padding: tokens.spacingHorizontalM,
-                boxShadow: "inset 0 0 10px rgba(0,0,0,0.5)",
-                outline: "none",
-                resize: "vertical"
-              }}
-            />
+            {error && <div className={styles.error} ref={(el) => el?.scrollIntoView({ behavior: "smooth" })}>{error}</div>}
           </div>
         )}
-      </div>
-      <div className={styles.actions}>
-        <Tooltip content="Preview the Azure and Fabric assets that this configuration will deploy" relationship="description">
+
+        {/* Actions */}
+        {validationErrors.length > 0 && !initializing && (
+          <div style={{
+            marginTop: tokens.spacingVerticalL,
+            padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+            backgroundColor: tokens.colorStatusWarningBackground1,
+            borderLeft: `4px solid ${tokens.colorStatusWarningBorderActive}`,
+            borderRadius: tokens.borderRadiusMedium,
+          }}>
+            <Text weight="semibold" size={200} block>Complete these required fields before deployment:</Text>
+            {validationErrors.map((issue) => (
+              <Text key={issue} size={200} block style={{ color: tokens.colorNeutralForeground2 }}>• {issue}</Text>
+            ))}
+          </div>
+        )}
+
+        {/* Advanced JSON Configuration Editor */}
+        <div style={{ marginTop: tokens.spacingVerticalM, marginBottom: tokens.spacingVerticalM }}>
           <Button
-            appearance="outline"
-            icon={<ClipboardRegular />}
-            onClick={() => setShowResourcePreview(true)}
-            disabled={validationErrors.length > 0}
-          >
-            Preview resources
-          </Button>
-        </Tooltip>
-        <Tooltip content="Review the resource graph, then launch the full deployment pipeline" relationship="description">
-          <Button
-            appearance="primary"
-            icon={<RocketRegular />}
-            onClick={handleSubmit}
-            disabled={!canStartDeployment}
-          >
-            {loading ? "Starting…" : "Start Deployment"}
-          </Button>
-        </Tooltip>
-        <Tooltip content="Run a simulated deployment to preview the UI (no Azure/Fabric resources created)" relationship="description">
-          <Button
-            appearance="outline"
-            icon={<BeakerRegular />}
-            onClick={handleMockDeploy}
             size="small"
+            appearance="subtle"
+            onClick={() => setShowJsonEditor(v => !v)}
+            style={{ color: tokens.colorBrandForeground1, paddingLeft: 0 }}
           >
-            Mock Deploy
+            {showJsonEditor ? "Hide Raw JSON Configuration" : "Advanced: View/Edit Raw JSON Configuration"}
           </Button>
-        </Tooltip>
-      </div>
+
+          {showJsonEditor && (
+            <div style={{ marginTop: tokens.spacingVerticalS }}>
+              <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: "block", marginBottom: tokens.spacingVerticalXXS }}>
+                Directly edit parameters. Note: invalid JSON will prevent deployment.
+              </Text>
+              <textarea
+                value={JSON.stringify(config, null, 2)}
+                onChange={(e) => {
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    setConfig(parsed);
+                  } catch (err) {
+                    // Keep typing, don't crash on invalid JSON
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  height: "220px",
+                  fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                  fontSize: tokens.fontSizeBase200,
+                  backgroundColor: "#0a0a0a",
+                  color: "#00f07f", // console green
+                  border: `1px solid ${tokens.colorNeutralStroke1}`,
+                  borderRadius: tokens.borderRadiusMedium,
+                  padding: tokens.spacingHorizontalM,
+                  boxShadow: "inset 0 0 10px rgba(0,0,0,0.5)",
+                  outline: "none",
+                  resize: "vertical"
+                }}
+              />
+            </div>
+          )}
+        </div>
+        <div className={styles.actions}>
+          <Tooltip content="Preview the Azure and Fabric assets that this configuration will deploy" relationship="description">
+            <Button
+              appearance="outline"
+              icon={<ClipboardRegular />}
+              onClick={() => setShowResourcePreview(true)}
+              disabled={validationErrors.length > 0}
+            >
+              Preview resources
+            </Button>
+          </Tooltip>
+          <Tooltip content="Review the resource graph, then launch the full deployment pipeline" relationship="description">
+            <Button
+              appearance="primary"
+              icon={<RocketRegular />}
+              onClick={handleSubmit}
+              disabled={!canStartDeployment}
+            >
+              {loading ? "Starting…" : "Start Deployment"}
+            </Button>
+          </Tooltip>
+          <Tooltip content="Run a simulated deployment to preview the UI (no Azure/Fabric resources created)" relationship="description">
+            <Button
+              appearance="outline"
+              icon={<BeakerRegular />}
+              onClick={handleMockDeploy}
+              size="small"
+            >
+              Mock Deploy
+            </Button>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Summary Sidebar (wide screens only) */}
@@ -2470,198 +2470,198 @@ export function DeployWizard() {
               </div>
 
               {resourcePreviewMode === "cards" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: tokens.spacingHorizontalL }}>
-                <div style={{ border: `2px solid ${tokens.colorPaletteBlueBorderActive}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <AzureIcon size={20} />
-                      <Subtitle1>Azure resource group</Subtitle1>
-                    </div>
-                    <Badge color="informative">{prospectiveAzureAssets.length} assets</Badge>
-                  </div>
-                  <Text weight="semibold" block>{config.resource_group_name || "rg-<deployment>"}</Text>
-                  <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
-                    {prospectiveAzureAssets.map((asset) => (
-                      <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                        <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
-                        <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: tokens.spacingHorizontalL }}>
+                  <div style={{ border: `2px solid ${tokens.colorPaletteBlueBorderActive}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <AzureIcon size={20} />
+                        <Subtitle1>Azure resource group</Subtitle1>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ border: `2px solid ${tokens.colorBrandStroke1}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <FabricIcon size={20} />
-                      <Subtitle1>Fabric workspace</Subtitle1>
+                      <Badge color="informative">{prospectiveAzureAssets.length} assets</Badge>
                     </div>
-                    <Badge color="brand">{prospectiveFabricAssets.length} assets</Badge>
-                  </div>
-                  <Text weight="semibold" block>{config.fabric_workspace_name || "<workspace>"}</Text>
-                  <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
-                    {prospectiveFabricAssets.map((asset) => (
-                      <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                        <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
-                        <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              ) : (
-              <div style={{ display: "grid", gap: tokens.spacingVerticalXS }}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                Tip: drag resource boxes or arrow labels to separate overlaps, then zoom in for detailed reading. Arrows stay connected as boxes move.
-              </Text>
-              <div
-                ref={graphContainerRef}
-                onScroll={handleGraphScroll}
-                style={{ border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2, overflow: "auto", padding: tokens.spacingHorizontalS, maxHeight: "62vh", position: "relative" }}
-              >
-                <svg
-                  viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-                  width={GRAPH_WIDTH * resourceGraphZoom}
-                  height={GRAPH_HEIGHT * resourceGraphZoom}
-                  role="img"
-                  aria-label="Prospective deployment interconnection graph"
-                  style={{ display: "block", cursor: graphDrag ? "grabbing" : "default", touchAction: "none" }}
-                  onPointerMove={updateGraphDrag}
-                  onPointerUp={() => setGraphDrag(null)}
-                  onPointerLeave={() => setGraphDrag(null)}
-                >
-                  <defs>
-                    <marker id="resource-preview-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
-                      <path d="M0,0 L0,6 L9,3 z" fill={tokens.colorNeutralForeground3} />
-                    </marker>
-                  </defs>
-                  <rect x="300" y="20" width="490" height="620" rx="18" fill={tokens.colorPaletteBlueBackground2} opacity="0.28" />
-                  <text x="320" y="48" fill={tokens.colorPaletteBlueForeground2} fontSize="18" fontWeight="700">Azure resource group: {config.resource_group_name || "rg-<deployment>"}</text>
-                  <rect x="880" y="20" width="1070" height="620" rx="18" fill={tokens.colorBrandBackground2} opacity="0.35" />
-                  <text x="900" y="48" fill={tokens.colorBrandForeground1} fontSize="18" fontWeight="700">Fabric workspace: {config.fabric_workspace_name || "<workspace>"}</text>
-                  
-                  {/* Fabric Workspace Inner Sub-Group Lanes */}
-                  <rect x="890" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="905" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>STREAMING &amp; KQL</text>
-
-                  <rect x="1180" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="1195" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>DELTA LAKE</text>
-
-                  <rect x="1380" y="62" width="560" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
-                  <text x="1395" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>SEMANTIC &amp; APPLICATIONS</text>
-                  {/* 1. Render all edge paths */}
-                  {graphEdges.map((edge) => {
-                    const { pathD } = getEdgeGeom(edge);
-                    return (
-                      <path
-                        key={`path-${edge.id}`}
-                        d={pathD}
-                        stroke={tokens.colorNeutralForeground3}
-                        strokeWidth="2.25"
-                        fill="none"
-                        markerEnd="url(#resource-preview-arrow)"
-                        opacity="0.7"
-                      />
-                    );
-                  })}
-
-                  {/* 2. Render all node boxes */}
-                  {positionedGraphNodes.map((node) => (
-                    <g key={node.id} onPointerDown={(event) => startGraphNodeDrag(event, node.id)} style={{ cursor: "move" }}>
-                      <rect x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="14" fill={graphColor(node.group)} stroke={tokens.colorNeutralStroke1} strokeWidth="1.7" />
-                      <foreignObject x={node.x + 10} y={node.y + 8} width={NODE_WIDTH - 20} height={NODE_HEIGHT - 14}>
-                        <div style={{ fontSize: 13, lineHeight: "16px", fontWeight: 750, color: tokens.colorNeutralForeground1, textAlign: "center", overflow: "hidden", wordBreak: "break-word", userSelect: "none" }}>
-                          {node.label.split("\n").map((part) => <div key={part}>{part}</div>)}
+                    <Text weight="semibold" block>{config.resource_group_name || "rg-<deployment>"}</Text>
+                    <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
+                      {prospectiveAzureAssets.map((asset) => (
+                        <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                          <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
+                          <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
                         </div>
-                      </foreignObject>
-                    </g>
-                  ))}
+                      ))}
+                    </div>
+                  </div>
 
-                  {/* 3. Render all edge labels on top of everything */}
-                  {graphLabelVisible && graphEdges.map((edge) => {
-                    const { midX, midY, labelWidth } = getEdgeGeom(edge);
-                    return (
-                      <g key={`label-${edge.id}`} onPointerDown={(event) => startGraphLabelDrag(event, edge.id)} style={{ cursor: "move" }}>
-                        <rect x={midX - labelWidth / 2} y={midY - 14} width={labelWidth} height="28" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorBrandStroke1} strokeWidth="1.25" opacity="0.98" />
-                        <text x={midX} y={midY + 5} textAnchor="middle" fill={tokens.colorNeutralForeground1} fontSize="13" fontWeight="700" style={{ userSelect: "none" }}>{edge.label}</text>
-                      </g>
-                    );
-                  })}
-                </svg>
-
-                {/* Floating Interconnection Mini-Map */}
-                {miniMapCollapsed ? (
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    onClick={() => setMiniMapCollapsed(false)}
-                    style={{
-                      position: "absolute",
-                      bottom: 16,
-                      right: 16,
-                      zIndex: 10,
-                      backgroundColor: tokens.colorNeutralBackground1,
-                      border: `1px solid ${tokens.colorNeutralStroke2}`,
-                      boxShadow: tokens.shadow16,
-                      backdropFilter: "blur(8px)",
-                      opacity: 0.95,
-                      padding: "6px 10px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 10,
-                      fontWeight: 600,
-                    }}
+                  <div style={{ border: `2px solid ${tokens.colorBrandStroke1}`, borderRadius: tokens.borderRadiusLarge, padding: tokens.spacingHorizontalL, backgroundColor: tokens.colorNeutralBackground2 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: tokens.spacingVerticalS }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <FabricIcon size={20} />
+                        <Subtitle1>Fabric workspace</Subtitle1>
+                      </div>
+                      <Badge color="brand">{prospectiveFabricAssets.length} assets</Badge>
+                    </div>
+                    <Text weight="semibold" block>{config.fabric_workspace_name || "<workspace>"}</Text>
+                    <div style={{ display: "grid", gap: tokens.spacingVerticalXS, marginTop: tokens.spacingVerticalM }}>
+                      {prospectiveFabricAssets.map((asset) => (
+                        <div key={`${asset.type}-${asset.name}`} style={{ padding: tokens.spacingHorizontalS, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                          <Text size={100} block style={{ color: tokens.colorNeutralForeground3, textTransform: "uppercase" }}>{asset.type}</Text>
+                          <Text size={200} weight="semibold" style={{ overflowWrap: "anywhere" }}>{asset.name}</Text>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: tokens.spacingVerticalXS }}>
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                    Tip: drag resource boxes or arrow labels to separate overlaps, then zoom in for detailed reading. Arrows stay connected as boxes move.
+                  </Text>
+                  <div
+                    ref={graphContainerRef}
+                    onScroll={handleGraphScroll}
+                    style={{ border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2, overflow: "auto", padding: tokens.spacingHorizontalS, maxHeight: "62vh", position: "relative" }}
                   >
-                    Show Mini-Map
-                  </Button>
-                ) : (
-                  <div style={{ position: "absolute", bottom: 16, right: 16, width: 200, height: 110, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, boxShadow: tokens.shadow16, padding: 6, display: "flex", flexDirection: "column", gap: 4, zIndex: 10, pointerEvents: "auto", backdropFilter: "blur(8px)", opacity: 0.95 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                      <Text size={100} weight="semibold" style={{ color: tokens.colorNeutralForeground3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Interconnection Mini-Map</Text>
+                    <svg
+                      viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
+                      width={GRAPH_WIDTH * resourceGraphZoom}
+                      height={GRAPH_HEIGHT * resourceGraphZoom}
+                      role="img"
+                      aria-label="Prospective deployment interconnection graph"
+                      style={{ display: "block", cursor: graphDrag ? "grabbing" : "default", touchAction: "none" }}
+                      onPointerMove={updateGraphDrag}
+                      onPointerUp={() => setGraphDrag(null)}
+                      onPointerLeave={() => setGraphDrag(null)}
+                    >
+                      <defs>
+                        <marker id="resource-preview-arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L0,6 L9,3 z" fill={tokens.colorNeutralForeground3} />
+                        </marker>
+                      </defs>
+                      <rect x="300" y="20" width="490" height="620" rx="18" fill={tokens.colorPaletteBlueBackground2} opacity="0.28" />
+                      <text x="320" y="48" fill={tokens.colorPaletteBlueForeground2} fontSize="18" fontWeight="700">Azure resource group: {config.resource_group_name || "rg-<deployment>"}</text>
+                      <rect x="880" y="20" width="1070" height="620" rx="18" fill={tokens.colorBrandBackground2} opacity="0.35" />
+                      <text x="900" y="48" fill={tokens.colorBrandForeground1} fontSize="18" fontWeight="700">Fabric workspace: {config.fabric_workspace_name || "<workspace>"}</text>
+
+                      {/* Fabric Workspace Inner Sub-Group Lanes */}
+                      <rect x="890" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                      <text x="905" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>STREAMING &amp; KQL</text>
+
+                      <rect x="1180" y="62" width="190" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                      <text x="1195" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>DELTA LAKE</text>
+
+                      <rect x="1380" y="62" width="560" height="568" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorNeutralStroke2} strokeWidth="1.25" opacity="0.18" />
+                      <text x="1395" y="82" fill={tokens.colorNeutralForeground3} fontSize="10" fontWeight="700" letterSpacing="0.8" style={{ userSelect: "none" }}>SEMANTIC &amp; APPLICATIONS</text>
+                      {/* 1. Render all edge paths */}
+                      {graphEdges.map((edge) => {
+                        const { pathD } = getEdgeGeom(edge);
+                        return (
+                          <path
+                            key={`path-${edge.id}`}
+                            d={pathD}
+                            stroke={tokens.colorNeutralForeground3}
+                            strokeWidth="2.25"
+                            fill="none"
+                            markerEnd="url(#resource-preview-arrow)"
+                            opacity="0.7"
+                          />
+                        );
+                      })}
+
+                      {/* 2. Render all node boxes */}
+                      {positionedGraphNodes.map((node) => (
+                        <g key={node.id} onPointerDown={(event) => startGraphNodeDrag(event, node.id)} style={{ cursor: "move" }}>
+                          <rect x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="14" fill={graphColor(node.group)} stroke={tokens.colorNeutralStroke1} strokeWidth="1.7" />
+                          <foreignObject x={node.x + 10} y={node.y + 8} width={NODE_WIDTH - 20} height={NODE_HEIGHT - 14}>
+                            <div style={{ fontSize: 13, lineHeight: "16px", fontWeight: 750, color: tokens.colorNeutralForeground1, textAlign: "center", overflow: "hidden", wordBreak: "break-word", userSelect: "none" }}>
+                              {node.label.split("\n").map((part) => <div key={part}>{part}</div>)}
+                            </div>
+                          </foreignObject>
+                        </g>
+                      ))}
+
+                      {/* 3. Render all edge labels on top of everything */}
+                      {graphLabelVisible && graphEdges.map((edge) => {
+                        const { midX, midY, labelWidth } = getEdgeGeom(edge);
+                        return (
+                          <g key={`label-${edge.id}`} onPointerDown={(event) => startGraphLabelDrag(event, edge.id)} style={{ cursor: "move" }}>
+                            <rect x={midX - labelWidth / 2} y={midY - 14} width={labelWidth} height="28" rx="14" fill={tokens.colorNeutralBackground1} stroke={tokens.colorBrandStroke1} strokeWidth="1.25" opacity="0.98" />
+                            <text x={midX} y={midY + 5} textAnchor="middle" fill={tokens.colorNeutralForeground1} fontSize="13" fontWeight="700" style={{ userSelect: "none" }}>{edge.label}</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+
+                    {/* Floating Interconnection Mini-Map */}
+                    {miniMapCollapsed ? (
                       <Button
                         size="small"
                         appearance="subtle"
-                        icon={<DismissRegular style={{ fontSize: 10 }} />}
-                        onClick={() => setMiniMapCollapsed(true)}
-                        style={{ minWidth: "auto", padding: 2, height: 16, width: 16 }}
-                      />
-                    </div>
-                    <div style={{ flex: 1, position: "relative", border: `1px dashed ${tokens.colorNeutralStroke3}`, borderRadius: tokens.borderRadiusSmall, overflow: "hidden", backgroundColor: tokens.colorNeutralBackground2 }}>
-                      <svg
-                        viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-                        style={{ width: "100%", height: "100%", cursor: "crosshair", touchAction: "none" }}
-                        onPointerDown={handleMiniMapPointerDown}
-                        onPointerMove={handleMiniMapPointerMove}
-                        onPointerUp={handleMiniMapPointerUp}
+                        onClick={() => setMiniMapCollapsed(false)}
+                        style={{
+                          position: "absolute",
+                          bottom: 16,
+                          right: 16,
+                          zIndex: 10,
+                          backgroundColor: tokens.colorNeutralBackground1,
+                          border: `1px solid ${tokens.colorNeutralStroke2}`,
+                          boxShadow: tokens.shadow16,
+                          backdropFilter: "blur(8px)",
+                          opacity: 0.95,
+                          padding: "6px 10px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 10,
+                          fontWeight: 600,
+                        }}
                       >
-                        <rect x="290" y="20" width="520" height="660" rx="35" fill={tokens.colorPaletteBlueBackground2} opacity="0.25" />
-                        <rect x="820" y="20" width="1070" height="660" rx="35" fill={tokens.colorBrandBackground2} opacity="0.3" />
-                        {graphEdges.map((edge) => {
-                          const { pathD } = getEdgeGeom(edge);
-                          return <path key={`mini-path-${edge.id}`} d={pathD} stroke={tokens.colorNeutralForeground3} strokeWidth="12" fill="none" opacity="0.45" />;
-                        })}
-                        {positionedGraphNodes.map((node) => (
-                          <rect key={`mini-node-${node.id}`} x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="25" fill={graphColor(node.group)} opacity="0.85" />
-                        ))}
-                        {/* Active Viewport Tracking Indicator */}
-                        <rect
-                          x={resourceGraphZoom > 0 ? scrollState.scrollLeft / resourceGraphZoom : 0}
-                          y={resourceGraphZoom > 0 ? scrollState.scrollTop / resourceGraphZoom : 0}
-                          width={Math.min(GRAPH_WIDTH, resourceGraphZoom > 0 ? scrollState.clientWidth / resourceGraphZoom : GRAPH_WIDTH)}
-                          height={Math.min(GRAPH_HEIGHT, resourceGraphZoom > 0 ? scrollState.clientHeight / resourceGraphZoom : GRAPH_HEIGHT)}
-                          fill="rgba(98, 100, 167, 0.1)"
-                          stroke={tokens.colorBrandStroke1}
-                          strokeWidth="20"
-                          rx="18"
-                          style={{ transition: "stroke 0.25s, fill 0.25s" }}
-                        />
-                      </svg>
-                    </div>
+                        Show Mini-Map
+                      </Button>
+                    ) : (
+                      <div style={{ position: "absolute", bottom: 16, right: 16, width: 200, height: 110, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, boxShadow: tokens.shadow16, padding: 6, display: "flex", flexDirection: "column", gap: 4, zIndex: 10, pointerEvents: "auto", backdropFilter: "blur(8px)", opacity: 0.95 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                          <Text size={100} weight="semibold" style={{ color: tokens.colorNeutralForeground3, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Interconnection Mini-Map</Text>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<DismissRegular style={{ fontSize: 10 }} />}
+                            onClick={() => setMiniMapCollapsed(true)}
+                            style={{ minWidth: "auto", padding: 2, height: 16, width: 16 }}
+                          />
+                        </div>
+                        <div style={{ flex: 1, position: "relative", border: `1px dashed ${tokens.colorNeutralStroke3}`, borderRadius: tokens.borderRadiusSmall, overflow: "hidden", backgroundColor: tokens.colorNeutralBackground2 }}>
+                          <svg
+                            viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
+                            style={{ width: "100%", height: "100%", cursor: "crosshair", touchAction: "none" }}
+                            onPointerDown={handleMiniMapPointerDown}
+                            onPointerMove={handleMiniMapPointerMove}
+                            onPointerUp={handleMiniMapPointerUp}
+                          >
+                            <rect x="290" y="20" width="520" height="660" rx="35" fill={tokens.colorPaletteBlueBackground2} opacity="0.25" />
+                            <rect x="820" y="20" width="1070" height="660" rx="35" fill={tokens.colorBrandBackground2} opacity="0.3" />
+                            {graphEdges.map((edge) => {
+                              const { pathD } = getEdgeGeom(edge);
+                              return <path key={`mini-path-${edge.id}`} d={pathD} stroke={tokens.colorNeutralForeground3} strokeWidth="12" fill="none" opacity="0.45" />;
+                            })}
+                            {positionedGraphNodes.map((node) => (
+                              <rect key={`mini-node-${node.id}`} x={node.x} y={node.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx="25" fill={graphColor(node.group)} opacity="0.85" />
+                            ))}
+                            {/* Active Viewport Tracking Indicator */}
+                            <rect
+                              x={resourceGraphZoom > 0 ? scrollState.scrollLeft / resourceGraphZoom : 0}
+                              y={resourceGraphZoom > 0 ? scrollState.scrollTop / resourceGraphZoom : 0}
+                              width={Math.min(GRAPH_WIDTH, resourceGraphZoom > 0 ? scrollState.clientWidth / resourceGraphZoom : GRAPH_WIDTH)}
+                              height={Math.min(GRAPH_HEIGHT, resourceGraphZoom > 0 ? scrollState.clientHeight / resourceGraphZoom : GRAPH_HEIGHT)}
+                              fill="rgba(98, 100, 167, 0.1)"
+                              stroke={tokens.colorBrandStroke1}
+                              strokeWidth="20"
+                              rx="18"
+                              style={{ transition: "stroke 0.25s, fill 0.25s" }}
+                            />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              </div>
+                </div>
               )}
             </DialogContent>
             <DialogActions>
