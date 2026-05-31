@@ -48,8 +48,8 @@ function Get-PortProcess {
         $pidStr = (lsof -t -i :$Port -s TCP:LISTEN 2>/dev/null)
         if ($pidStr) {
             $pids = $pidStr -split "\n" | Where-Object { $_ -match '^\d+$' }
-            foreach ($pId in $pids) {
-                Get-Process -Id ([int]$pId) -ErrorAction SilentlyContinue
+            foreach ($foundPid in $pids) {
+                Get-Process -Id ([int]$foundPid) -ErrorAction SilentlyContinue
             }
         }
     }
