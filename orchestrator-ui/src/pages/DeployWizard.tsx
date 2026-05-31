@@ -2086,9 +2086,9 @@ export function DeployWizard() {
                     />
                   </Tooltip>
                 )}
-                <Tooltip content="Skip Device resource creation + patient associations" relationship="description" positioning="after">
+                <Tooltip content="Skip Device and/or DICOM patient cohort association mapping" relationship="description" positioning="after">
                   <Checkbox
-                    label="Device Associations"
+                    label="Device and/or DICOM Association"
                     checked={!config.skip_device_assoc}
                     onChange={(_, d) => update("skip_device_assoc", !d.checked)}
                     disabled={config.skip_synthea || config.skip_fhir}

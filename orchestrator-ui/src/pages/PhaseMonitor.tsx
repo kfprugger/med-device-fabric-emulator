@@ -1808,7 +1808,7 @@ export function PhaseMonitor() {
           { key: "skip_base_infra", label: "Azure Emulator Infra", phase: 1 },
           { key: "skip_fhir", label: "FHIR Service + Loader", phase: 1 },
           { key: "skip_synthea", label: "Synthea Patients", phase: 1 },
-          { key: "skip_device_assoc", label: "Device Associations", phase: 1 },
+          { key: "skip_device_assoc", label: "Device and/or DICOM Association", phase: 1 },
           { key: "skip_dicom", label: "DICOM Download", phase: 1 },
           { key: "skip_fabric", label: "Fabric RTI", phase: 1 },
           { key: "skip_fhir_export", label: "FHIR $export", phase: 1 },
