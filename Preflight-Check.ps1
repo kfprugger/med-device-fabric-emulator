@@ -327,22 +327,32 @@ try {
     }
     $fabHeaders = @{ "Authorization" = "Bearer $fabToken" }
     $caps = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/capacities" -Headers $fabHeaders
-    $activeCaps = $caps.value | Where-Object { $_.state -eq "Active" -and $_.sku -ne "PP3" }
-    $paidCaps = $activeCaps | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" }
+    $allPaidCaps = $caps.value | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" -and $_.sku -ne "PP3" }
 
-    if ($paidCaps.Count -gt 0) {
-        $cap = $paidCaps | Select-Object -First 1
-        $checks += @{ name = "Fabric Capacity"; status = "pass"; detail = "$($cap.displayName) (SKU: $($cap.sku))" }
-        Write-Host "  ✓ Fabric capacity: $($cap.displayName) ($($cap.sku))" -ForegroundColor Green
-    } elseif ($activeCaps.Count -gt 0) {
-        $cap = $activeCaps | Select-Object -First 1
-        $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "$($cap.displayName) (SKU: $($cap.sku)) — trial not supported" }
-        $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
-        Write-Host "  ✗ Fabric capacity: $($cap.displayName) ($($cap.sku)) — trial not supported" -ForegroundColor Red
+    if ($allPaidCaps.Count -gt 0) {
+        $activePaidCaps = $allPaidCaps | Where-Object { $_.state -eq "Active" }
+        if ($activePaidCaps.Count -gt 0) {
+            $cap = $activePaidCaps | Select-Object -First 1
+            $checks += @{ name = "Fabric Capacity"; status = "pass"; detail = "$($cap.displayName) (SKU: $($cap.sku))" }
+            Write-Host "  ✓ Fabric capacity: $($cap.displayName) ($($cap.sku))" -ForegroundColor Green
+        } else {
+            $cap = $allPaidCaps | Select-Object -First 1
+            $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "$($cap.displayName) (SKU: $($cap.sku)) — paused" }
+            $failures += "Fabric capacity '$($cap.displayName)' ($($cap.sku)) is currently paused ($($cap.state)). Please resume it before deploying."
+            Write-Host "  ✗ Fabric capacity: $($cap.displayName) ($($cap.sku)) — currently paused ($($cap.state))" -ForegroundColor Red
+        }
     } else {
-        $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "No active capacity" }
-        $failures += "No active Fabric capacity found. Resume or create at https://app.fabric.microsoft.com"
-        Write-Host "  ✗ No active Fabric capacity" -ForegroundColor Red
+        $activeTrialCaps = $caps.value | Where-Object { $_.sku -eq "FT1" -and $_.state -eq "Active" }
+        if ($activeTrialCaps.Count -gt 0) {
+            $cap = $activeTrialCaps | Select-Object -First 1
+            $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "$($cap.displayName) (SKU: $($cap.sku)) — trial not supported" }
+            $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
+            Write-Host "  ✗ Fabric capacity: $($cap.displayName) ($($cap.sku)) — trial not supported" -ForegroundColor Red
+        } else {
+            $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "No active capacity" }
+            $failures += "No Fabric capacity found. Please create a paid F-SKU (F2+) at https://app.fabric.microsoft.com"
+            Write-Host "  ✗ No Fabric capacity found" -ForegroundColor Red
+        }
     }
 } catch {
     $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "API unreachable" }

@@ -313,49 +313,64 @@ def deploy_all_orchestrator(context):
     phases.append({"phase": "HDS Deployment", "status": "succeeded"})
 
     # ── Phase 4: Fabric RTI Phase 2 ───────────────────────────────
-    update_status("Phase 4: Fabric RTI Phase 2", "running")
-    phase4_input = {"config": config, "resources": resources}
-    result = yield context.call_activity_with_retry(
-        "activity_deploy_rti_phase2", RETRY_POLICY, phase4_input
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    if not config.get("skip_fabric") and not config.get("skip_rti_phase2"):
+        update_status("Phase 4: Fabric RTI Phase 2", "running")
+        phase4_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_rti_phase2", RETRY_POLICY, phase4_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 4: Fabric RTI Phase 2", "status": "skipped"})
 
     # ── Phase 4b: HDS Pipeline Triggers ───────────────────────────
-    update_status("Phase 4b: HDS Pipeline Triggers", "running")
-    phase4b_input = {"config": config, "resources": resources}
-    result = yield context.call_activity_with_retry(
-        "activity_deploy_hds_pipelines", RETRY_POLICY, phase4b_input
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    if not config.get("skip_hds_pipelines"):
+        update_status("Phase 4b: HDS Pipeline Triggers", "running")
+        phase4b_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_hds_pipelines", RETRY_POLICY, phase4b_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 4b: HDS Pipeline Triggers", "status": "skipped"})
 
     # ── Phase 5: Data Agents ──────────────────────────────────────
-    update_status("Phase 5: Data Agents", "running")
-    phase5_input = {"config": config, "resources": resources}
-    result = yield context.call_activity_with_retry(
-        "activity_deploy_data_agents", RETRY_POLICY, phase5_input
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    if not config.get("skip_data_agents"):
+        update_status("Phase 5: Data Agents", "running")
+        phase5_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_data_agents", RETRY_POLICY, phase5_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 5: Data Agents", "status": "skipped"})
 
     # ── Phase 6: Ontology ─────────────────────────────────────────
-    update_status("Phase 6: Ontology", "running")
-    phase6_input = {"config": config, "resources": resources}
-    result = yield context.call_activity_with_retry(
-        "activity_deploy_ontology", RETRY_POLICY, phase6_input
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    if not config.get("skip_ontology"):
+        update_status("Phase 6: Ontology", "running")
+        phase6_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_ontology", RETRY_POLICY, phase6_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 6: Ontology", "status": "skipped"})
 
     # ── Phase 7: CMS Quality & Claims ─────────────────────────────
-    update_status("Phase 7: CMS Quality & Claims", "running")
-    phase7_input = {"config": config, "resources": resources}
-    result = yield context.call_activity_with_retry(
-        "activity_deploy_quality_measures", RETRY_POLICY, phase7_input
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    if not config.get("skip_quality_measures"):
+        update_status("Phase 7: CMS Quality & Claims", "running")
+        phase7_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_quality_measures", RETRY_POLICY, phase7_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 7: CMS Quality & Claims", "status": "skipped"})
 
     # ── Complete ──────────────────────────────────────────────────
     update_status("Deployment Complete", "succeeded")

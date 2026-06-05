@@ -264,7 +264,18 @@ if (-not $SkipFabric) {
             $connections = @()
         }
         
-        $matchPatterns = @('masimo', 'fhir', 'dicom', 'stfhir', 'EventHub', 'telemetry', 'fab-')
+        # Derive appNamePrefix to clean up potential custom connection prefixes
+        $appNamePrefix = "masimo"
+        if ($FabricWorkspaceName) {
+            $sanitized = ($FabricWorkspaceName -replace '[^a-zA-Z0-9]', '').ToLower()
+            if ($sanitized -match '^[0-9]') { $sanitized = "m" + $sanitized }
+            if ($sanitized.Length -gt 8) { $sanitized = $sanitized.SubString(0, 8) }
+            while ($sanitized.Length -lt 3) { $sanitized += "m" }
+            if ($sanitized -match '^[a-z][a-z0-9]{2,7}$') {
+                $appNamePrefix = $sanitized
+            }
+        }
+        $matchPatterns = @('masimo', 'fhir', 'dicom', 'stfhir', 'EventHub', 'telemetry', 'fab-', $appNamePrefix)
         $connToDelete = @($connections | Where-Object {
             $name = $_.displayName
             $matchPatterns | Where-Object { $name -match $_ }

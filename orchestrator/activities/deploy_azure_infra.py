@@ -48,14 +48,31 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
     # 1. Ensure resource group
     client.ensure_resource_group(rg_name, location, tags)
 
+    # Sanitize and truncate fabric_workspace_name to form appNamePrefix
+    fabric_workspace_name = config.get("fabric_workspace_name", "")
+    app_name_prefix = "masimo"
+    if fabric_workspace_name:
+        import re
+        sanitized = "".join(c.lower() for c in fabric_workspace_name if c.isalnum())
+        if sanitized and sanitized[0].isdigit():
+            sanitized = "m" + sanitized
+        sanitized = sanitized[:8]
+        while len(sanitized) < 3:
+            sanitized += "m"
+        if re.match(r"^[a-z][a-z0-9]{2,7}$", sanitized):
+            app_name_prefix = sanitized
+
+    logger.info("Using base resource name prefix: '%s'", app_name_prefix)
+
     # 2. Deploy infra.bicep
     skip_fabric = config.get("skip_fabric", False)
-    parameters = {}
+    parameters = {
+        "appNamePrefix": app_name_prefix
+    }
     if admin_group_id:
         parameters["adminGroupObjectId"] = admin_group_id
     if skip_fabric:
         parameters["deployEventHubs"] = False
-        parameters["deployAcr"] = False
 
     infra_outputs = client.deploy_bicep(
         resource_group=rg_name,

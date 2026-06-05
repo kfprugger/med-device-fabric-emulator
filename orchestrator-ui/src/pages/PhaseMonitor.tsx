@@ -43,6 +43,7 @@ import {
 import { PhaseCard } from "../components/PhaseCard";
 import { AllLogsStream } from "../components/AllLogsStream";
 import { DeployedResourcesPanel } from "../components/DeployedResourcesPanel";
+import { AzureBadge, FabricBadge } from "../components/TypeBadges";
 import {
   getDeploymentStatus,
   resumeAfterHds,
@@ -396,19 +397,19 @@ const useStyles = makeStyles({
 });
 
 const ALL_PHASES: PhaseInfo[] = [
-  { phase: "1. Data Fabric Foundation: Fabric Workspace", status: "pending" },
-  { phase: "1. Data Fabric Foundation: Base Azure Infrastructure", status: "pending" },
-  { phase: "1. Data Fabric Foundation: FHIR Service + Synthea + Loader", status: "pending" },
-  { phase: "3. Multimodal Cohorting & Imaging: DICOM Service + Loader", status: "pending" },
-  { phase: "2. Active Patient Telemetry: Fabric RTI Ingest", status: "pending" },
-  { phase: "1. Data Fabric Foundation: HDS Detection", status: "pending" },
-  { phase: "2. Active Patient Telemetry: Fabric RTI Enrichment", status: "pending" },
-  { phase: "3. Multimodal Cohorting & Imaging: DICOM Shortcut + HDS Pipelines", status: "pending" },
-  { phase: "4. Connected Semantic Intelligence: Conversational Data Agents", status: "pending" },
-  { phase: "3. Multimodal Cohorting & Imaging: Custom SWA Viewer & Direct Lake", status: "pending" },
-  { phase: "4. Connected Semantic Intelligence: Clinical Device Ontology", status: "pending" },
-  { phase: "5. Bedside Alerting & Action: Real-Time Reflex alerts", status: "pending" },
-  { phase: "6. Population Health & Quality: Full analytics pipeline", status: "pending" },
+  { phase: "1. Data Fabric Foundation: Fabric Workspace", status: "pending", milestone: 1 },
+  { phase: "1. Data Fabric Foundation: Base Azure Infrastructure", status: "pending", milestone: 1 },
+  { phase: "1. Data Fabric Foundation: FHIR Service + Synthea + Loader", status: "pending", milestone: 1 },
+  { phase: "3. Multimodal Cohorting & Imaging: DICOM Service + Loader", status: "pending", milestone: 3 },
+  { phase: "2. Active Patient Telemetry: Fabric RTI Ingest", status: "pending", milestone: 2 },
+  { phase: "1. Data Fabric Foundation: HDS Detection", status: "pending", milestone: 1 },
+  { phase: "2. Active Patient Telemetry: Fabric RTI Enrichment", status: "pending", milestone: 2 },
+  { phase: "3. Multimodal Cohorting & Imaging: DICOM Shortcut + HDS Pipelines", status: "pending", milestone: 3 },
+  { phase: "4. Connected Semantic Intelligence: Conversational Data Agents", status: "pending", milestone: 4 },
+  { phase: "3. Multimodal Cohorting & Imaging: Custom SWA Viewer & Direct Lake", status: "pending", milestone: 3 },
+  { phase: "4. Connected Semantic Intelligence: Clinical Device Ontology", status: "pending", milestone: 4 },
+  { phase: "5. Bedside Alerting & Action: Real-Time Reflex alerts", status: "pending", milestone: 5 },
+  { phase: "6. Population Health & Quality: Full analytics pipeline", status: "pending", milestone: 6 },
 ];
 
 export function PhaseMonitor() {
@@ -933,6 +934,19 @@ export function PhaseMonitor() {
   // Instance ID format: P<milestone-digits>-<timestamp> (e.g. P12345-20260406-195906)
   // Legacy formats: ALLPHASES-*, PHASE2+-*, FABRIC-*, teardown*
   function getActiveMilestoneNumbers(): Set<number> {
+    const deployConfig = (status?.customStatus as Record<string, unknown>)?.deployConfig as DeploymentConfig | undefined;
+
+    // Overrule legacy IDs if we have the rich deployment config saved
+    if (deployConfig && !isTeardown) {
+      const set = new Set<number>([1]);
+      if (!deployConfig.skip_fabric) set.add(2);
+      if (!(deployConfig.skip_dicom && deployConfig.skip_imaging && deployConfig.skip_hds_pipelines)) set.add(3);
+      if (!(deployConfig.skip_data_agents && deployConfig.skip_ontology)) set.add(4);
+      if (!deployConfig.skip_activator) set.add(5);
+      if (!deployConfig.skip_quality_measures) set.add(6);
+      return set;
+    }
+
     const id = instanceId ?? "";
 
     // New format: P followed by milestone digits (P12345, P2345, P3, etc.)
@@ -966,7 +980,7 @@ export function PhaseMonitor() {
   const teardownHasAzure = !!(status?.customStatus as Record<string, unknown>)?.resourceGroupName;
   const FABRIC_TEARDOWN_PATTERNS = new Set(["Fabric Workspace Items", "Workspace Identity", "Delete Workspace"]);
   const AZURE_TEARDOWN_PATTERNS = new Set(["Azure Resource Group"]);
-  const filteredMilestones = isTeardown
+  const baseFilteredMilestones = isTeardown
     ? allMilestonesTemplate.filter((ms) => {
         const isFabricMilestone = ms.namePatterns.some((p) => FABRIC_TEARDOWN_PATTERNS.has(p));
         const isAzureMilestone = ms.namePatterns.some((p) => AZURE_TEARDOWN_PATTERNS.has(p));
@@ -977,6 +991,16 @@ export function PhaseMonitor() {
     : isMock
       ? allMilestonesTemplate
       : allMilestonesTemplate.filter((ms) => activeMilestoneNumbers.has(ms.phaseNumber ?? 0));
+
+  // Dynamically renumber and space out milestones so there are no numeric gaps
+  const numMilestones = baseFilteredMilestones.length;
+  const filteredMilestones = baseFilteredMilestones.map((ms, idx) => {
+    const cleanLabel = ms.label.replace(/^\d+\.\s*/, "");
+    const newLabel = isTeardown ? ms.label : `${idx + 1}. ${cleanLabel}`;
+    // Evenly space markers between 8% and 92% track width
+    const position = numMilestones > 1 ? 8 + (idx * (84 / (numMilestones - 1))) : 50;
+    return { ...ms, label: newLabel, position };
+  });
 
   // Redistribute positions evenly for the surviving milestones
   // Positions: evenly spaced between 8% and 88%
@@ -1334,7 +1358,19 @@ export function PhaseMonitor() {
           };
 
           // Build a normalized list of all phases in order (Completed, Current, Future)
-          const allPhasesNormalized = ALL_PHASES.map((ap) => {
+          // Filter out phases that belong to skipped milestones so they don't show as cards
+          const activeMilestoneSorted = Array.from(activeMilestoneNumbers).sort((a,b)=>a-b);
+          const milestoneMap = new Map(activeMilestoneSorted.map((m, idx) => [m, idx + 1]));
+
+          const activeAllPhasesTemplate = isTeardown 
+            ? ALL_PHASES 
+            : ALL_PHASES.filter(ap => activeMilestoneNumbers.has(ap.milestone ?? 0)).map(ap => {
+                const newNumber = milestoneMap.get(ap.milestone ?? 0) ?? 1;
+                const cleanPhase = ap.phase.replace(/^\d+\.\s*/, "");
+                return { ...ap, phase: `${newNumber}. ${cleanPhase}` };
+              });
+          
+          const allPhasesNormalized = activeAllPhasesTemplate.map((ap) => {
             const resolved = phases.find((p) => {
               if (p.phase === ap.phase) return true;
               
@@ -1385,13 +1421,13 @@ export function PhaseMonitor() {
 
           // Separate phases by status
           const completedPhases = allPhasesNormalized.filter(
-            (p) => p.status === "succeeded" || p.status === "skipped"
+            (p) => p.status === "succeeded" || p.status === "skipped" || (isComplete && p.status === "pending")
           );
           const activePhases = allPhasesNormalized.filter(
-            (p) => p.status === "running" || p.status === "waiting_for_input"
+            (p) => !isComplete && (p.status === "running" || p.status === "waiting_for_input")
           );
           const futurePhases = allPhasesNormalized.filter(
-            (p) => p.status === "pending"
+            (p) => !isComplete && p.status === "pending"
           );
 
           // Get total elapsed / durations
@@ -1601,9 +1637,9 @@ export function PhaseMonitor() {
 
                   {/* 2. Individual Phase Blocks */}
                   {allPhasesNormalized.map((p, pIdx) => {
-                    const isComp = p.status === "succeeded" || p.status === "skipped";
-                    const isActive = p.status === "running" || p.status === "waiting_for_input";
-                    const isFut = p.status === "pending";
+                    const isComp = p.status === "succeeded" || p.status === "skipped" || (isComplete && p.status === "pending");
+                    const isActive = !isComplete && (p.status === "running" || p.status === "waiting_for_input");
+                    const isFut = !isComplete && p.status === "pending";
 
                     // Determine normal and compressed widths
                     let normalPct = 0;
@@ -1795,8 +1831,8 @@ export function PhaseMonitor() {
             <Card className={styles.configCard} size="small">
               <CardHeader header={<Text weight="semibold" size={300}>Teardown Configuration</Text>} />
               <div className={styles.configGrid}>
-                {wsName && <span className={styles.configItem}><Badge color="brand" size="small">Workspace</Badge> {wsName}</span>}
-                {rgName && <span className={styles.configItem}><Badge color="informative" size="small">Resource Group</Badge> {rgName}</span>}
+                {wsName && <span className={styles.configItem}><FabricBadge /> {wsName}</span>}
+                {rgName && <span className={styles.configItem}><AzureBadge /> {rgName}</span>}
                 {targets && targets.map((t, i) => <span key={i} className={styles.configItem}><Badge color="warning" size="small">Target</Badge> {t}</span>)}
               </div>
             </Card>
@@ -1827,10 +1863,10 @@ export function PhaseMonitor() {
             <CardHeader header={<Text weight="semibold" size={300}>Deployment Configuration</Text>} />
             <div className={styles.configGrid}>
               {(cfg.fabric_workspace_name as string) && (
-                <span className={styles.configItem}><Badge color="brand" size="small">Workspace</Badge> {cfg.fabric_workspace_name as string}</span>
+                <span className={styles.configItem}><FabricBadge /> {cfg.fabric_workspace_name as string}</span>
               )}
               {(cfg.resource_group_name as string) && (
-                <span className={styles.configItem}><Badge color="informative" size="small">RG</Badge> {cfg.resource_group_name as string}</span>
+                <span className={styles.configItem}><AzureBadge /> {cfg.resource_group_name as string}</span>
               )}
               {(cfg.patient_count as number) > 0 && (
                 <span className={styles.configItem}><Badge color="subtle" size="small">Patients</Badge> {cfg.patient_count as number}</span>

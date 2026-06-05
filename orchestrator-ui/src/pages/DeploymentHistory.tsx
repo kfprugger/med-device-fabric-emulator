@@ -121,6 +121,16 @@ const useStyles = makeStyles({
     marginBottom: tokens.spacingVerticalS,
     flexWrap: "wrap" as const,
   },
+  listHeader: {
+    display: "flex",
+    alignItems: "center",
+    padding: `0 ${tokens.spacingHorizontalL}`,
+    gap: tokens.spacingHorizontalM,
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    marginBottom: tokens.spacingVerticalXS,
+  },
 });
 
 function statusColor(
@@ -391,6 +401,18 @@ export function DeploymentHistory() {
             <div className={styles.card}><div className={styles.cardRow}><Text>Loading deployment history...</Text></div></div>
           </>
         )}
+        {!loading && filteredDeployments.length > 0 && (
+          <div className={styles.listHeader}>
+            <div style={{ width: 32 }} /> {/* Checkbox placeholder */}
+            <div style={{ minWidth: 180 }}>Deployment Name</div>
+            <div style={{ flex: 1 }}>Workspace / Resource Group</div>
+            <div style={{ width: 100 }}>Type</div>
+            <div style={{ width: 100 }}>Status</div>
+            <div style={{ width: 60 }}>Progress</div>
+            <div style={{ width: 150 }}>Created</div>
+            <div style={{ width: 120 }}>Actions</div>
+          </div>
+        )}
         {!loading && filteredDeployments.map((d) => {
           const cs = d.customStatus as Record<string, unknown> | null;
           const workspace = (cs?.workspaceName as string) || "";
@@ -409,13 +431,16 @@ export function DeploymentHistory() {
           return (
             <div key={d.instanceId} className={styles.card}>
               <div className={styles.cardRow}>
-                <Checkbox
-                  checked={compareIds.has(d.instanceId)}
-                  onChange={(_, data) => toggleCompare(d.instanceId, !!data.checked)}
-                  aria-label={`Compare ${d.instanceId}`}
-                />
+                <div style={{ width: 32 }}>
+                  <Checkbox
+                    checked={compareIds.has(d.instanceId)}
+                    onChange={(_, data) => toggleCompare(d.instanceId, !!data.checked)}
+                    aria-label={`Compare ${d.instanceId}`}
+                  />
+                </div>
                 <div
                   className={styles.runName}
+                  style={{ minWidth: 180 }}
                   onClick={() => navigate(`/monitor/${d.instanceId}`)}
                   title="Click to view run details"
                 >
@@ -424,20 +449,26 @@ export function DeploymentHistory() {
                     <Badge color="informative" size="small" style={{ marginLeft: 6 }}>mock</Badge>
                   )}
                 </div>
-                <Text className={styles.workspace}>{displayName}</Text>
-                <Badge color={isTeardown ? "warning" : "brand"}>
-                  {isTeardown ? "Teardown" : "Deployment"}
-                </Badge>
-                <Badge color={statusColor(d.runtimeStatus)}>{d.runtimeStatus}</Badge>
-                {total > 0 && (
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {completed}/{total}
-                  </Text>
-                )}
-                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                <Text className={styles.workspace} style={{ flex: 1 }}>{displayName}</Text>
+                <div style={{ width: 100 }}>
+                  <Badge color={isTeardown ? "warning" : "brand"}>
+                    {isTeardown ? "Teardown" : "Deployment"}
+                  </Badge>
+                </div>
+                <div style={{ width: 100 }}>
+                  <Badge color={statusColor(d.runtimeStatus)}>{d.runtimeStatus}</Badge>
+                </div>
+                <div style={{ width: 60 }}>
+                  {total > 0 && (
+                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                      {completed}/{total}
+                    </Text>
+                  )}
+                </div>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, width: 150 }}>
                   {d.createdTime ? new Date(d.createdTime).toLocaleString() : "—"}
                 </Text>
-                <div className={styles.actions}>
+                <div className={styles.actions} style={{ width: 120 }}>
                   <Button
                     appearance="subtle"
                     icon={isExpanded ? <ChevronUpRegular /> : <ChevronDownRegular />}

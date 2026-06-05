@@ -841,12 +841,162 @@ $step8Timer.Stop()
 $shortcutStatus = if ($existingShortcut) { 'EXISTS' } else { 'OK' }
 Record-Step -Name 'Create Lakehouse Shortcut' -Status $shortcutStatus -Seconds $step8Timer.Elapsed.TotalSeconds
 
-# ── Step 9: Run Imaging and Clinical pipelines concurrently, then OMOP ──
-# Both pipelines operate on independent sets of data and can run in parallel, 
-# cutting total execution time in half. OMOP must run after both complete successfully.
+# ── Step 8.5: Ensure scipy is in HDS Environment ──
+$step85Timer = [System.Diagnostics.Stopwatch]::StartNew()
+Write-Log '─── Step 8.5: Ensuring scipy is in HDS Environment ───' 'INFO'
+Write-Log '  The HDS flattening notebooks require scipy.' 'INFO'
+Write-Log '  Adding scipy==1.11.4 to the Spark environment...' 'INFO'
+
+$fabricToken = Get-FabricApiAccessToken
+$fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
+
+try {
+    # Find the HDS environment item
+    $envResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items?type=Environment" -Headers $fabHeaders -Description 'List environments'
+    $hdsEnv = $envResult.Response.value | Where-Object { $_.displayName -match "healthcare.*environment" }
+    if ($hdsEnv -is [array]) { $hdsEnv = $hdsEnv[0] }
+
+    if ($hdsEnv) {
+        $envId = $hdsEnv.id
+        $envName = $hdsEnv.displayName
+        Write-Log "  ✓ Environment: $envName ($envId)" 'INFO'
+
+        # Check published libraries for scipy
+        $scipyAlreadyPublished = $false
+        try {
+            $pubLibsResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId/libraries?beta=False" -Headers $fabHeaders -Description 'Check published libraries for scipy'
+            $pubLibs = $pubLibsResult.Response
+            $scipyLib = $pubLibs.libraries | Where-Object { $_.name -eq "scipy" }
+            if ($scipyLib) {
+                $scipyAlreadyPublished = $true
+                Write-Log "  ✓ scipy already published (v$($scipyLib.version))" 'INFO'
+            }
+        } catch {
+            Write-Log "  Could not query published libraries. Proceeding to verify staging." 'DEBUG'
+        }
+
+        if (-not $scipyAlreadyPublished) {
+            # Check environment state — cannot publish if already publishing
+            $envMetaResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId" -Headers $fabHeaders -Description 'Get environment details'
+            $envState = $envMetaResult.Response.properties.publishDetails.state
+            if ($envState -and $envState -ne "Success" -and $envState -ne "Failed" -and $envState -ne "Cancelled") {
+                Write-Log "  ⚠ Environment is currently '$envState' — waiting for current publish to finish..." 'WARN'
+                $envWaitStart = Get-Date
+                while ((New-TimeSpan -Start $envWaitStart).TotalMinutes -lt 15) {
+                    Start-Sleep -Seconds 30
+                    $envMetaResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId" -Headers $fabHeaders -Description 'Get environment details'
+                    $envState = $envMetaResult.Response.properties.publishDetails.state
+                    if ($envState -eq "Success" -or $envState -eq "Failed" -or $envState -eq "Cancelled" -or -not $envState) {
+                        break
+                    }
+                    $elapsed = [math]::Round((New-TimeSpan -Start $envWaitStart).TotalMinutes, 1)
+                    Write-Log "    Still $envState (${elapsed}m)..." 'INFO'
+                }
+            }
+
+            # Export current external libraries YAML (to preserve existing)
+            $existingYml = ""
+            try {
+                $existingYml = Invoke-RestMethod -Method GET `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId/staging/libraries/exportExternalLibraries" `
+                    -Headers $fabHeaders
+            } catch {
+                # No existing external libs — expected for fresh HDS deploy
+            }
+
+            # Build updated environment.yml with scipy
+            $scipyEntry = "scipy==1.11.4"
+            if ($existingYml -and $existingYml -match "scipy") {
+                Write-Log "  ✓ scipy already in staging libraries (pending publish)" 'INFO'
+            } else {
+                if ($existingYml -and $existingYml -match "- pip:") {
+                    # Append scipy to existing pip list
+                    $newYml = $existingYml.TrimEnd() + "`n      - $scipyEntry`n"
+                } else {
+                    $newYml = @"
+dependencies:
+  - pip:
+      - $scipyEntry
+"@
+                }
+
+                Write-Log "  Importing scipy==1.11.4 into staging..." 'INFO'
+
+                # Upload via importExternalLibraries
+                $importHeaders = @{
+                    "Authorization" = "Bearer $fabricToken"
+                    "Content-Type"  = "application/octet-stream"
+                }
+                $ymlBytes = [System.Text.Encoding]::UTF8.GetBytes($newYml)
+                $null = Invoke-RestMethod -Method POST `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId/staging/libraries/importExternalLibraries" `
+                    -Headers $importHeaders `
+                    -Body $ymlBytes
+                Write-Log "  ✓ scipy==1.11.4 added to staging" 'INFO'
+            }
+
+            # Publish the environment
+            Write-Log "  Publishing environment (this takes 3-10 min)..." 'INFO'
+            $pubResp = Invoke-WebRequest -Method POST `
+                -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId/staging/publish?beta=False" `
+                -Headers $fabHeaders `
+                -UseBasicParsing
+
+            # Poll for publish completion (max 15 min)
+            $pubStart = Get-Date
+            $maxPubMin = 15
+            $pubSuccess = $false
+            while ((New-TimeSpan -Start $pubStart).TotalMinutes -lt $maxPubMin) {
+                Start-Sleep -Seconds 30
+                $elapsed = [math]::Round((New-TimeSpan -Start $pubStart).TotalMinutes, 1)
+
+                try {
+                    $envMetaResult = Invoke-FabricApiRequest -Method Get -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/environments/$envId" -Headers $fabHeaders -Description 'Get environment details'
+                    $pubState = $envMetaResult.Response.properties.publishDetails.state
+                    if ($pubState -eq "Success") {
+                        Write-Log "  ✓ Environment published — scipy==1.11.4 is now available" 'INFO'
+                        $pubSuccess = $true
+                        break
+                    } elseif ($pubState -eq "Failed" -or $pubState -eq "Cancelled") {
+                        Write-Log "  ✗ Environment publish $pubState" 'WARN'
+                        break
+                    } else {
+                        Write-Log "    Publish status: $pubState (${elapsed}m elapsed)" 'INFO'
+                    }
+                } catch {
+                    Write-Log "    Poll error: $($_.Exception.Message)" 'WARN'
+                }
+            }
+
+            if (-not $pubSuccess -and (New-TimeSpan -Start $pubStart).TotalMinutes -ge $maxPubMin) {
+                Write-Log "  ⚠ Environment still publishing after ${maxPubMin}m — continuing" 'WARN'
+                Write-Log "    Check status in Fabric portal → Environments." 'WARN'
+            }
+        }
+        $step85Timer.Stop()
+        Record-Step -Name 'Ensure scipy in Spark Env' -Status 'OK' -Seconds $step85Timer.Elapsed.TotalSeconds
+    } else {
+        Write-Log "  ⚠ HDS Spark environment not found in workspace." 'WARN'
+        Write-Log "    Ensure Healthcare Data Foundations is deployed first." 'WARN'
+        Write-Log "    Then manually add scipy==1.11.4 to the environment." 'WARN'
+        $step85Timer.Stop()
+        Record-Step -Name 'Ensure scipy in Spark Env' -Status 'NOT FOUND' -Seconds $step85Timer.Elapsed.TotalSeconds
+    }
+} catch {
+    $envErr = $_.Exception.Message
+    try { $envErr = ($_.ErrorDetails.Message | ConvertFrom-Json).message } catch {}
+    Write-Log "  ✗ Could not update environment: $envErr" 'WARN'
+    Write-Log "    Manually add scipy==1.11.4 to the HDS Spark environment." 'WARN'
+    $step85Timer.Stop()
+    Record-Step -Name 'Ensure scipy in Spark Env' -Status 'FAILED' -Seconds $step85Timer.Elapsed.TotalSeconds
+}
+
+# ── Step 9: Run Clinical Ingestion Pipeline, then Imaging Ingestion Pipeline, then OMOP ──
+# The clinical pipeline must run first. Once it completes successfully, the imaging pipeline runs.
+# OMOP must run after both complete successfully.
 $step9Timer = [System.Diagnostics.Stopwatch]::StartNew()
 $step9bTimer = [System.Diagnostics.Stopwatch]::StartNew()
-Write-Log '─── Step 9: Running Imaging and Clinical pipelines concurrently ───' 'INFO'
+Write-Log '─── Step 9: Running HDS Ingestion Pipelines sequentially ───' 'INFO'
 
 # Refresh token
 $fabricToken = Get-FabricApiAccessToken
@@ -863,33 +1013,12 @@ if ($pipelineResult.Response.PSObject.Properties['value']) {
 }
 
 # Find pipelines
-$imagingPipeline = $pipelines | Where-Object { $_.displayName -eq $ImagingPipelineName } | Select-Object -First 1
 $clinicalPipeline = $pipelines | Where-Object { $_.displayName -eq $ClinicalPipelineName } | Select-Object -First 1
+$imagingPipeline = $pipelines | Where-Object { $_.displayName -eq $ImagingPipelineName } | Select-Object -First 1
 
-$imgInvoked = $false
 $clinInvoked = $false
-
-if ($imagingPipeline) {
-    $imagingId = $imagingPipeline.id
-    Write-Log "  Found '$ImagingPipelineName' (ID: $imagingId)" 'INFO'
-    $imgRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/Pipeline/instances"
-    Write-Log "  Invoking imaging pipeline run..." 'INFO'
-    try {
-        Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
-        Write-Log "  ✓ Imaging pipeline invoked successfully." 'INFO'
-        $imgInvoked = $true
-    } catch {
-        $errMsg = $_.Exception.Message
-        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log "  Imaging pipeline is already running or recently invoked — will poll for completion." 'WARN'
-            $imgInvoked = $true
-        } else {
-            Write-Log "  ⚠ Could not invoke imaging pipeline: $errMsg" 'WARN'
-        }
-    }
-} else {
-    Write-Log "  Imaging pipeline '$ImagingPipelineName' not found." 'ERROR'
-}
+$clinicalCompleted = $false
+$clinicalFailed = $false
 
 if ($clinicalPipeline) {
     $clinicalId = $clinicalPipeline.id
@@ -913,21 +1042,13 @@ if ($clinicalPipeline) {
     Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found." 'WARN'
 }
 
-$imgCompleted = $false
-$clinicalCompleted = $false
-$imgFailed = $false
-$clinicalFailed = $false
-
-if ($imgInvoked -or $clinInvoked) {
-    Write-Log "  Waiting for active pipelines to complete (polling every 30s, max 60 min)..." 'INFO'
+if ($clinInvoked) {
+    Write-Log "  Waiting for Clinical pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
     $maxPollMin = 60
     $pollStart = Get-Date
 
     while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt $maxPollMin) {
-        # Check if both are terminal
-        $imgTerminal = $imgCompleted -or $imgFailed -or (-not $imgInvoked)
-        $clinTerminal = $clinicalCompleted -or $clinicalFailed -or (-not $clinInvoked)
-        if ($imgTerminal -and $clinTerminal) {
+        if ($clinicalCompleted -or $clinicalFailed) {
             break
         }
 
@@ -940,8 +1061,91 @@ if ($imgInvoked -or $clinInvoked) {
             $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
         }
 
-        # Poll Imaging Pipeline
-        if ($imgInvoked -and -not $imgCompleted -and -not $imgFailed) {
+        # Poll Clinical Pipeline
+        try {
+            $clinJobsResult = Invoke-FabricApiRequest -Method Get `
+                -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/instances?limit=1" `
+                -Headers $fabHeaders -Description 'Poll clinical pipeline status'
+            $clinLatestJob = $null
+            if ($clinJobsResult.Response.PSObject.Properties['value']) {
+                $clinLatestJob = $clinJobsResult.Response.value | Select-Object -First 1
+            }
+
+            if ($clinLatestJob) {
+                $clinJobStatus = $clinLatestJob.status
+                Write-Log "  Clinical pipeline status: $clinJobStatus ($pollElapsed min elapsed)" 'INFO'
+
+                if ($clinJobStatus -eq 'Completed') {
+                    Write-Log "  ✓ Clinical pipeline completed successfully!" 'INFO'
+                    $clinicalCompleted = $true
+                    $step9bTimer.Stop()
+                } elseif ($clinJobStatus -in @('Failed', 'Cancelled')) {
+                    Write-Log "  ✗ Clinical pipeline $clinJobStatus!" 'WARN'
+                    $clinicalFailed = $true
+                    $step9bTimer.Stop()
+                }
+            }
+        } catch {
+            Write-Log "  Poll error for Clinical pipeline: $($_.Exception.Message). Retrying..." 'WARN'
+        }
+    }
+
+    if ($step9bTimer.IsRunning) { $step9bTimer.Stop() }
+    if (-not $clinicalCompleted -and -not $clinicalFailed) {
+        Write-Log "  ⚠ Clinical pipeline did not complete within $maxPollMin min." 'WARN'
+    }
+} else {
+    $step9bTimer.Stop()
+}
+
+$imgInvoked = $false
+$imgCompleted = $false
+$imgFailed = $false
+
+if ($clinicalCompleted) {
+    Write-Log '─── Step 9b: Running Imaging Ingestion Pipeline ───' 'INFO'
+    if ($imagingPipeline) {
+        $imagingId = $imagingPipeline.id
+        Write-Log "  Found '$ImagingPipelineName' (ID: $imagingId)" 'INFO'
+        $imgRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/Pipeline/instances"
+        Write-Log "  Invoking imaging pipeline run..." 'INFO'
+        try {
+            Invoke-FabricApiRequest -Method Post -Uri $imgRunUri -Headers $fabHeaders -Description "Run pipeline '$ImagingPipelineName'"
+            Write-Log "  ✓ Imaging pipeline invoked successfully." 'INFO'
+            $imgInvoked = $true
+        } catch {
+            $errMsg = $_.Exception.Message
+            if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+                Write-Log "  Imaging pipeline is already running or recently invoked — will poll for completion." 'WARN'
+                $imgInvoked = $true
+            } else {
+                Write-Log "  ⚠ Could not invoke imaging pipeline: $errMsg" 'WARN'
+            }
+        }
+    } else {
+        Write-Log "  Imaging pipeline '$ImagingPipelineName' not found." 'ERROR'
+    }
+
+    if ($imgInvoked) {
+        Write-Log "  Waiting for Imaging pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
+        $maxPollMin = 60
+        $pollStart = Get-Date
+
+        while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt $maxPollMin) {
+            if ($imgCompleted -or $imgFailed) {
+                break
+            }
+
+            Start-Sleep -Seconds 30
+            $pollElapsed = [math]::Round((New-TimeSpan -Start $pollStart).TotalMinutes, 1)
+
+            # Refresh token periodically
+            if ([math]::Floor($pollElapsed) % 10 -eq 0 -and $pollElapsed -gt 0) {
+                $fabricToken = Get-FabricApiAccessToken
+                $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
+            }
+
+            # Poll Imaging Pipeline
             try {
                 $jobsResult = Invoke-FabricApiRequest -Method Get `
                     -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/instances?limit=1" `
@@ -970,51 +1174,20 @@ if ($imgInvoked -or $clinInvoked) {
             }
         }
 
-        # Poll Clinical Pipeline
-        if ($clinInvoked -and -not $clinicalCompleted -and -not $clinicalFailed) {
-            try {
-                $clinJobsResult = Invoke-FabricApiRequest -Method Get `
-                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/instances?limit=1" `
-                    -Headers $fabHeaders -Description 'Poll clinical pipeline status'
-                $clinLatestJob = $null
-                if ($clinJobsResult.Response.PSObject.Properties['value']) {
-                    $clinLatestJob = $clinJobsResult.Response.value | Select-Object -First 1
-                }
-
-                if ($clinLatestJob) {
-                    $clinJobStatus = $clinLatestJob.status
-                    Write-Log "  Clinical pipeline status: $clinJobStatus ($pollElapsed min elapsed)" 'INFO'
-
-                    if ($clinJobStatus -eq 'Completed') {
-                        Write-Log "  ✓ Clinical pipeline completed successfully!" 'INFO'
-                        $clinicalCompleted = $true
-                        $step9bTimer.Stop()
-                    } elseif ($clinJobStatus -in @('Failed', 'Cancelled')) {
-                        Write-Log "  ✗ Clinical pipeline $clinJobStatus!" 'WARN'
-                        $clinicalFailed = $true
-                        $step9bTimer.Stop()
-                    }
-                }
-            } catch {
-                Write-Log "  Poll error for Clinical pipeline: $($_.Exception.Message). Retrying..." 'WARN'
-            }
+        if ($step9Timer.IsRunning) { $step9Timer.Stop() }
+        if (-not $imgCompleted -and -not $imgFailed) {
+            Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min." 'WARN'
         }
+    } else {
+        $step9Timer.Stop()
     }
-
-    # Ensure timers are stopped if they timed out
-    if ($step9Timer.IsRunning) { $step9Timer.Stop() }
-    if ($step9bTimer.IsRunning) { $step9bTimer.Stop() }
-
-    if ($imgInvoked -and -not $imgCompleted -and -not $imgFailed) {
-        Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min." 'WARN'
-    }
-    if ($clinInvoked -and -not $clinicalCompleted -and -not $clinicalFailed) {
-        Write-Log "  ⚠ Clinical pipeline did not complete within $maxPollMin min." 'WARN'
-    }
+} else {
+    Write-Log '─── Step 9b: SKIPPING Imaging Ingestion Pipeline (Clinical pipeline was not completed successfully) ───' 'WARN'
+    $step9Timer.Stop()
 }
 
-Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' } else { 'TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
-Record-Step -Name 'Clinical Pipeline' -Status $(if ($clinicalCompleted) { 'COMPLETED' } elseif ($clinicalPipeline) { 'TIMEOUT/WARN' } else { 'NOT FOUND' }) -Seconds $step9bTimer.Elapsed.TotalSeconds
+Record-Step -Name 'Clinical Pipeline' -Status $(if ($clinicalCompleted) { 'COMPLETED' } elseif ($clinicalPipeline) { 'FAILED/TIMEOUT/WARN' } else { 'NOT FOUND' }) -Seconds $step9bTimer.Elapsed.TotalSeconds
+Record-Step -Name 'Imaging Pipeline' -Status $(if ($imgCompleted) { 'COMPLETED' } elseif (-not $clinicalCompleted) { 'SKIPPED' } else { 'FAILED/TIMEOUT/WARN' }) -Seconds $step9Timer.Elapsed.TotalSeconds
 
 # ── Step 10: Run OMOP Analytics pipeline (MUST run AFTER imaging + clinical pipelines complete) ──
 # IMPORTANT: OMOP cannot run in parallel with any other HDS pipeline.
@@ -1061,21 +1234,81 @@ if (-not $omopPipeline) {
     $omopRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$omopId/jobs/Pipeline/instances"
     Write-Log "  Invoking OMOP analytics pipeline run..." 'INFO'
 
+    $omopInvoked = $false
+    $omopCompleted = $false
+    $omopFailed = $false
+
     try {
         Invoke-FabricApiRequest -Method Post -Uri $omopRunUri -Headers $fabHeaders -Description "Run pipeline '$OmopPipelineName'"
         Write-Log "  OMOP pipeline invoked successfully (202 Accepted)." 'INFO'
-        $step10Timer.Stop()
-        Record-Step -Name 'OMOP Pipeline' -Status 'INVOKED' -Seconds $step10Timer.Elapsed.TotalSeconds
+        $omopInvoked = $true
     } catch {
         $errMsg = $_.Exception.Message
         if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log "  OMOP pipeline is already running or recently invoked." 'WARN'
-            $step10Timer.Stop()
-            Record-Step -Name 'OMOP Pipeline' -Status 'ALREADY RUNNING' -Seconds $step10Timer.Elapsed.TotalSeconds
+            Write-Log "  OMOP pipeline is already running or recently invoked — will poll for completion." 'WARN'
+            $omopInvoked = $true
         } else {
+            Write-Log "  ⚠ Could not invoke OMOP pipeline: $errMsg" 'WARN'
             $step10Timer.Stop()
             Record-Step -Name 'OMOP Pipeline' -Status 'FAILED' -Seconds $step10Timer.Elapsed.TotalSeconds
             throw
+        }
+    }
+
+    if ($omopInvoked) {
+        Write-Log "  Waiting for OMOP pipeline to complete (polling every 30s, max 60 min)..." 'INFO'
+        $maxPollMin = 60
+        $pollStart = Get-Date
+
+        while ((New-TimeSpan -Start $pollStart).TotalMinutes -lt $maxPollMin) {
+            if ($omopCompleted -or $omopFailed) {
+                break
+            }
+
+            Start-Sleep -Seconds 30
+            $pollElapsed = [math]::Round((New-TimeSpan -Start $pollStart).TotalMinutes, 1)
+
+            # Refresh token periodically
+            if ([math]::Floor($pollElapsed) % 10 -eq 0 -and $pollElapsed -gt 0) {
+                $fabricToken = Get-FabricApiAccessToken
+                $fabHeaders = Get-FabricApiHeaders -AccessToken $fabricToken
+            }
+
+            # Poll OMOP Pipeline
+            try {
+                $jobsResult = Invoke-FabricApiRequest -Method Get `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$omopId/jobs/instances?limit=1" `
+                    -Headers $fabHeaders -Description 'Poll OMOP pipeline status'
+                $latestJob = $null
+                if ($jobsResult.Response.PSObject.Properties['value']) {
+                    $latestJob = $jobsResult.Response.value | Select-Object -First 1
+                }
+
+                if ($latestJob) {
+                    $jobStatus = $latestJob.status
+                    Write-Log "  OMOP pipeline status: $jobStatus ($pollElapsed min elapsed)" 'INFO'
+
+                    if ($jobStatus -eq 'Completed') {
+                        Write-Log "  ✓ OMOP pipeline completed successfully!" 'INFO'
+                        $omopCompleted = $true
+                        $step10Timer.Stop()
+                        Record-Step -Name 'OMOP Pipeline' -Status 'COMPLETED' -Seconds $step10Timer.Elapsed.TotalSeconds
+                    } elseif ($jobStatus -in @('Failed', 'Cancelled')) {
+                        Write-Log "  ✗ OMOP pipeline $jobStatus!" 'WARN'
+                        $omopFailed = $true
+                        $step10Timer.Stop()
+                        Record-Step -Name 'OMOP Pipeline' -Status 'FAILED' -Seconds $step10Timer.Elapsed.TotalSeconds
+                    }
+                }
+            } catch {
+                Write-Log "  Poll error for OMOP pipeline: $($_.Exception.Message). Retrying..." 'WARN'
+            }
+        }
+
+        if ($step10Timer.IsRunning) { $step10Timer.Stop() }
+        if (-not $omopCompleted -and -not $omopFailed) {
+            Write-Log "  ⚠ OMOP pipeline did not complete within $maxPollMin min." 'WARN'
+            Record-Step -Name 'OMOP Pipeline' -Status 'TIMEOUT' -Seconds $step10Timer.Elapsed.TotalSeconds
         }
     }
 }
@@ -1149,7 +1382,13 @@ if (-not $imgCompleted) {
     Write-Host ""
 } else {
     Write-Host "  ┌──────────────────────────────────────────────────────────────┐" -ForegroundColor Green
-    Write-Host "  │  OMOP Gold pipeline has been launched. Monitor progress:    │" -ForegroundColor Green
+    if ($omopCompleted) {
+        Write-Host "  │  OMOP Gold pipeline completed successfully!                  │" -ForegroundColor Green
+    } elseif ($omopFailed) {
+        Write-Host "  │  ⚠ OMOP Gold pipeline failed. Check the Fabric portal.      │" -ForegroundColor Red
+    } else {
+        Write-Host "  │  OMOP Gold pipeline has been launched. Monitor progress:    │" -ForegroundColor Green
+    }
     Write-Host "  │  $($omopUrl.PadRight(58))│" -ForegroundColor Green
     Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Green
     Write-Host ""

@@ -45,6 +45,9 @@ param (
     # ── Fabric Phase 2 (post-HDS) ──
     [string]$SilverLakehouseId = "",
     [string]$SilverLakehouseName = "",
+    
+    # ── Data Copying ──
+    [string]$SourceResourceGroup = "",
 
     # ── Step control ──
     [switch]$SkipBaseInfra,          # Skip deploy.ps1 (emulator infra already exists)
@@ -140,6 +143,10 @@ if ($DicomToolkitPath -eq "C:\git\FabricDicomCohortingToolkit" -and -not (Test-P
 # SkipSynthea implies the FHIR loader has nothing new to load; however
 # the FHIR *service* infra still deploys so HDS / $export keep working.
 if ($SkipSynthea) { $ReusePatients = $true }
+if ($SkipFabric) {
+    $SkipRtiPhase2 = $true
+    $SkipActivator = $true
+}
 # Additional granular skips are checked inline at each step entry point.
 # The skip variables are available as $SkipRtiPhase2, $SkipHdsPipelines,
 # $SkipDataAgents, $SkipImaging, $SkipOntology, $SkipActivator,
@@ -292,19 +299,28 @@ function Test-Prerequisites {
         }
         $fabHeaders = @{ "Authorization" = "Bearer $fabToken" }
         $caps = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/capacities" -Headers $fabHeaders
-        $activeCaps = $caps.value | Where-Object { $_.state -eq "Active" -and $_.sku -ne "PP3" }
-        $paidCaps = $activeCaps | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" }
+        $allPaidCaps = $caps.value | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" -and $_.sku -ne "PP3" }
 
-        if ($paidCaps.Count -gt 0) {
-            $cap = $paidCaps | Select-Object -First 1
-            Write-Host "  ✓ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku))" -ForegroundColor Green
-        } elseif ($activeCaps.Count -gt 0) {
-            $cap = $activeCaps | Select-Object -First 1
-            $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
-            Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — trial not supported" -ForegroundColor Red
+        if ($allPaidCaps.Count -gt 0) {
+            $activePaidCaps = $allPaidCaps | Where-Object { $_.state -eq "Active" }
+            if ($activePaidCaps.Count -gt 0) {
+                $cap = $activePaidCaps | Select-Object -First 1
+                Write-Host "  ✓ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku))" -ForegroundColor Green
+            } else {
+                $cap = $allPaidCaps | Select-Object -First 1
+                $failures += "Fabric capacity '$($cap.displayName)' ($($cap.sku)) is currently paused ($($cap.state)). Please resume it before deploying."
+                Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — currently paused ($($cap.state))" -ForegroundColor Red
+            }
         } else {
-            $failures += "No active Fabric capacity found. Resume or create one at https://app.fabric.microsoft.com"
-            Write-Host "  ✗ No active Fabric capacity" -ForegroundColor Red
+            $activeTrialCaps = $caps.value | Where-Object { $_.sku -eq "FT1" -and $_.state -eq "Active" }
+            if ($activeTrialCaps.Count -gt 0) {
+                $cap = $activeTrialCaps | Select-Object -First 1
+                $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
+                Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — trial not supported" -ForegroundColor Red
+            } else {
+                $failures += "No Fabric capacity found. Please create a paid F-SKU (F2+) at https://app.fabric.microsoft.com"
+                Write-Host "  ✗ No Fabric capacity found" -ForegroundColor Red
+            }
         }
     } catch {
         $failures += "Cannot access Fabric API. Ensure Az module login has Fabric permissions."
@@ -636,15 +652,6 @@ function Move-FabricItemsToFolder {
             $WorkspaceId = $ws.id
         }
 
-        # Find or create folder
-        $folders = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Get).value
-        $folder = $folders | Where-Object { $_.displayName -eq $FolderName } | Select-Object -First 1
-        if (-not $folder) {
-            $folderBody = @{ displayName = $FolderName } | ConvertTo-Json -Depth 3
-            $folder = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Post -Body $folderBody
-            Write-Host "  ✓ Created folder '$FolderName'" -ForegroundColor Green
-        }
-
         $items = @()
         foreach ($type in $ItemTypes) {
             try {
@@ -658,6 +665,15 @@ function Move-FabricItemsToFolder {
         if ($items.Count -eq 0) {
             Write-Host "  No items found to organize for types: $($ItemTypes -join ', ')." -ForegroundColor DarkGray
             return
+        }
+
+        # Find or create folder ONLY if there are items to move
+        $folders = (Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Get).value
+        $folder = $folders | Where-Object { $_.displayName -eq $FolderName } | Select-Object -First 1
+        if (-not $folder) {
+            $folderBody = @{ displayName = $FolderName } | ConvertTo-Json -Depth 3
+            $folder = Invoke-RestMethod -Uri "$FabricApiBase/workspaces/$WorkspaceId/folders" -Headers $headers -Method Post -Body $folderBody
+            Write-Host "  ✓ Created folder '$FolderName'" -ForegroundColor Green
         }
 
         $moved = 0
@@ -1072,13 +1088,14 @@ if (-not $Phase3 -and -not $Phase4) {
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
     $deployArgs = @{
-        ResourceGroupName  = $ResourceGroupName
-        Location           = $Location
-        AdminSecurityGroup = $AdminSecurityGroup
-        Tags               = $Tags
-        SpnClientId        = $SpnClientId
-        SpnClientSecret    = $SpnClientSecret
-        SpnTenantId        = $SpnTenantId
+        ResourceGroupName   = $ResourceGroupName
+        Location            = $Location
+        AdminSecurityGroup  = $AdminSecurityGroup
+        Tags                = $Tags
+        SpnClientId         = $SpnClientId
+        SpnClientSecret     = $SpnClientSecret
+        SpnTenantId         = $SpnTenantId
+        FabricWorkspaceName = $FabricWorkspaceName
     }
     if ($SkipFabric) { $deployArgs['SkipTelemetry'] = $true }
 
@@ -1155,12 +1172,18 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
             Detail   = "Already deployed (ACR: $existingAcr)"
         }
     } else {
+        $stepDesc = if ($SkipFabric) { "ACR, Key Vault (deploy.ps1)" } else { "Event Hub, ACR, emulator container (deploy.ps1)" }
         Invoke-Step -StepName "Phase 1: Base Azure Infrastructure" `
-            -Description "Event Hub, ACR, emulator container (deploy.ps1)" -Action {
-            Write-Host "  [1/4] Creating resource group '$ResourceGroupName'..." -ForegroundColor White
-            Write-Host "  [2/4] Deploying Event Hub, ACR, Key Vault (bicep/infra.bicep)..." -ForegroundColor White
-            Write-Host "  [3/4] Building emulator container image in ACR..." -ForegroundColor White
-            Write-Host "  [4/4] Deploying emulator ACI container (bicep/emulator.bicep)..." -ForegroundColor White
+            -Description $stepDesc -Action {
+            if ($SkipFabric) {
+                Write-Host "  [1/2] Creating resource group '$ResourceGroupName'..." -ForegroundColor White
+                Write-Host "  [2/2] Deploying ACR, Key Vault (bicep/infra.bicep)..." -ForegroundColor White
+            } else {
+                Write-Host "  [1/4] Creating resource group '$ResourceGroupName'..." -ForegroundColor White
+                Write-Host "  [2/4] Deploying Event Hub, ACR, Key Vault (bicep/infra.bicep)..." -ForegroundColor White
+                Write-Host "  [3/4] Building emulator container image in ACR..." -ForegroundColor White
+                Write-Host "  [4/4] Deploying emulator ACI container (bicep/emulator.bicep)..." -ForegroundColor White
+            }
             Write-Host ""
             & "$ScriptDir\phase-1\deploy.ps1" @deployArgs
         }
@@ -1174,7 +1197,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
 # ============================================================================
 
 if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
-    if ($ReusePatients -and -not $SkipFhir) {
+    if ($ReusePatients -and -not $SourceResourceGroup -and -not $SkipFhir) {
         Write-Host "  >>  Reusing existing patients — skipping Synthea + FHIR Loader" -ForegroundColor Yellow
         Write-Host "      Existing patient/device data in FHIR will be preserved." -ForegroundColor DarkGray
     } else {
@@ -1210,6 +1233,8 @@ if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
             if ($RebuildContainers) { $fhirArgs['RebuildContainers'] = $true }
             if ($UseCachedSynthea) { $fhirArgs['UseCachedSynthea'] = $true }
             if ($Tags.Count -gt 0) { $fhirArgs['Tags'] = $Tags }
+            if ($SourceResourceGroup) { $fhirArgs['SourceResourceGroup'] = $SourceResourceGroup }
+            if ($ReusePatients) { $fhirArgs['ReusePatients'] = $true }
 
             & "$ScriptDir\phase-1\deploy-fhir.ps1" @fhirArgs
         }
@@ -1223,30 +1248,27 @@ if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
 # ============================================================================
 
 if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom) {
-    if ($ReusePatients) {
-        Write-Host "  >>  Reusing existing patients — skipping DICOM Loader" -ForegroundColor Yellow
-        Write-Host "      Existing DICOM/ImagingStudy data will be preserved." -ForegroundColor DarkGray
-    } else {
-        Invoke-Step -StepName "Phase 1: DICOM Service + Loader" `
-            -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
-            Write-Host "  This step will:" -ForegroundColor White
-            Write-Host "    [1/3] Build DICOM Loader container image in ACR" -ForegroundColor DarkGray
-            Write-Host "    [2/3] Deploy DICOM service into HDS workspace" -ForegroundColor DarkGray
-            Write-Host "    [3/3] Run DICOM Loader (TCIA download, re-tag, STOW-RS upload)" -ForegroundColor DarkGray
-            Write-Host ""
+    Invoke-Step -StepName "Phase 1: DICOM Service + Loader" `
+        -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
+        Write-Host "  This step will:" -ForegroundColor White
+        Write-Host "    [1/3] Build DICOM Loader container image in ACR" -ForegroundColor DarkGray
+        Write-Host "    [2/3] Deploy DICOM service into HDS workspace" -ForegroundColor DarkGray
+        Write-Host "    [3/3] Run DICOM Loader (TCIA download, re-tag, STOW-RS upload)" -ForegroundColor DarkGray
+        Write-Host ""
 
-            $dicomArgs = @{
-                ResourceGroupName  = $ResourceGroupName
-                Location           = $Location
-                AdminSecurityGroup = $AdminSecurityGroup
-                RunDicom           = $true
-            }
-            if ($SkipFhir) { $dicomArgs['SkipFhir'] = $true }
-            if ($RebuildContainers) { $dicomArgs['RebuildContainers'] = $true }
-            if ($Tags.Count -gt 0) { $dicomArgs['Tags'] = $Tags }
-
-            & "$ScriptDir\phase-1\deploy-fhir.ps1" @dicomArgs
+        $dicomArgs = @{
+            ResourceGroupName  = $ResourceGroupName
+            Location           = $Location
+            AdminSecurityGroup = $AdminSecurityGroup
+            RunDicom           = $true
         }
+        if ($SkipFhir) { $dicomArgs['SkipFhir'] = $true }
+        if ($RebuildContainers) { $dicomArgs['RebuildContainers'] = $true }
+        if ($Tags.Count -gt 0) { $dicomArgs['Tags'] = $Tags }
+        if ($ReusePatients) { $dicomArgs['ReusePatients'] = $true }
+        if ($SourceResourceGroup) { $dicomArgs['SourceResourceGroup'] = $SourceResourceGroup }
+
+        & "$ScriptDir\phase-1\deploy-fhir.ps1" @dicomArgs
     }
 } else {
     Write-Host "  >>  Skipping DICOM (--SkipDicom)" -ForegroundColor DarkGray
@@ -1406,7 +1428,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
 # STEP 4 — HDS GUIDANCE (manual Fabric portal step)
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
     $script:stepNumber++
     Write-Banner -Text "STEP $($script:stepNumber): HEALTHCARE DATA SOLUTIONS (MANUAL)" -Color Yellow
     Write-Host ""
@@ -1790,7 +1812,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 #           Eventhouse with TelemetryRaw + AlertHistory tables
 # ============================================================================
 
-Emit-PhaseTransition -Phase 4 -Label "Connected Semantic Intelligence" -StepCount 2
+Emit-PhaseTransition -Phase 4 -Label "Connected Semantic Intelligence" -StepCount 1
 
 if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
     Invoke-Step -StepName "Phase 4: Ontology" `
@@ -2082,16 +2104,19 @@ except Exception as e:
         Write-Host "  --- Step 8c: Ontology Deployment ---" -ForegroundColor Cyan
         Write-Host "  Deploying ClinicalDeviceOntology..." -ForegroundColor White
 
-        $ontologyArgs = @{
-            FabricWorkspaceName = $FabricWorkspaceName
-            IncludeFhir         = [bool](-not $SkipFhir)
-            IncludeDicom        = [bool](-not $SkipDicom)
-            IncludeTelemetry    = [bool](-not $SkipFabric)
-            IncludeGold         = [bool](-not $SkipQualityMeasures)
-        }
-        & "$ScriptDir\phase-4\deploy-ontology.ps1" @ontologyArgs
+        Invoke-Step -StepName "Phase 4: Ontology Deployment" -Description "Deploying ClinicalDeviceOntology" -Action {
+            Write-Host "  Deploying ClinicalDeviceOntology..." -ForegroundColor White
 
-        Write-Host ""
+            $ontologyArgs = @{
+                FabricWorkspaceName = $FabricWorkspaceName
+                IncludeFhir         = [bool](-not $SkipFhir)
+                IncludeDicom        = [bool](-not $SkipDicom)
+                IncludeTelemetry    = [bool](-not $SkipFabric)
+                IncludeGold         = [bool](-not $SkipQualityMeasures)
+            }
+            & "$ScriptDir\phase-4\deploy-ontology.ps1" @ontologyArgs
+            Write-Host ""
+        }
 
         # ── Step 8d: Bind ontology to Data Agents ──
         Write-Host "  --- Step 8d: Agent Ontology Binding ---" -ForegroundColor Cyan
@@ -2199,10 +2224,20 @@ except Exception as e:
         Write-Host ""
     }
 
+    # ============================================================================
+    # PHASE 5 — Bedside Alerting & Action
+    # ============================================================================
+
+    Emit-PhaseTransition -Phase 5 -Label "Bedside Alerting & Action" -StepCount 1
+
     # ── Step 9: Data Activator ──
-    if (-not $SkipActivator) {
-    Invoke-Step -StepName "Phase 4: Data Activator" `
+    Invoke-Step -StepName "Phase 5: Data Activator" `
         -Description "Reflex item with KQL source and email alerting rule" -Action {
+
+        if ($SkipActivator) {
+            Write-Host "  ⚠ Skipping Activator deployment (-SkipActivator is set)" -ForegroundColor Yellow
+            return
+        }
 
         function Get-FabricTokenLocal {
             $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
@@ -2405,11 +2440,10 @@ except Exception as e:
 
         Write-Host ""
     }
-    } # end if (-not $SkipActivator)
 }
 
 # ============================================================================
-# PHASE 5 — Population Health & Quality
+# PHASE 6 — Population Health & Quality
 # Materializes Gold star schema tables, computes CMS quality measures,
 # Star Ratings, HCC risk adjustment, readmission risk ML model,
 # cost & utilization analytics, and deploys the Population Health &
@@ -2419,11 +2453,15 @@ except Exception as e:
 #           MedicationRequest, Immunization tables)
 # ============================================================================
 
-Emit-PhaseTransition -Phase 5 -Label "CMS Quality & Performance" -StepCount 1
+Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
 
-if (-not $SkipQualityMeasures) {
-    Invoke-Step -StepName "Phase 5: CMS Quality Measures" `
+    Invoke-Step -StepName "Phase 6: CMS Quality Measures" `
         -Description "Claims materialization, quality measures, Power BI report" -Action {
+
+        if ($SkipQualityMeasures) {
+            Write-Host "  ⚠ Skipping CMS Quality Measures (-SkipQualityMeasures is set)" -ForegroundColor Yellow
+            return
+        }
 
         function Get-FabricTokenLocal {
             $t = Get-CachedAccessToken "https://api.fabric.microsoft.com"
@@ -2677,9 +2715,6 @@ if (-not $SkipQualityMeasures) {
 
         Write-Host ""
     }
-} else {
-    Write-Host "  ⚠ Population Health & Quality skipped (SkipQualityMeasures)" -ForegroundColor Yellow
-}
 
 if (-not $Teardown) {
     Write-Host ""

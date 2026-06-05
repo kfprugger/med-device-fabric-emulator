@@ -23,6 +23,8 @@ param (
     [switch]$SkipDicom,
     [switch]$RunDicom,
     [switch]$UseCachedSynthea,
+    [switch]$ReusePatients,
+    [string]$SourceResourceGroup = "",
     [hashtable]$Tags = @{},
     [switch]$SkipFhir
 )
@@ -630,6 +632,10 @@ if ($InfraOnly) {
     Write-Host ""
     Write-Host "Infrastructure-only mode complete." -ForegroundColor Green
     Write-Host "Run with -RunSynthea to generate patients, or -RunLoader to load FHIR data."
+    
+    # Catch-up export (since Deploy-All.ps1 uses InfraOnly to trigger the export pipeline)
+    Invoke-FhirExport -ResourceGroupName $ResourceGroupName -FhirServiceUrl $fhirServiceUrl -Label "FHIR `$export"
+    
     exit 0
 }
 
@@ -647,6 +653,73 @@ if ($LASTEXITCODE -ne 0) {
 $existingJson = $existingInfra | ConvertFrom-Json
 $acrName = $existingJson.acrName.value
 $acrLoginServer = $existingJson.acrLoginServer.value
+$containerName = "synthea-output"
+
+# ============================================
+# STEP 1.5: Reuse / Clone Patients Validation
+# ============================================
+if ($ReusePatients -or $SourceResourceGroup) {
+    Write-Host ""
+    Write-Host "--- STEP 1.5: REUSE PATIENTS / CLONE DATA ---" -ForegroundColor Cyan
+
+    $syntheaBlobs = $null
+    $dicomBlobs = $null
+
+    if ($SourceResourceGroup) {
+        Write-Host "Cloning data from source resource group: $SourceResourceGroup..." -ForegroundColor Cyan
+        $sourceStorageName = az storage account list --resource-group $SourceResourceGroup --query "[?starts_with(name, 'stfhir')].name" -o tsv 2>$null | Select-Object -First 1
+        
+        if ($sourceStorageName) {
+            Write-Host "  Source storage account found: $sourceStorageName. Copying blobs to $storageAccountName..." -ForegroundColor DarkGray
+            
+            Write-Host "  Copying synthea-output container..." -ForegroundColor DarkGray
+            az storage blob copy start-batch --account-name $storageAccountName --destination-container $containerName --source-account-name $sourceStorageName --source-container $containerName --auth-mode login 2>$null | Out-Null
+            
+            Write-Host "  Copying dicom-output container..." -ForegroundColor DarkGray
+            az storage blob copy start-batch --account-name $storageAccountName --destination-container "dicom-output" --source-account-name $sourceStorageName --source-container "dicom-output" --auth-mode login 2>$null | Out-Null
+            
+            Write-Host "  Copy operation started. Waiting a few seconds..." -ForegroundColor DarkGray
+            Start-Sleep -Seconds 10
+        } else {
+            Write-Host "  ⚠ Source Resource Group not found or has no FHIR storage account. Continuing..." -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host "Validating target storage account data..." -ForegroundColor DarkGray
+    $syntheaBlobs = az storage blob list --account-name $storageAccountName --container-name $containerName --num-results 1 --auth-mode login --query "[0].name" -o tsv 2>$null
+    $dicomBlobs = az storage blob list --account-name $storageAccountName --container-name "dicom-output" --num-results 1 --auth-mode login --query "[0].name" -o tsv 2>$null
+
+    if (-not $syntheaBlobs) {
+        Write-Host "  ⚠ Warning: Reuse patients requested, but synthea-output is empty!" -ForegroundColor Yellow
+        Write-Host "    Falling back to data generation..." -ForegroundColor DarkGray
+        $doSynthea = $true
+        $doLoader = $true
+        $UseCachedSynthea = $false
+        $ReusePatients = $false
+    } else {
+        Write-Host "  ✓ Verified: synthea data exists" -ForegroundColor Green
+        if ($ReusePatients) {
+            $doSynthea = $false
+            if (-not $SourceResourceGroup) {
+                $doLoader = $false
+            }
+            $UseCachedSynthea = $false
+        }
+    }
+
+    if (-not $dicomBlobs) {
+        Write-Host "  ⚠ Warning: Reuse patients requested, but dicom-output is empty!" -ForegroundColor Yellow
+        Write-Host "    Falling back to TCIA download..." -ForegroundColor DarkGray
+        $doDicom = $true
+        $SkipDicom = $false
+        $ReusePatients = $false
+    } else {
+        Write-Host "  ✓ Verified: dicom data exists" -ForegroundColor Green
+        if ($ReusePatients -and -not $SourceResourceGroup) {
+            $doDicom = $false
+        }
+    }
+}
 
 Write-Host "Using existing ACR: $acrName"
 
@@ -1335,9 +1408,11 @@ if (-not $fhirServiceUrl) {
             $existingExport = az storage blob list --container-name "fhir-export" `
                 --account-name $stAcct --auth-mode login --num-results 1 `
                 --query "[0].name" -o tsv 2>$null
-            if ($existingExport) {
+            if ($existingExport -and -not $ReusePatients) {
                 Write-Host "  ✓ FHIR export data already exists in 'fhir-export' container — skipping" -ForegroundColor Green
                 $exportNeeded = $false
+            } elseif ($existingExport) {
+                Write-Host "  FHIR export data exists, but -ReusePatients specified — forcing new export to ensure sync" -ForegroundColor Yellow
             } else {
                 Write-Host "  No export data found in 'fhir-export' container — export needed" -ForegroundColor Yellow
             }

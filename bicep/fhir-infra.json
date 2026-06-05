@@ -1,0 +1,342 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "2180763816962071568"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "workspaceName": {
+      "type": "string",
+      "defaultValue": "[format('hdws{0}', uniqueString(resourceGroup().id))]"
+    },
+    "fhirServiceName": {
+      "type": "string",
+      "defaultValue": "[format('fhir{0}', uniqueString(resourceGroup().id))]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[format('stfhir{0}', uniqueString(resourceGroup().id))]",
+      "minLength": 3,
+      "maxLength": 24,
+      "metadata": {
+        "description": "Storage account name. Must be 3-24 chars, lowercase alphanumeric only."
+      }
+    },
+    "adminGroupObjectId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "resourceTags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "deployFhirService": {
+      "type": "bool",
+      "defaultValue": true
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('resourceTags')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "accessTier": "Hot",
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2",
+        "isHnsEnabled": true,
+        "allowSharedKeyAccess": true,
+        "networkAcls": {
+          "defaultAction": "Allow",
+          "bypass": "AzureServices"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', 'synthea-output')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', 'fhir-export')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', 'dicom-output')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.HealthcareApis/workspaces",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('workspaceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('resourceTags')]",
+      "properties": {}
+    },
+    {
+      "condition": "[parameters('deployFhirService')]",
+      "type": "Microsoft.HealthcareApis/workspaces/fhirservices",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('workspaceName'), parameters('fhirServiceName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('resourceTags')]",
+      "kind": "fhir-R4",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "authenticationConfiguration": {
+          "authority": "[format('{0}{1}', environment().authentication.loginEndpoint, subscription().tenantId)]",
+          "audience": "[format('https://{0}-{1}.fhir.azurehealthcareapis.com', parameters('workspaceName'), parameters('fhirServiceName'))]",
+          "smartProxyEnabled": false
+        },
+        "corsConfiguration": {
+          "origins": [
+            "*"
+          ],
+          "headers": [
+            "*"
+          ],
+          "methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH"
+          ],
+          "allowCredentials": false
+        },
+        "exportConfiguration": {
+          "storageAccountName": "[parameters('storageAccountName')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces', parameters('workspaceName'))]"
+      ]
+    },
+    {
+      "condition": "[and(not(empty(parameters('adminGroupObjectId'))), parameters('deployFhirService'))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]",
+      "name": "[guid(if(parameters('deployFhirService'), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName')), 'fhirServicePlaceholder'), parameters('adminGroupObjectId'), '5a1fc7df-4bf1-4951-a576-89034ee01acd')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5a1fc7df-4bf1-4951-a576-89034ee01acd')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]"
+      ]
+    },
+    {
+      "condition": "[and(not(empty(parameters('adminGroupObjectId'))), parameters('deployFhirService'))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]",
+      "name": "[guid(if(parameters('deployFhirService'), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName')), 'fhirServicePlaceholder'), parameters('adminGroupObjectId'), '4c8d0bbc-75d3-4935-991f-5f3c56d81508')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4c8d0bbc-75d3-4935-991f-5f3c56d81508')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('adminGroupObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('adminGroupObjectId'), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('adminGroupObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('adminGroupObjectId'), '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('adminGroupObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('adminGroupObjectId'), '17d1049b-9a84-46fb-8f53-869881c3d3ab')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '17d1049b-9a84-46fb-8f53-869881c3d3ab')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('adminGroupObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.HealthcareApis/workspaces', parameters('workspaceName'))]",
+      "name": "[guid(resourceId('Microsoft.HealthcareApis/workspaces', parameters('workspaceName')), parameters('adminGroupObjectId'), 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+        "principalId": "[parameters('adminGroupObjectId')]",
+        "principalType": "Group"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces', parameters('workspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "id-aci-fhir-jobs",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('resourceTags')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployFhirService')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]",
+      "name": "[guid(if(parameters('deployFhirService'), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName')), 'fhirServicePlaceholder'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), '5a1fc7df-4bf1-4951-a576-89034ee01acd')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5a1fc7df-4bf1-4951-a576-89034ee01acd')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs')]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployFhirService')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), if(parameters('deployFhirService'), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName')), 'fhirServicePlaceholder'), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[if(parameters('deployFhirService'), reference(resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName')), '2023-11-01', 'full').identity.principalId, 'fhirServicePlaceholderPrincipal')]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', parameters('workspaceName'), parameters('fhirServiceName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "workspaceName": {
+      "type": "string",
+      "value": "[parameters('workspaceName')]"
+    },
+    "fhirServiceName": {
+      "type": "string",
+      "value": "[if(parameters('deployFhirService'), parameters('fhirServiceName'), '')]"
+    },
+    "fhirServiceUrl": {
+      "type": "string",
+      "value": "[if(parameters('deployFhirService'), format('https://{0}-{1}.fhir.azurehealthcareapis.com', parameters('workspaceName'), parameters('fhirServiceName')), '')]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[parameters('storageAccountName')]"
+    },
+    "containerName": {
+      "type": "string",
+      "value": "synthea-output"
+    },
+    "exportContainerName": {
+      "type": "string",
+      "value": "fhir-export"
+    },
+    "aciIdentityId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs')]"
+    },
+    "aciIdentityPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), '2023-01-31').principalId]"
+    },
+    "aciIdentityClientId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'id-aci-fhir-jobs'), '2023-01-31').clientId]"
+    }
+  }
+}

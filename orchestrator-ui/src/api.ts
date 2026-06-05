@@ -137,6 +137,7 @@ export interface DeploymentConfig {
   skip_ontology: boolean;
   skip_activator: boolean;
   skip_quality_measures: boolean;
+  source_resource_group?: string;
 }
 
 export interface DeploymentStatus {
@@ -169,6 +170,7 @@ export interface PhaseInfo {
   status: string;
   duration?: number;
   warnings?: string[];
+  milestone?: number;
 }
 
 export interface DeploymentSummary {
@@ -488,11 +490,13 @@ export interface FabricCapacity {
 }
 
 export async function listCapacities(
-  subscriptionId = ""
+  subscriptionId = "",
+  force = false
 ): Promise<FabricCapacity[]> {
-  const query = subscriptionId
-    ? `?subscription_id=${encodeURIComponent(subscriptionId)}`
-    : "";
+  const params = new URLSearchParams();
+  if (subscriptionId) params.set("subscription_id", subscriptionId);
+  if (force) params.set("force", "true");
+  const query = params.toString() ? `?${params.toString()}` : "";
   try {
     return await requestJson(`${API_BASE}/scan/capacities${query}`, {
       timeoutMs: 60000,

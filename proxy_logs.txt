@@ -1,0 +1,302 @@
+{"TimeStamp": "2026-06-01T19:06:51.02087", "Log": "Connecting to the container 'proxy'..."}
+{"TimeStamp": "2026-06-01T19:06:51.15025", "Log": "Successfully Connected to container: 'proxy' [Revision: 'hds-dicom-proxy--bn95ff0', Replica: 'hds-dicom-proxy--bn95ff0-f89bd795-fbfb9']"}
+{"TimeStamp": "2026-06-01T19:04:39.8600804+00:00", "Log": "'x-ms-client-request-id': 'bd86e502-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:39.8600832+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.8600858+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:39.9724687+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:39.9724988+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:39.9725034+00:00", "Log": "'Content-Length': '261433'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725072+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725102+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:39 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725143+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725175+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725207+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.972524+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725321+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725354+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725383+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725542+00:00", "Log": "'ETag': '\"0x8DEBF8A81929B78\"'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725574+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:33 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725605+00:00", "Log": "'x-ms-request-id': '573e7ce2-301e-00a8-36f9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725638+00:00", "Log": "'x-ms-client-request-id': 'bd86e502-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:39.972567+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725699+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725734+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725764+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725796+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725824+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725853+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725883+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725912+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725941+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9725972+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9726001+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.972603+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.972606+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.9726089+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.972612+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:39.972615+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.1764858+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.822604_instance_0165.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765251+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765299+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.1765339+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765367+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765401+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765439+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:40.176547+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765517+00:00", "Log": "'x-ms-client-request-id': 'bdb73374-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765683+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.1765722+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:40.2741593+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:40.2742788+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.2742844+00:00", "Log": "'Content-Length': '262684'"}
+{"TimeStamp": "2026-06-01T19:04:40.2742883+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:40.2742916+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:39 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743143+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743184+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743218+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743253+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743287+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.274332+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743354+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743388+00:00", "Log": "'ETag': '\"0x8DEBF8A831DD054\"'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743422+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:35 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743455+00:00", "Log": "'x-ms-request-id': '573e7df0-301e-00a8-1df9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743489+00:00", "Log": "'x-ms-client-request-id': 'bdb73374-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743517+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743547+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.274358+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743613+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743647+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.274368+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743715+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743748+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743781+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743814+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743846+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.274388+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743912+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743946+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2743977+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.274401+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.2744088+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.4735385+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.838978_instance_0169.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:40.4735792+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:40.473584+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.4735884+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.4735915+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.473595+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:40.4735992+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:40.4736024+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.4736079+00:00", "Log": "'x-ms-client-request-id': 'bde48766-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.4736102+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.4736131+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:40.5650985+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:40.5651399+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.5651454+00:00", "Log": "'Content-Length': '263356'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651493+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651527+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:39 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.565156+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651587+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651619+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651651+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651685+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651724+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.565175+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651777+00:00", "Log": "'ETag': '\"0x8DEBF8A874C46D0\"'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651804+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:42 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.5651832+00:00", "Log": "'x-ms-request-id': '573e7f13-301e-00a8-19f9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652067+00:00", "Log": "'x-ms-client-request-id': 'bde48766-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652096+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.565212+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652146+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.565217+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652198+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652225+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652252+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652281+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652308+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652336+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652367+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652396+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652428+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652458+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652483+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652511+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5652539+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5975415+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.853147_instance_0187.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:40.5975869+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:40.597593+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.5976+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976034+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976068+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976111+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976141+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976175+00:00", "Log": "'x-ms-client-request-id': 'bdf77376-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976206+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.5976246+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:40.7107308+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:40.7107859+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.7107906+00:00", "Log": "'Content-Length': '264656'"}
+{"TimeStamp": "2026-06-01T19:04:40.7107935+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:40.7107958+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:39 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.7107988+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108016+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108042+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108064+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108088+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108113+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108136+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108158+00:00", "Log": "'ETag': '\"0x8DEBF8A8BBD9EFC\"'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108179+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:50 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108197+00:00", "Log": "'x-ms-request-id': '573e7f80-301e-00a8-7cf9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108218+00:00", "Log": "'x-ms-client-request-id': 'bdf77376-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.710824+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108261+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108283+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7108303+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.710869+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109017+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109066+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109101+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109139+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.710917+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109201+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109228+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109257+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.710929+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109324+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.710936+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7109395+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686119+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.806425_instance_0213.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686505+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:40.768655+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.7686589+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686615+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.768665+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686699+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686729+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686769+00:00", "Log": "'x-ms-client-request-id': 'be118a2c-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.7686799+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.768683+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:40.8552946+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:40.8555104+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.8555185+00:00", "Log": "'Content-Length': '264457'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555309+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555335+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:39 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555363+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555385+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555418+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555446+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555474+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555498+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555601+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8555623+00:00", "Log": "'ETag': '\"0x8DEBF8A84677D10\"'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556306+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:38 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556376+00:00", "Log": "'x-ms-request-id': '573e8020-301e-00a8-05f9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556412+00:00", "Log": "'x-ms-client-request-id': 'be118a2c-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556446+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556483+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556515+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556551+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556583+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556617+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556648+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.855668+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556712+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556746+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556781+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556816+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556934+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556967+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8556999+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8557027+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8557098+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.897115+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.865063_instance_0197.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977668+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977803+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:40.8977839+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977897+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977929+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977966+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:40.8977998+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8978041+00:00", "Log": "'x-ms-client-request-id': 'be252762-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:40.8978077+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:40.8978117+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:41.0044258+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:41.0044733+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:41.0044772+00:00", "Log": "'Content-Length': '262349'"}
+{"TimeStamp": "2026-06-01T19:04:41.0044806+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:41.0044862+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:40 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045034+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:41.004506+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045083+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045105+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045131+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045155+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045175+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045377+00:00", "Log": "'ETag': '\"0x8DEBF8A81259920\"'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045774+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:32 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045798+00:00", "Log": "'x-ms-request-id': '573e80aa-301e-00a8-03f9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045824+00:00", "Log": "'x-ms-client-request-id': 'be252762-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045881+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045915+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045949+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0045982+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.004602+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046071+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046092+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046113+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046135+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046156+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046177+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046197+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046219+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046245+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046264+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.0046289+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.004631+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2043549+00:00", "Log": "URL: 'https://onelake.blob.fabric.microsoft.com/975f2dbd-667b-424f-addf-a66e1598c254/c0fd9e69-3e4a-46c3-ad4b-daf12832037d/Files/Process/Imaging/DICOM/DICOM-HDS/2026/06/01/b8096cfa-7a2b-a2f6-06fa-9692fbace5ac/1.2.826.0.1.3680043.8.498.77966494216025788026828789026935700717/1.2.826.0.1.3680043.8.498.59418592559132715307951196600867269613/1780282776.905488_instance_0129.dcm.zip'"}
+{"TimeStamp": "2026-06-01T19:04:41.2043954+00:00", "Log": "method: 'GET'"}
+{"TimeStamp": "2026-06-01T19:04:41.2043998+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:41.2044032+00:00", "Log": "'x-ms-range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044062+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044087+00:00", "Log": "'Accept': 'application/xml'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044128+00:00", "Log": "'User-Agent': 'azsdk-python-storage-dfs/12.24.0 Python/3.9.19 (Linux-6.6.138.1-1.azl3-x86_64-with-glibc2.35)'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044166+00:00", "Log": "'x-ms-date': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044204+00:00", "Log": "'x-ms-client-request-id': 'be540a96-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044239+00:00", "Log": "'Authorization': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2044273+00:00", "Log": "body was attached to the request"}
+{"TimeStamp": "2026-06-01T19:04:41.290409+00:00", "Log": "status: 206"}
+{"TimeStamp": "2026-06-01T19:04:41.2906657+00:00", "Log": "headers:"}
+{"TimeStamp": "2026-06-01T19:04:41.2906732+00:00", "Log": "'Content-Length': '260557'"}
+{"TimeStamp": "2026-06-01T19:04:41.290677+00:00", "Log": "'Content-Type': 'application/octet-stream'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906811+00:00", "Log": "'Date': 'Mon, 01 Jun 2026 19:04:40 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906837+00:00", "Log": "'Server': 'Windows-Azure-Blob/1.0, Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906916+00:00", "Log": "'Accept-Ranges': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906935+00:00", "Log": "'Access-Control-Allow-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906951+00:00", "Log": "'Access-Control-Allow-Methods': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906965+00:00", "Log": "'Access-Control-Allow-Origin': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.290698+00:00", "Log": "'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2906997+00:00", "Log": "'Content-Range': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907012+00:00", "Log": "'ETag': '\"0x8DEBF8A83F3122C\"'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907028+00:00", "Log": "'Last-Modified': 'Mon, 01 Jun 2026 03:04:37 GMT'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907043+00:00", "Log": "'x-ms-request-id': '573e818a-301e-00a8-42f9-f11634000000'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907061+00:00", "Log": "'x-ms-client-request-id': 'be540a96-5dec-11f1-b8ee-5a669451db9f'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907076+00:00", "Log": "'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907091+00:00", "Log": "'x-ms-resource-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907109+00:00", "Log": "'x-ms-creation-time': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907125+00:00", "Log": "'x-ms-blob-content-md5': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907139+00:00", "Log": "'x-ms-lease-status': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907154+00:00", "Log": "'x-ms-lease-state': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.290717+00:00", "Log": "'x-ms-blob-type': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907216+00:00", "Log": "'x-ms-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907232+00:00", "Log": "'x-ms-access-tier': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907246+00:00", "Log": "'x-ms-access-tier-inferred': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907262+00:00", "Log": "'x-ms-owner': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907277+00:00", "Log": "'x-ms-group': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907292+00:00", "Log": "'x-ms-permissions': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907307+00:00", "Log": "'x-ms-acl': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907324+00:00", "Log": "'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.290734+00:00", "Log": "'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-06-01T19:04:41.2907356+00:00", "Log": "'x-ms-root-activity-id': 'REDACTED'"}

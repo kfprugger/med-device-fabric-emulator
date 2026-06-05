@@ -833,10 +833,18 @@ async def start_deploy(req: DeployRequest):
     timestamp = now_local.strftime("%Y%m%d-%H%M%S")
 
     # Determine active milestones from config flags
-    # From the UI, skip_* flags only skip sub-steps — all 6 milestones remain.
-    # Phase-only flags (phase2_only, etc.) would restrict to specific milestones,
-    # but the UI doesn't expose these currently.
-    milestones = [1, 2, 3, 4, 5, 6]  # Default: all milestones active
+    milestones = [1]  # Milestone 1: Data Fabric Foundation (always active)
+    if not req.skip_fabric:
+        milestones.append(2)  # Milestone 2: Active Patient Telemetry
+    if not (req.skip_dicom and req.skip_imaging and req.skip_hds_pipelines):
+        milestones.append(3)  # Milestone 3: Multimodal Cohorting & Imaging
+    if not (req.skip_data_agents and req.skip_ontology):
+        milestones.append(4)  # Milestone 4: Connected Semantic Intelligence
+    if not req.skip_activator:
+        milestones.append(5)  # Milestone 5: Bedside Alerting & Action
+    if not req.skip_quality_measures:
+        milestones.append(6)  # Milestone 6: Population Health & Quality
+
     phase_label = "P" + "".join(str(m) for m in milestones)
 
     instance_id = f"{phase_label}-{timestamp}"
@@ -1298,11 +1306,24 @@ async def get_after_action_report(instance_id: str):
     loop = asyncio.get_event_loop()
     resources = await loop.run_in_executor(None, _get_deployed_resources_sync, ws_name, rg_name)
 
+    # Derive appNamePrefix
+    app_name_prefix = "masimo"
+    if ws_name:
+        import re
+        sanitized = "".join(c.lower() for c in ws_name if c.isalnum())
+        if sanitized and sanitized[0].isdigit():
+            sanitized = "m" + sanitized
+        sanitized = sanitized[:8]
+        while len(sanitized) < 3:
+            sanitized += "m"
+        if re.match(r"^[a-z][a-z0-9]{2,7}$", sanitized):
+            app_name_prefix = sanitized
+
     # Compile the After Action security schema mappings
     # Map each resource type to its identity strategy and vault secrets
     security_report = {
         "adminGroup": admin_group,
-        "keyVaultName": next((r["name"] for r in resources["azure"] if r["type"].lower() == "vaults"), f"masimo-kv"),
+        "keyVaultName": next((r["name"] for r in resources["azure"] if r["type"].lower() == "vaults"), f"{app_name_prefix}-kv"),
         "azurePortalUrl": custom_status.get("links", {}).get("azurePortal", ""),
         "fabricWorkspaceUrl": custom_status.get("links", {}).get("fabricWorkspace", ""),
         "resources": []
@@ -1944,19 +1965,20 @@ def _list_ahds_regions_sync() -> list[str]:
 # ── Fabric Capacity API ────────────────────────────────────────────────
 
 @app.get("/api/scan/capacities")
-async def list_capacities(subscription_id: str = ""):
+async def list_capacities(subscription_id: str = "", force: bool = False):
     """List Fabric capacities in the requested or all accessible subscriptions."""
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _list_capacities_sync, subscription_id)
+    result = await loop.run_in_executor(None, _list_capacities_sync, subscription_id, force)
     return result
 
 
-def _list_capacities_sync(subscription_id: str) -> list:
+def _list_capacities_sync(subscription_id: str, force: bool = False) -> list:
     """Query Fabric capacities across all accessible subscriptions or a specific one."""
     cache_key = f"capacities:{subscription_id or 'all'}"
-    cached = _get_timed_cached(cache_key, 120)
-    if cached is not None:
-        return cached
+    if not force:
+        cached = _get_timed_cached(cache_key, 120)
+        if cached is not None:
+            return cached
     try:
         subscriptions = _list_subscriptions_sync()
         subscription_names = {sub.get("id", ""): sub.get("name", "") for sub in subscriptions}

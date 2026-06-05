@@ -194,6 +194,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipFabric")
         if config.get("reuse_patients"):
             params.append("-ReusePatients")
+        if config.get("source_resource_group"):
+            params.append(f"-SourceResourceGroup '{config['source_resource_group']}'")
         if config.get("use_cached_synthea"):
             params.append("-UseCachedSynthea")
         if config.get("skip_synthea"):
@@ -214,6 +216,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipOntology")
         if config.get("skip_activator"):
             params.append("-SkipActivator")
+        if config.get("skip_quality_measures"):
+            params.append("-SkipQualityMeasures")
         if config.get("phase2_only"):
             params.append("-Phase2")
         if config.get("phase3_only"):
@@ -254,6 +258,10 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-SkipDicom")
     if config.get("skip_fabric"):
         args.append("-SkipFabric")
+    if config.get("reuse_patients"):
+        args.append("-ReusePatients")
+    if config.get("source_resource_group"):
+        args += ["-SourceResourceGroup", config["source_resource_group"]]
     if config.get("skip_fhir_export"):
         args.append("-SkipFhirExport")
     if config.get("use_cached_synthea"):
@@ -274,6 +282,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-SkipOntology")
     if config.get("skip_activator"):
         args.append("-SkipActivator")
+    if config.get("skip_quality_measures"):
+        args.append("-SkipQualityMeasures")
 
     if config.get("phase2_only"):
         args.append("-Phase2")

@@ -1,0 +1,283 @@
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: healthcare1_msft_raw_process_movement
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_raw_process_movement (23dd318b-6608-4d59-a18f-e6359dbaef6e) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 4a60e997-c75a-46e9-9e1f-070c970b523d | Status: NotStarted
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (31s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (63s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (95s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (127s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (158s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (190s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (222s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (254s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (285s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (317s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (349s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (380s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (412s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (443s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (475s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (507s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (538s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (570s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (602s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (633s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (664s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (696s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (730s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (763s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (795s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (830s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (864s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (895s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (928s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (961s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (992s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1027s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1058s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1091s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1123s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1154s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1187s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1219s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1253s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1287s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1319s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: Failed (1351s elapsed)
+✗ Notebook healthcare1_msft_raw_process_movement ended with status: Failed
+  Failure Reason: {'requestId': '15672c50-8516-4c4e-a9f2-5db9c4290ff3', 'errorCode': 'FAILED_CLUSTER_CREATION', 'message': "[plugins.61dynamicdatacloudworkspace.9a5ddf5e-5a6c-7505-90ff-e623ca210340.5526f326-d401-4759-8626-3718896bb139 WorkspaceType:<DataCloud> CCID:<cf5aee9b-088a-4074-8e8e-b580850f38c5>] Cluster was in terminal state=[Cancelled] before it reached 'Ready' state. Cluster job has WorkspaceName=[61dynamicdatacloudworkspace], SpecName=[9a5ddf5e-5a6c-7505-90ff-e623ca210340], and JobId=[781ea8cc-6e56-4470-8310-128f568fda4e].", 'isRetriable': False}
+⚠ Transient/retriable failure detected: {'requestId': '15672c50-8516-4c4e-a9f2-5db9c4290ff3', 'errorCode': 'FAILED_CLUSTER_CREATION', 'message': "[plugins.61dynamicdatacloudworkspace.9a5ddf5e-5a6c-7505-90ff-e623ca210340.5526f326-d401-4759-8626-3718896bb139 WorkspaceType:<DataCloud> CCID:<cf5aee9b-088a-4074-8e8e-b580850f38c5>] Cluster was in terminal state=[Cancelled] before it reached 'Ready' state. Cluster job has WorkspaceName=[61dynamicdatacloudworkspace], SpecName=[9a5ddf5e-5a6c-7505-90ff-e623ca210340], and JobId=[781ea8cc-6e56-4470-8310-128f568fda4e].", 'isRetriable': False}
+Waiting 60 seconds before retrying execution on next attempt...
+
+=================================================================================
+ATTEMPT 2 OF 3 FOR NOTEBOOK: healthcare1_msft_raw_process_movement
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_raw_process_movement (23dd318b-6608-4d59-a18f-e6359dbaef6e) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 3303bc3a-4189-4606-a015-4db146df4fe7 | Status: NotStarted
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (32s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (64s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (96s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (128s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (162s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (193s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (228s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (260s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (294s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (328s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (360s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (395s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (427s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (459s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (494s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (526s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (559s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (592s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (625s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (657s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (691s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (723s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (755s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (789s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (822s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (853s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (888s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (922s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (954s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (987s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1018s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1049s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1082s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1117s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1150s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1183s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1218s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1250s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1285s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1318s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1350s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1385s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1419s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1451s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: Failed (1482s elapsed)
+✗ Notebook healthcare1_msft_raw_process_movement ended with status: Failed
+  Failure Reason: {'requestId': 'f6e9d062-2ca4-4a80-a157-e8544074e58b', 'errorCode': 'CLUSTER_CREATION_TIMED_OUT', 'message': "[plugins.36dynamicdatacloudworkspace.9a5ddf5e-5a6c-7505-90ff-e623ca210340.ce07c66e-284b-46fd-bd5c-75171ab54a8e WorkspaceType:<DataCloud> CCID:<428ed98e-c0e8-432d-ae53-d8289f675c2e>] Cluster was in terminal state=[Cancelled] before it reached 'Ready' state. Cluster job has WorkspaceName=[36dynamicdatacloudworkspace], SpecName=[9a5ddf5e-5a6c-7505-90ff-e623ca210340], and JobId=[c87d77c6-7219-4cbe-8469-445239face74].", 'isRetriable': False}
+⚠ Transient/retriable failure detected: {'requestId': 'f6e9d062-2ca4-4a80-a157-e8544074e58b', 'errorCode': 'CLUSTER_CREATION_TIMED_OUT', 'message': "[plugins.36dynamicdatacloudworkspace.9a5ddf5e-5a6c-7505-90ff-e623ca210340.ce07c66e-284b-46fd-bd5c-75171ab54a8e WorkspaceType:<DataCloud> CCID:<428ed98e-c0e8-432d-ae53-d8289f675c2e>] Cluster was in terminal state=[Cancelled] before it reached 'Ready' state. Cluster job has WorkspaceName=[36dynamicdatacloudworkspace], SpecName=[9a5ddf5e-5a6c-7505-90ff-e623ca210340], and JobId=[c87d77c6-7219-4cbe-8469-445239face74].", 'isRetriable': False}
+Waiting 60 seconds before retrying execution on next attempt...
+
+=================================================================================
+ATTEMPT 3 OF 3 FOR NOTEBOOK: healthcare1_msft_raw_process_movement
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_raw_process_movement (23dd318b-6608-4d59-a18f-e6359dbaef6e) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 335a64a9-e2d8-4b30-8c91-b9317e54d104 | Status: NotStarted
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (31s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (63s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (95s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (126s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (158s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (189s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (221s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (252s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (284s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (316s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (347s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (378s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (410s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (442s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (473s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (506s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (538s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (570s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (601s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (632s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (664s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (696s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (727s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (759s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (791s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (822s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (854s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (887s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (918s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (949s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (981s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1012s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1044s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: NotStarted (1076s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1107s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1138s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1170s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1202s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1233s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1264s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: InProgress (1296s elapsed)
+  Notebook healthcare1_msft_raw_process_movement status: Completed (1328s elapsed)
+✓ Notebook healthcare1_msft_raw_process_movement completed successfully!
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: healthcare1_msft_fhir_ndjson_bronze_ingestion
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_fhir_ndjson_bronze_ingestion (b95a98b9-3351-4f8b-ad1b-21ced09bbcfc) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 26e343b9-636d-43e7-b5d2-7809cf01dd77 | Status: InProgress
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: InProgress (31s elapsed)
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: InProgress (63s elapsed)
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: InProgress (95s elapsed)
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: InProgress (127s elapsed)
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: InProgress (158s elapsed)
+  Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion status: Completed (190s elapsed)
+✓ Notebook healthcare1_msft_fhir_ndjson_bronze_ingestion completed successfully!
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: healthcare1_msft_bronze_silver_flatten
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_bronze_silver_flatten (5f4e30bb-b632-42b3-bdd7-27a87453a3fe) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 33c16aff-9b68-4def-a9d3-ef8afc76964c | Status: InProgress
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (31s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (63s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (95s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (126s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (157s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (189s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (221s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (253s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (284s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (316s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (348s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: InProgress (380s elapsed)
+  Notebook healthcare1_msft_bronze_silver_flatten status: Completed (411s elapsed)
+✓ Notebook healthcare1_msft_bronze_silver_flatten completed successfully!
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: healthcare1_msft_omop_silver_gold_transformation
+=================================================================================
+
+=================================================================================
+Processing Notebook: healthcare1_msft_omop_silver_gold_transformation (b5e8084b-e1ae-4f21-9251-2385d07da24b) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: ee98c932-3387-4a45-b4ae-dd6b48590bf4 | Status: NotStarted
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (31s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (63s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (95s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (127s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (158s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (190s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (222s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (254s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (284s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (316s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (348s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (380s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (411s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (443s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (475s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (507s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: InProgress (537s elapsed)
+  Notebook healthcare1_msft_omop_silver_gold_transformation status: Completed (569s elapsed)
+✓ Notebook healthcare1_msft_omop_silver_gold_transformation completed successfully!
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: materialize_reporting_tables
+=================================================================================
+
+=================================================================================
+Processing Notebook: materialize_reporting_tables (3b4f93b2-d293-4ee8-b35f-31273c04abd6) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: ce0d367d-1ab5-4d51-9289-6511db89e61d | Status: InProgress
+  Notebook materialize_reporting_tables status: InProgress (31s elapsed)
+  Notebook materialize_reporting_tables status: Completed (63s elapsed)
+✓ Notebook materialize_reporting_tables completed successfully!
+
+=================================================================================
+ATTEMPT 1 OF 3 FOR NOTEBOOK: create_device_association_table
+=================================================================================
+
+=================================================================================
+Processing Notebook: create_device_association_table (3172b080-692c-4ae6-80f9-aab5ba6582ac) ...
+=================================================================================
+No active run found. Triggering a new run...
+Trigger response: 
+Waiting 15 seconds for job instance to register in history...
+Found triggered Run ID: 1dd08be9-82c0-4864-bbb1-2e350e64d22f | Status: NotStarted
+  Notebook create_device_association_table status: Completed (31s elapsed)
+✓ Notebook create_device_association_table completed successfully!
+
+================================================
+  DATA INGESTION AND OMOP HYDRATION BYPASS COMPLETE  
+================================================

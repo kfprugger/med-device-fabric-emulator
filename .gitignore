@@ -45,6 +45,10 @@ video/node_packages/
 video/out/
 video/.remotion/
 
+# Generated walkthrough video assets
+docs/*-walkthrough.mp4
+docs/video-assets/
+
 # Orchestrator UI
 orchestrator-ui/.azurite/
 orchestrator-ui/node_modules/

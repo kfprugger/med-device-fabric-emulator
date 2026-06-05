@@ -7,10 +7,34 @@ param (
     [string]$SpnClientId = "",
     [string]$SpnClientSecret = "",
     [string]$SpnTenantId = "",
+    [string]$FabricWorkspaceName = "",
     [switch]$SkipTelemetry
 )
 
 $ErrorActionPreference = "Stop"
+
+# Sanitize and truncate FabricWorkspaceName to form appNamePrefix
+$appNamePrefix = "masimo"
+if ($FabricWorkspaceName) {
+    # Remove non-alphanumeric, convert to lowercase
+    $sanitized = ($FabricWorkspaceName -replace '[^a-zA-Z0-9]', '').ToLower()
+    # Prepend 'm' if it starts with a number
+    if ($sanitized -match '^[0-9]') {
+        $sanitized = "m" + $sanitized
+    }
+    # Truncate to 8 characters
+    if ($sanitized.Length -gt 8) {
+        $sanitized = $sanitized.SubString(0, 8)
+    }
+    # Pad to 3 characters if shorter
+    while ($sanitized.Length -lt 3) {
+        $sanitized += "m"
+    }
+    if ($sanitized -match '^[a-z][a-z0-9]{2,7}$') {
+        $appNamePrefix = $sanitized
+    }
+}
+Write-Host "  Using base resource name prefix: '$appNamePrefix'" -ForegroundColor Gray
 
 # Ensure cross-platform temp directory is populated in $env:TEMP
 if (-not $env:TEMP) {
@@ -383,7 +407,7 @@ if ($existingInfraOutputs) {
     $infra = $existingInfraOutputs | ConvertTo-Json -Depth 10
 } else {
     # Check for and purge any soft-deleted Key Vaults with matching name pattern
-    $deletedVaults = az keyvault list-deleted --query "[?starts_with(name, 'masimo')].name" -o tsv 2>$null
+    $deletedVaults = az keyvault list-deleted --query "[?starts_with(name, 'masimo') || starts_with(name, '$appNamePrefix')].name" -o tsv 2>$null
     foreach ($vault in $deletedVaults) {
         if ($vault) {
             Write-Host "Purging soft-deleted Key Vault: $vault" -ForegroundColor Yellow
@@ -403,9 +427,9 @@ if ($existingInfraOutputs) {
         }
     }
 
-    $bicepParams = @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef)
+    $bicepParams = @("--parameters", "adminGroupObjectId=$adminGroupObjectId", "--parameters", $tagsParamRef, "--parameters", "appNamePrefix=$appNamePrefix")
     if ($SkipTelemetry) {
-        $bicepParams += @("--parameters", "deployEventHubs=false", "--parameters", "deployAcr=false")
+        $bicepParams += @("--parameters", "deployEventHubs=false")
     }
 
     $infra = Invoke-ArmGroupDeployment `

@@ -1,0 +1,145 @@
+{
+  "id": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-med-0531C-dicom/providers/Microsoft.App/containerapps/hds-dicom-proxy",
+  "identity": {
+    "principalId": "b76528e5-e9e7-4b2b-a055-2a7e4edc48f3",
+    "tenantId": "8d038e6a-9b7d-4cb8-bbcf-e84dff156478",
+    "type": "SystemAssigned"
+  },
+  "location": "East US",
+  "name": "hds-dicom-proxy",
+  "properties": {
+    "configuration": {
+      "activeRevisionsMode": "Single",
+      "dapr": null,
+      "identitySettings": [],
+      "ingress": {
+        "additionalPortMappings": null,
+        "allowInsecure": false,
+        "clientCertificateMode": null,
+        "corsPolicy": {
+          "allowCredentials": false,
+          "allowedHeaders": [
+            "*"
+          ],
+          "allowedMethods": [
+            "GET",
+            "OPTIONS"
+          ],
+          "allowedOrigins": [
+            "*"
+          ],
+          "exposeHeaders": null,
+          "maxAge": 3600
+        },
+        "customDomains": null,
+        "exposedPort": 0,
+        "external": true,
+        "fqdn": "hds-dicom-proxy.jollywater-7c1b8ccd.eastus.azurecontainerapps.io",
+        "ipSecurityRestrictions": null,
+        "stickySessions": null,
+        "targetPort": 8080,
+        "targetPortHttpScheme": null,
+        "traffic": [
+          {
+            "latestRevision": true,
+            "weight": 100
+          }
+        ],
+        "transport": "Http"
+      },
+      "maxInactiveRevisions": 100,
+      "registries": [
+        {
+          "identity": "",
+          "passwordSecretRef": "acr-password",
+          "server": "med0531clcynujt23xu56acr.azurecr.io",
+          "username": "med0531clcynujt23xu56acr"
+        }
+      ],
+      "revisionTransitionThreshold": null,
+      "runtime": null,
+      "secrets": [
+        {
+          "name": "acr-password"
+        }
+      ],
+      "service": null,
+      "targetLabel": ""
+    },
+    "customDomainVerificationId": "86DB71057F065A860DA5B0520051ACE806C013286F0D95F187DBA508E5651E1B",
+    "delegatedIdentities": [],
+    "environmentId": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-med-0531C-dicom/providers/Microsoft.App/managedEnvironments/hds-dicom-env",
+    "eventStreamEndpoint": "https://eastus.azurecontainerapps.dev/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-med-0531C-dicom/containerApps/hds-dicom-proxy/eventstream",
+    "latestReadyRevisionName": "hds-dicom-proxy--bn95ff0",
+    "latestRevisionFqdn": "hds-dicom-proxy--bn95ff0.jollywater-7c1b8ccd.eastus.azurecontainerapps.io",
+    "latestRevisionName": "hds-dicom-proxy--bn95ff0",
+    "managedEnvironmentId": "/subscriptions/9bbee190-dc61-4c58-ab47-1275cb04018f/resourceGroups/rg-med-0531C-dicom/providers/Microsoft.App/managedEnvironments/hds-dicom-env",
+    "outboundIpAddresses": [
+      "20.237.4.250"
+    ],
+    "patchingMode": "Automatic",
+    "provisioningState": "Succeeded",
+    "runningStatus": "Running",
+    "template": {
+      "containers": [
+        {
+          "env": [
+            {
+              "name": "DICOM_INDEX_PATH",
+              "value": "/app/dicom_index.json"
+            },
+            {
+              "name": "FABRIC_SQL_SERVER",
+              "value": "nkhahdl5to4ezo6p5bg76flepa-xuwv7f33mzhuflo7uzxblggckq.datawarehouse.fabric.microsoft.com"
+            },
+            {
+              "name": "FABRIC_SQL_DATABASE",
+              "value": "healthcare1_msft_silver"
+            }
+          ],
+          "image": "med0531clcynujt23xu56acr.azurecr.io/hds-dicom-proxy:latest",
+          "imageType": "ContainerImage",
+          "name": "proxy",
+          "resources": {
+            "cpu": 0.5,
+            "ephemeralStorage": "2Gi",
+            "memory": "1Gi"
+          }
+        }
+      ],
+      "customMetricsSettings": null,
+      "initContainers": null,
+      "revisionSuffix": "",
+      "scale": {
+        "cooldownPeriod": 300,
+        "maxReplicas": 3,
+        "minReplicas": 0,
+        "pollingInterval": 30,
+        "rules": [
+          {
+            "http": {
+              "metadata": {
+                "concurrentRequests": "10"
+              }
+            },
+            "name": "http-rule"
+          }
+        ]
+      },
+      "serviceBinds": null,
+      "terminationGracePeriodSeconds": null,
+      "volumes": null
+    },
+    "workloadProfileName": null
+  },
+  "resourceGroup": "rg-med-0531C-dicom",
+  "systemData": {
+    "createdAt": "2026-06-01T03:24:33.602124",
+    "createdBy": "joey@brakekat.com",
+    "createdByType": "User",
+    "lastModifiedAt": "2026-06-01T03:24:33.602124",
+    "lastModifiedBy": "joey@brakekat.com",
+    "lastModifiedByType": "User"
+  },
+  "type": "Microsoft.App/containerApps"
+}

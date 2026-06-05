@@ -8,8 +8,10 @@ param deployAcr bool = true
 // Tag required by Azure Policy to allow public network access
 param resourceTags object = {}
 
+param appNamePrefix string = 'masimo'
+
 @minLength(3) 
-param appName string = 'masimo${uniqueString(resourceGroup().id)}'
+param appName string = '${appNamePrefix}${uniqueString(resourceGroup().id)}'
 
 // 1. Event Hub Namespace & Hub
 resource ehNamespace 'Microsoft.EventHub/namespaces@2021-11-01' = if (deployEventHubs) {
