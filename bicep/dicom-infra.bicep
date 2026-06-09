@@ -8,6 +8,9 @@ param dicomServiceName string = 'dicom${uniqueString(resourceGroup().id)}'
 param adminGroupObjectId string = ''
 param aciIdentityPrincipalId string = ''
 
+// Resource tags passed from the UI/orchestrator (deploy_bicep injects 'resourceTags').
+param resourceTags object = {}
+
 // Reference the existing HDS workspace (DO NOT recreate it)
 resource healthWorkspace 'Microsoft.HealthcareApis/workspaces@2023-11-01' existing = {
   name: workspaceName
@@ -18,6 +21,7 @@ resource dicomService 'Microsoft.HealthcareApis/workspaces/dicomservices@2023-11
   parent: healthWorkspace
   name: dicomServiceName
   location: location
+  tags: resourceTags
   properties: {
     authenticationConfiguration: {
       authority: '${environment().authentication.loginEndpoint}${subscription().tenantId}'

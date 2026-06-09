@@ -24,6 +24,9 @@ resource ehNamespace 'Microsoft.EventHub/namespaces@2021-11-01' = if (deployEven
   }
 }
 
+// NOTE: Microsoft.EventHub/namespaces/eventhubs (the hub entity) does NOT
+// support tags and does not inherit them from the namespace. Tags live on the
+// namespace (ehNamespace) above, which is the billable/governed resource.
 resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2021-11-01' = if (deployEventHubs) {
   parent: ehNamespace
   name: 'telemetry-stream'

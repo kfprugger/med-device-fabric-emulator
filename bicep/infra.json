@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "1509012856012407623"
+      "templateHash": "14083824710159881763"
     }
   },
   "parameters": {
@@ -33,9 +33,13 @@
       "type": "object",
       "defaultValue": {}
     },
+    "appNamePrefix": {
+      "type": "string",
+      "defaultValue": "masimo"
+    },
     "appName": {
       "type": "string",
-      "defaultValue": "[format('masimo{0}', uniqueString(resourceGroup().id))]",
+      "defaultValue": "[format('{0}{1}', parameters('appNamePrefix'), uniqueString(resourceGroup().id))]",
       "minLength": 3
     }
   },
