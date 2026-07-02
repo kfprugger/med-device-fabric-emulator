@@ -1,67 +1,1284 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
-  "name": "Masimo Clinical Alert Dashboard",
-  "description": "Real-Time Intelligence dashboard for Masimo pulse oximetry monitoring with 7-panel clinical overview.",
-  "tiles": [
-    {
-      "id": "tile-device-status",
-      "title": "Device Status",
-      "visualType": "donutChart",
-      "position": { "x": 0, "y": 0, "width": 4, "height": 4 },
-      "query": "fn_DeviceStatus()\n| summarize device_count = count() by status\n| order by status asc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-active-alerts",
-      "title": "Active Clinical Alerts",
-      "visualType": "table",
-      "position": { "x": 4, "y": 0, "width": 8, "height": 4 },
-      "query": "fn_ClinicalAlerts(5)\n| project alert_tier, device_id, patient_name, alert_type, spo2, pr, message\n| order by alert_tier asc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-spo2-heatmap",
-      "title": "SpO2 Heatmap (Last 30 min)",
-      "visualType": "lineChart",
-      "position": { "x": 0, "y": 4, "width": 6, "height": 4 },
-      "query": "TelemetryRaw\n| where todatetime(timestamp) > ago(30m)\n| summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)\n  by device_id, bin(todatetime(timestamp), 1m)\n| order by timestamp asc, device_id asc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-alert-trend",
-      "title": "Alert Trend (24h)",
-      "visualType": "stackedBarChart",
-      "position": { "x": 6, "y": 4, "width": 6, "height": 4 },
-      "query": "AlertHistory\n| where alert_time > ago(24h)\n| summarize alert_count = count() by alert_tier, bin(alert_time, 15m)\n| order by alert_time asc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-top-alerting",
-      "title": "Top 10 Alerting Devices (24h)",
-      "visualType": "barChart",
-      "position": { "x": 0, "y": 8, "width": 4, "height": 4 },
-      "query": "AlertHistory\n| where alert_time > ago(24h)\n| summarize\n    total_alerts = count(),\n    critical = countif(alert_tier == \"CRITICAL\"),\n    urgent   = countif(alert_tier == \"URGENT\"),\n    warning  = countif(alert_tier == \"WARNING\")\n  by device_id\n| top 10 by total_alerts desc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-vital-signs",
-      "title": "Vital Signs — Latest",
-      "visualType": "table",
-      "position": { "x": 4, "y": 8, "width": 8, "height": 4 },
-      "query": "fn_LatestReadings()\n| extend\n    spo2_status = case(spo2 < 85, \"🔴\", spo2 < 90, \"🟠\", spo2 < 94, \"🟡\", \"🟢\"),\n    pr_status   = case(pr > 150 or pr < 40, \"🔴\", pr > 130 or pr < 45, \"🟠\",\n                       pr > 110 or pr < 50, \"🟡\", \"🟢\")\n| project device_id, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_iq, timestamp\n| order by spo2 asc",
-      "database": "MasimoEventhouse"
-    },
-    {
-      "id": "tile-signal-quality",
-      "title": "Degraded Signal Quality",
-      "visualType": "table",
-      "position": { "x": 0, "y": 12, "width": 6, "height": 3 },
-      "query": "fn_LatestReadings()\n| where signal_iq < 95\n| project device_id, signal_iq, spo2, pr, timestamp\n| order by signal_iq asc",
-      "database": "MasimoEventhouse"
-    }
-  ],
+  "$schema": "https://dataexplorer.azure.com/static/d/schema/20/dashboard.json",
+  "schema_version": "20",
+  "title": "__DASHBOARD_TITLE__",
+  "description": "Enhanced command center for Masimo pulse oximetry monitoring: clinical alerts, device drilldown, operations, and facility map.",
   "autoRefresh": {
     "enabled": true,
-    "intervalSeconds": 30
-  }
+    "defaultInterval": "30s",
+    "minInterval": "30s"
+  },
+  "pages": [
+    {
+      "name": "Command Center",
+      "id": "8ab7acbb-ddca-4b94-b124-64030817ff8d"
+    },
+    {
+      "name": "Clinical Alerts",
+      "id": "db0bd2ce-f6aa-580c-8d19-b68bdb9f64f3"
+    },
+    {
+      "name": "Device Detail",
+      "id": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e"
+    },
+    {
+      "name": "Operations",
+      "id": "6d208b99-0f2e-50b5-946f-cb923ebc7f75"
+    },
+    {
+      "name": "Facility Map",
+      "id": "15437403-636e-5774-8dba-261ff6861ee1"
+    }
+  ],
+  "dataSources": [
+    {
+      "id": "__DATA_SOURCE_ID__",
+      "name": "__KQL_DB_NAME__",
+      "scopeId": "kusto-trident",
+      "kind": "kusto-trident",
+      "clusterUri": "__KUSTO_URI__",
+      "database": "__KQL_DB_ID__",
+      "workspace": "__WORKSPACE_ID__"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "9761a59a-bee1-5f69-b1bf-d345f0205d7f",
+      "kind": "string",
+      "displayName": "Device",
+      "variableName": "_selectedDevices",
+      "selectionType": "single-all",
+      "defaultValue": {
+        "kind": "all"
+      },
+      "showOnPages": {
+        "kind": "all"
+      },
+      "dataSource": {
+        "kind": "query",
+        "consumedVariables": [],
+        "query": "TelemetryRaw | distinct device_id | order by device_id asc",
+        "dataSourceId": "__DATA_SOURCE_ID__",
+        "columns": {
+          "value": "device_id",
+          "label": "device_id"
+        }
+      }
+    }
+  ],
+  "tiles": [
+    {
+      "id": "66f744b8-0720-5ee8-a1c0-39e1503862a8",
+      "title": "Online Devices",
+      "query": "fn_DeviceStatus() | where status == 'ONLINE' | count",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "60fea348-4de6-5244-8dab-02cb58e4e5a0",
+      "title": "Open Clinical Alerts",
+      "query": "fn_ClinicalAlerts(60) | count",
+      "layout": {
+        "x": 4,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "2d9645b6-5971-52f0-b434-b9e1d4374360",
+      "title": "Critical Alerts",
+      "query": "fn_ClinicalAlerts(60) | where alert_tier == 'CRITICAL' | count",
+      "layout": {
+        "x": 8,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "7dc14a35-b8e3-551a-aa25-9459ca6301bf",
+      "title": "Urgent Alerts",
+      "query": "fn_ClinicalAlerts(60) | where alert_tier == 'URGENT' | count",
+      "layout": {
+        "x": 12,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "f83b193b-ef60-5261-b299-ba6f82474e59",
+      "title": "Warning Alerts",
+      "query": "fn_ClinicalAlerts(60) | where alert_tier == 'WARNING' | count",
+      "layout": {
+        "x": 16,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "de89d244-ebf5-591c-bdda-143530252d62",
+      "title": "Ingestion Lag (seconds)",
+      "query": "TelemetryRaw | summarize last_time=max(todatetime(timestamp)) | extend ingestion_lag_seconds=datetime_diff('second', now(), last_time) | project ingestion_lag_seconds",
+      "layout": {
+        "x": 20,
+        "y": 0,
+        "width": 4,
+        "height": 3
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "card",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "dc5c3bb7-40df-5a10-9425-87b08c05bd6b",
+      "title": "Clinical Alert Feed",
+      "query": "fn_ClinicalAlerts(60) | extend alert_age_minutes=round(datetime_diff('second', now(), alert_time) / 60.0, 1), condition_summary=iff(isempty(qualifying_conditions), 'Vital-sign threshold only', qualifying_conditions), risk_context=case(escalated, 'Escalated by clinical context', isempty(qualifying_conditions), 'No condition escalation', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement') | project alert_tier, alert_age_minutes, alert_time, device_id, patient_name, alert_type, spo2, pr, signal_iq, risk_context, recommended_action, message | order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc | take 20",
+      "layout": {
+        "x": 0,
+        "y": 3,
+        "width": 14,
+        "height": 8
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "0139b9c9-5f0e-4e97-b56a-22e50897e1e8",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "56ff3da5-de79-4528-b33d-4a7de63fb577",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "ec9f57b2-0801-475e-a842-f68de3a4d1c2",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "1d24448c-f04e-57e7-911b-6bf4e2746956",
+      "title": "SpO₂ Trend + Alert Markers + Thresholds",
+      "query": "let readings = TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize value=round(avg(todouble(telemetry.spo2)), 1) by series=device_id, ts=bin(todatetime(timestamp), 30s); let buckets = readings | summarize by ts; let alert_markers = fn_ClinicalAlerts(60) | where device_id in (_selectedDevices) | project series=strcat('Alert ', alert_tier), ts=bin(alert_time, 30s), value=spo2; readings | union alert_markers | union (buckets | extend series='Warning threshold 94', value=94.0) | union (buckets | extend series='Urgent threshold 90', value=90.0) | union (buckets | extend series='Critical threshold 85', value=85.0) | order by ts asc | render timechart",
+      "layout": {
+        "x": 14,
+        "y": 3,
+        "width": 10,
+        "height": 8
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "8ab182d8-a275-5681-9c01-f1cf0c96f307",
+      "title": "Data Freshness / Throughput",
+      "query": "TelemetryRaw | summarize last_time=max(todatetime(timestamp)), total_devices=dcount(device_id) | extend join_key=1 | join kind=inner (TelemetryRaw | where todatetime(timestamp) > ago(1m) | summarize events_last_minute=count(), active_devices_30s=dcountif(device_id, todatetime(timestamp) > ago(30s)) | extend join_key=1) on join_key | extend ingestion_lag_seconds=datetime_diff('second', now(), last_time), expected_events_per_minute=total_devices * 60, observed_pct=round(100.0 * todouble(events_last_minute) / todouble(total_devices * 60), 1) | project last_time, ingestion_lag_seconds, events_last_minute, expected_events_per_minute, observed_pct, active_devices_30s, total_devices",
+      "layout": {
+        "x": 0,
+        "y": 11,
+        "width": 8,
+        "height": 4
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "163482d8-042e-5353-893e-db1a0e92c035",
+      "title": "Pulse Rate Trend — Last 60 Minutes",
+      "query": "TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize avg_pr=round(avg(todouble(telemetry.pr)), 0) by device_id, bin(todatetime(timestamp), 30s) | order by timestamp asc | render timechart",
+      "layout": {
+        "x": 8,
+        "y": 11,
+        "width": 8,
+        "height": 5
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "5f7e4077-cdec-543e-aacb-d0e8266475b9",
+      "title": "Alert Markers — Selected Device",
+      "query": "fn_ClinicalAlerts(60) | where device_id in (_selectedDevices) | project alert_time, alert_tier, device_id, patient_name, spo2, pr, alert_type, message | order by alert_time desc | take 25",
+      "layout": {
+        "x": 16,
+        "y": 11,
+        "width": 8,
+        "height": 5
+      },
+      "pageId": "8ab7acbb-ddca-4b94-b124-64030817ff8d",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "d0d66cf8-6e86-44bc-9d9b-90d647f7f41a",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "95481d88-5fa6-46ba-a056-dbcca130fc42",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "be4f40f2-a9a1-40f0-a5e9-7cc3ed90cf61",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "ed4fb578-24ce-5208-b2cf-0981643eecce",
+      "title": "Clinical Alert Triage Queue",
+      "query": "let repeats = fn_ClinicalAlerts(120) | summarize repeat_count=count() by device_id; fn_ClinicalAlerts(60) | join kind=leftouter repeats on device_id | extend alert_age_minutes=round(datetime_diff('second', now(), alert_time) / 60.0, 1), condition_summary=iff(isempty(qualifying_conditions), 'Vital-sign threshold only', qualifying_conditions), risk_context=case(escalated, 'Escalated by clinical context', isempty(qualifying_conditions), 'No condition escalation', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement'), is_repeat_alert=iff(repeat_count > 1, 'Repeat', 'New') | project alert_tier, alert_age_minutes, alert_time, device_id, patient_name, patient_id, alert_type, spo2, pr, signal_iq, condition_summary, risk_context, recommended_action, is_repeat_alert, message | order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc | take 100",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 24,
+        "height": 9
+      },
+      "pageId": "db0bd2ce-f6aa-580c-8d19-b68bdb9f64f3",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "702009ed-325a-4d44-b004-3c48635750a0",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "41061eaa-c88e-4072-997a-2f272f05f8f4",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "6204f4f7-2b63-4456-8634-a9a5032957bc",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "2fad8f1b-37d8-5240-8625-fc242dc2d5cf",
+      "title": "Why Alerts Fired",
+      "query": "fn_ClinicalAlerts(60) | extend reason=case(alert_type == 'SPO2_LOW', strcat('SpO2 ', tostring(spo2), '% below threshold'), alert_type == 'PR_ABNORMAL', strcat('Pulse ', tostring(pr), ' bpm outside threshold'), 'Multiple vital-sign thresholds breached'), context=case(escalated, strcat('Escalated by conditions: ', qualifying_conditions), isempty(qualifying_conditions), 'Vital-sign threshold only', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement') | project alert_time, alert_tier, device_id, patient_name, reason, context, recommended_action | order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc | take 50",
+      "layout": {
+        "x": 0,
+        "y": 9,
+        "width": 10,
+        "height": 6
+      },
+      "pageId": "db0bd2ce-f6aa-580c-8d19-b68bdb9f64f3",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "863dcada-4c13-43a0-9a12-d67c2e627cfc",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "b310d014-f547-467e-9a80-1b3051efa3ed",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "bc17dc97-1fea-4fb8-82ff-ea477281eb23",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "525237d4-1150-5e59-9a0d-60da5bd7ab6f",
+      "title": "Clinical Load by Severity — 24h",
+      "query": "AlertHistory | where alert_time > ago(24h) | summarize alert_count=count() by alert_tier, ts=bin(alert_time, 15m) | order by ts asc | render barchart",
+      "layout": {
+        "x": 10,
+        "y": 9,
+        "width": 8,
+        "height": 6
+      },
+      "pageId": "db0bd2ce-f6aa-580c-8d19-b68bdb9f64f3",
+      "visualType": "bar",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "c16a00cd-4648-5988-bac1-a3dc143124c0",
+      "title": "Top Noisy Devices — 24h",
+      "query": "AlertHistory | where alert_time > ago(24h) | summarize total_alerts=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), last_alert=max(alert_time), patients=dcount(patient_id) by device_id | order by total_alerts desc | take 10",
+      "layout": {
+        "x": 18,
+        "y": 9,
+        "width": 6,
+        "height": 6
+      },
+      "pageId": "db0bd2ce-f6aa-580c-8d19-b68bdb9f64f3",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "b7dc5a51-b258-501e-948a-1d0e26ae5be5",
+      "title": "Selected Device Vitals",
+      "query": "fn_LatestReadings() | where device_id in (_selectedDevices) | extend spo2_status=case(spo2 < 85, 'Critical', spo2 < 90, 'Urgent', spo2 < 94, 'Warning', 'Normal'), pr_status=case(pr > 150 or pr < 40, 'Critical', pr > 130 or pr < 45, 'Urgent', pr > 110 or pr < 50, 'Warning', 'Normal'), signal_status=case(signal_iq < 95, 'Check sensor', 'Good') | project device_id, timestamp, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_status, signal_iq | order by spo2 asc",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 12,
+        "height": 5
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "d07043ec-f989-505a-83c1-c5b2ccfb55b6",
+      "title": "Selected Device SpO₂ + Alert Markers + Thresholds",
+      "query": "let readings = TelemetryRaw | where todatetime(timestamp) > ago(2h) | where device_id in (_selectedDevices) | summarize value=round(avg(todouble(telemetry.spo2)), 1) by series=device_id, ts=bin(todatetime(timestamp), 30s); let buckets = readings | summarize by ts; let alert_markers = fn_ClinicalAlerts(120) | where device_id in (_selectedDevices) | project series=strcat('Alert ', alert_tier), ts=bin(alert_time, 30s), value=spo2; readings | union alert_markers | union (buckets | extend series='Warning threshold 94', value=94.0) | union (buckets | extend series='Urgent threshold 90', value=90.0) | union (buckets | extend series='Critical threshold 85', value=85.0) | order by ts asc | render timechart",
+      "layout": {
+        "x": 12,
+        "y": 0,
+        "width": 12,
+        "height": 7
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "70c09d1a-690f-574d-b3f8-c52b9b3b9c0b",
+      "title": "Selected Device Pulse Rate",
+      "query": "TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize avg_pr=round(avg(todouble(telemetry.pr)), 0) by device_id, bin(todatetime(timestamp), 30s) | order by timestamp asc | render timechart",
+      "layout": {
+        "x": 0,
+        "y": 5,
+        "width": 12,
+        "height": 6
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "04716664-ee42-5734-87a8-6a1e39947323",
+      "title": "Selected Device Alert History",
+      "query": "fn_ClinicalAlerts(60) | where device_id in (_selectedDevices) | project alert_time, alert_tier, device_id, patient_name, spo2, pr, alert_type, message | order by alert_time desc | take 25",
+      "layout": {
+        "x": 12,
+        "y": 7,
+        "width": 12,
+        "height": 5
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "0a1b6278-3f81-4403-b112-981f249fb568",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "26a8b11f-10ef-4e3f-b5e8-7ee25e857ec4",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "e2a950c8-4ef9-4926-81fa-bed88e3dd6e6",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "d507b392-5d37-5704-bf13-953808852c97",
+      "title": "Patient Risk Context",
+      "query": "fn_ClinicalAlerts(240) | where device_id in (_selectedDevices) | summarize latest_alert=max(alert_time), alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), conditions=make_set_if(qualifying_conditions, isnotempty(qualifying_conditions), 5), escalated=max(toint(escalated)) by device_id, patient_name, patient_id | extend risk_context=case(escalated == 1, strcat('Escalated by conditions: ', tostring(conditions)), array_length(conditions) == 0, 'Vital-sign threshold only', strcat('Conditions: ', tostring(conditions))) | project device_id, patient_name, patient_id, latest_alert, alert_count, critical, urgent, risk_context | order by critical desc, urgent desc, alert_count desc",
+      "layout": {
+        "x": 0,
+        "y": 11,
+        "width": 12,
+        "height": 5
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "0f98359d-f24b-54ba-87ea-cb9c3b7f05d7",
+      "title": "Signal Quality Trend",
+      "query": "TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize avg_signal_iq=round(avg(todouble(telemetry.signal_iq)), 1) by device_id, bin(todatetime(timestamp), 30s) | order by timestamp asc | render timechart",
+      "layout": {
+        "x": 12,
+        "y": 12,
+        "width": 12,
+        "height": 4
+      },
+      "pageId": "24813fa7-f0ec-54fe-9327-1e9c9a9f0b6e",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": [
+        "_selectedDevices"
+      ]
+    },
+    {
+      "id": "194043e5-9559-54e3-8e90-c9ca3af11ee8",
+      "title": "Device Connectivity Status",
+      "query": "fn_DeviceStatus() | extend age_bucket=case(seconds_ago < 30, '<30s', seconds_ago < 120, '30s-2m', '>2m'), connection_action=case(status == 'ONLINE', 'No action', status == 'STALE', 'Check telemetry path', 'Escalate device connectivity') | project status, device_id, last_seen, seconds_ago, age_bucket, connection_action | order by case(status == 'OFFLINE', 1, status == 'STALE', 2, 3), seconds_ago desc",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 12,
+        "height": 7
+      },
+      "pageId": "6d208b99-0f2e-50b5-946f-cb923ebc7f75",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "6af10607-a4f6-4ae3-81c2-9788e86532b3",
+            "column": {
+              "type": "specified",
+              "value": "status"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "OFFLINE"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Offline"
+              }
+            }
+          },
+          {
+            "id": "9b3f4c1e-860d-4825-bc52-26abbc010401",
+            "column": {
+              "type": "specified",
+              "value": "status"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "STALE"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Stale"
+              }
+            }
+          },
+          {
+            "id": "edd8d14e-a8a2-4d47-b4b7-7b45d70989f5",
+            "column": {
+              "type": "specified",
+              "value": "status"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "ONLINE"
+              }
+            ],
+            "color": "green",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Online"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "3bb8e609-d3ae-5c90-a716-92aca9b0e71a",
+      "title": "Signal Quality vs Clinical Risk",
+      "query": "fn_LatestReadings() | extend signal_quality=case(signal_iq < 95 and spo2 < 94, 'Low SpO2 + poor signal', signal_iq < 95, 'Poor signal only', spo2 < 94, 'Low SpO2 + good signal', 'Vitals/signal normal') | summarize devices=count(), min_spo2=min(spo2), avg_signal_iq=round(avg(todouble(signal_iq)), 1) by signal_quality | order by devices desc",
+      "layout": {
+        "x": 12,
+        "y": 0,
+        "width": 12,
+        "height": 5
+      },
+      "pageId": "6d208b99-0f2e-50b5-946f-cb923ebc7f75",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "69abcf05-7733-4d25-9362-5da5d4a87b4d",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Low SpO2 + poor signal"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Clinical + sensor risk"
+              }
+            }
+          },
+          {
+            "id": "86ef719a-3cbf-4b7e-9008-66ab1a927033",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Poor signal only"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Sensor check"
+              }
+            }
+          },
+          {
+            "id": "7ec49dd6-1004-4f5d-93ca-65ff7cfd2e75",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Low SpO2 + good signal"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Clinical risk"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "4bce1922-5e93-53ce-8505-795102778a8d",
+      "title": "Devices Needing Sensor / Clinical Review",
+      "query": "fn_LatestReadings() | where signal_iq < 95 or spo2 < 94 | extend signal_quality=case(signal_iq < 95 and spo2 < 94, 'Low SpO2 + poor signal', signal_iq < 95, 'Poor signal only', 'Low SpO2 + good signal'), action=case(signal_iq < 95 and spo2 < 94, 'Check probe placement, then assess patient', signal_iq < 95, 'Check probe placement', 'Assess patient oxygenation') | project device_id, signal_quality, signal_iq, spo2, pr, action, timestamp | order by signal_iq asc, spo2 asc | take 100",
+      "layout": {
+        "x": 0,
+        "y": 7,
+        "width": 12,
+        "height": 7
+      },
+      "pageId": "6d208b99-0f2e-50b5-946f-cb923ebc7f75",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "ae889f51-9b49-4acb-9e52-5a72108c87d1",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Low SpO2 + poor signal"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Clinical + sensor risk"
+              }
+            }
+          },
+          {
+            "id": "f330891d-e943-444b-8c9f-3993240de8c1",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Poor signal only"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Sensor check"
+              }
+            }
+          },
+          {
+            "id": "bc4ea103-0336-4b8b-a73b-c63f5784453d",
+            "column": {
+              "type": "specified",
+              "value": "signal_quality"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "Low SpO2 + good signal"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Clinical risk"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "f31d2279-4df4-5175-8cb2-2778e07dfb1f",
+      "title": "Events per Minute — Last 60 Minutes",
+      "query": "TelemetryRaw | where todatetime(timestamp) > ago(60m) | summarize events=count(), devices=dcount(device_id) by ts=bin(todatetime(timestamp), 1m) | order by ts asc | render timechart",
+      "layout": {
+        "x": 12,
+        "y": 5,
+        "width": 12,
+        "height": 5
+      },
+      "pageId": "6d208b99-0f2e-50b5-946f-cb923ebc7f75",
+      "visualType": "line",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        },
+        "yAxisMinimumValue": {
+          "type": "infer"
+        },
+        "yAxisMaximumValue": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "f179575f-e6d2-5a13-9b1f-36b1f83a3c64",
+      "title": "Data Freshness / Throughput",
+      "query": "TelemetryRaw | summarize last_time=max(todatetime(timestamp)), total_devices=dcount(device_id) | extend join_key=1 | join kind=inner (TelemetryRaw | where todatetime(timestamp) > ago(1m) | summarize events_last_minute=count(), active_devices_30s=dcountif(device_id, todatetime(timestamp) > ago(30s)) | extend join_key=1) on join_key | extend ingestion_lag_seconds=datetime_diff('second', now(), last_time), expected_events_per_minute=total_devices * 60, observed_pct=round(100.0 * todouble(events_last_minute) / todouble(total_devices * 60), 1) | project last_time, ingestion_lag_seconds, events_last_minute, expected_events_per_minute, observed_pct, active_devices_30s, total_devices",
+      "layout": {
+        "x": 12,
+        "y": 10,
+        "width": 12,
+        "height": 4
+      },
+      "pageId": "6d208b99-0f2e-50b5-946f-cb923ebc7f75",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "40d5513d-2419-5e7a-a7ce-79d69cd74b9d",
+      "title": "Alert Locations",
+      "query": "fn_AlertLocationMap(60) | summarize alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), patients=dcount(patient_name), devices=dcount(device_id) by location_name, latitude, longitude, city, state | extend tooltip=strcat(location_name, ' ', alert_count, ' alerts (', critical, ' critical) ', devices, ' devices, ', patients, ' patients') | project longitude, latitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices, tooltip | render scatterchart with (kind=map, xcolumn=longitude, ycolumns=latitude, series=alert_count, title='Alert Locations Map')",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 16,
+        "height": 10
+      },
+      "pageId": "15437403-636e-5774-8dba-261ff6861ee1",
+      "visualType": "scatterchart",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {},
+      "usedParamVariables": []
+    },
+    {
+      "id": "db1c5dc7-05dc-5ef1-a2ed-68cdd76a5dc5",
+      "title": "Alerts by Hospital",
+      "query": "fn_AlertLocationMap(60) | summarize total=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING') by location_name | order by total desc",
+      "layout": {
+        "x": 16,
+        "y": 0,
+        "width": 8,
+        "height": 5
+      },
+      "pageId": "15437403-636e-5774-8dba-261ff6861ee1",
+      "visualType": "bar",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "xColumn": {
+          "type": "infer"
+        },
+        "yColumns": {
+          "type": "infer"
+        }
+      },
+      "usedParamVariables": []
+    },
+    {
+      "id": "03a639dc-d0df-5a26-8c9d-cff2173ea3c0",
+      "title": "Facility Alert Detail",
+      "query": "fn_AlertLocationMap(60) | project alert_time, alert_tier, device_id, patient_name, alert_type, spo2, pr, location_name, city, state, qualifying_conditions, message | order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc | take 100",
+      "layout": {
+        "x": 0,
+        "y": 10,
+        "width": 24,
+        "height": 7
+      },
+      "pageId": "15437403-636e-5774-8dba-261ff6861ee1",
+      "visualType": "table",
+      "dataSourceId": "__DATA_SOURCE_ID__",
+      "visualOptions": {
+        "colorRules": [
+          {
+            "id": "a218ee8d-887e-49e4-b411-17ffbb63a9c1",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "CRITICAL"
+              }
+            ],
+            "color": "red",
+            "indicator": {
+              "kind": "icon",
+              "icon": "critical",
+              "label": {
+                "type": "specified",
+                "value": "Critical"
+              }
+            }
+          },
+          {
+            "id": "d689b902-340a-43fd-91b0-0cc373dfd1c1",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "URGENT"
+              }
+            ],
+            "color": "yellow",
+            "indicator": {
+              "kind": "icon",
+              "icon": "warning",
+              "label": {
+                "type": "specified",
+                "value": "Urgent"
+              }
+            }
+          },
+          {
+            "id": "28789cc2-ea66-4aae-a540-3d27f77af2de",
+            "column": {
+              "type": "specified",
+              "value": "alert_tier"
+            },
+            "conditions": [
+              {
+                "operator": "==",
+                "value": "WARNING"
+              }
+            ],
+            "color": "blue",
+            "indicator": {
+              "kind": "icon",
+              "icon": "circle",
+              "label": {
+                "type": "specified",
+                "value": "Warning"
+              }
+            }
+          }
+        ],
+        "colorRulesDisabled": false,
+        "colorStyle": "bold"
+      },
+      "usedParamVariables": []
+    }
+  ]
 }

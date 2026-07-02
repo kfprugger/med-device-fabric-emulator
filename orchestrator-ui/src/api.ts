@@ -137,7 +137,33 @@ export interface DeploymentConfig {
   skip_ontology: boolean;
   skip_activator: boolean;
   skip_quality_measures: boolean;
+  require_bronze_clinical_fhir: boolean;
+  require_bronze_imaging_dicom: boolean;
+  skip_phase7: boolean;
+  skip_payer_rti: boolean;
+  skip_payer_activator: boolean;
+  skip_ops_agent: boolean;
+  skip_graph_agent: boolean;
+  payer_ops_email: string;
+  claim_event_rate_per_minute: number;
   source_resource_group?: string;
+  phase2_only?: boolean;
+  phase3_only?: boolean;
+  phase4_only?: boolean;
+  phase7_only?: boolean;
+  continue_from_instance_id?: string;
+}
+
+export type PhaseSubStepStatus = "pending" | "running" | "succeeded" | "failed" | "warning" | "skipped";
+
+export interface PhaseSubStep {
+  name: string;
+  status: PhaseSubStepStatus;
+  detail?: string;
+  duration?: number | string;
+  updatedAt: string;
+  runId?: string;
+  url?: string;
 }
 
 export interface DeploymentStatus {
@@ -158,7 +184,8 @@ export interface DeploymentStatus {
     workspaceName?: string;
     resourceGroupName?: string;
     runType?: string;
-    logs?: Array<{ timestamp: string; level: string; message: string; phase?: number }>;
+    logs?: Array<{ timestamp: string; level: string; message: string; phase?: string | number }>;
+    subStepsByPhase?: Record<string, PhaseSubStep[]>;
     durationSeconds?: number;
   } | null;
   createdTime: string | null;
@@ -168,9 +195,11 @@ export interface DeploymentStatus {
 export interface PhaseInfo {
   phase: string;
   status: string;
-  duration?: number;
+  duration?: number | string;
   warnings?: string[];
   milestone?: number;
+  id?: string;
+  subSteps?: PhaseSubStep[];
 }
 
 export interface DeploymentSummary {
@@ -219,6 +248,15 @@ export async function startDeployment(
   });
 }
 
+export async function continueFailedDeployment(
+  instanceId: string
+): Promise<{ instanceId: string; statusUrl: string }> {
+  return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/continue-failed`, {
+    method: "POST",
+    timeoutMs: 30000,
+  });
+}
+
 export async function getAuthContext(force = false): Promise<AuthContext> {
   return requestJson(`${API_BASE}/auth/context${force ? "?force=1" : ""}`, { timeoutMs: 8000, retry: 1 });
 }
@@ -260,6 +298,73 @@ export async function startTeardown(config: {
     body: JSON.stringify(config),
     timeoutMs: 30000,
   });
+}
+
+export async function reconcileTeardowns(): Promise<{ reconciled: number }> {
+  return requestJson(`${API_BASE}/teardown/reconcile`, {
+    method: "POST",
+    timeoutMs: 30000,
+  });
+}
+
+export interface TeardownBatchResult {
+  batchId: string;
+  instanceIds: string[];
+  statusUrl: string;
+}
+
+export async function startTeardownBatch(jobs: Array<{
+  fabric_workspace_name: string;
+  resource_group_name: string;
+  delete_workspace: boolean;
+  delete_azure_rg: boolean;
+}>): Promise<TeardownBatchResult> {
+  return requestJson(`${API_BASE}/teardown/batch/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobs }),
+    timeoutMs: 30000,
+  });
+}
+
+export interface TeardownBatchStatus {
+  batch: DeploymentSummary;
+  children: DeploymentSummary[];
+  summary: { completed: number; failed: number; running: number; total: number };
+}
+
+export async function getTeardownBatch(batchId: string): Promise<TeardownBatchStatus> {
+  return requestJson(`${API_BASE}/teardown/batch/${encodeURIComponent(batchId)}`, { timeoutMs: 12000, retry: 1 });
+}
+
+export interface CloudStateResult {
+  workspace: { name: string; exists: boolean | null; id: string; status: string; error?: string };
+  resourceGroup: { name: string; exists: boolean | null; provisioningState: string; status: string; error?: string };
+  checkedAt: string;
+}
+
+export async function getCloudState(instanceId: string, teardown = false): Promise<CloudStateResult> {
+  const prefix = teardown ? "teardown" : "deploy";
+  return requestJson(`${API_BASE}/${prefix}/${encodeURIComponent(instanceId)}/cloud-state`, { timeoutMs: 20000, retry: 1 });
+}
+
+export interface ValidationResult {
+  passed: boolean;
+  checks: Array<{ name: string; status: "pass" | "warning" | "fail"; detail: string }>;
+  checkedAt: string;
+}
+
+export async function validateRun(instanceId: string, teardown = false): Promise<ValidationResult> {
+  const prefix = teardown ? "teardown" : "deploy";
+  return requestJson(`${API_BASE}/${prefix}/${encodeURIComponent(instanceId)}/validate`, { method: "POST", timeoutMs: 30000 });
+}
+
+export async function continuePhase7(instanceId: string): Promise<{ instanceId: string; statusUrl: string }> {
+  return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/continue-phase7`, { method: "POST", timeoutMs: 30000 });
+}
+
+export async function getHealth(): Promise<Record<string, unknown>> {
+  return requestJson(`${API_BASE}/health`, { timeoutMs: 30000, retry: 1 });
 }
 
 export async function listDeployments(signal?: AbortSignal): Promise<DeploymentSummary[]> {
@@ -385,7 +490,7 @@ export interface PhaseLogEntry {
   timestamp: string;
   level: "info" | "warn" | "error" | "success";
   message: string;
-  phase: string;
+  phase: string | number;
 }
 
 export async function getPhaseLogs(
@@ -517,6 +622,15 @@ export async function resumeCapacity(
   return requestVoid(`${API_BASE}/capacity/resume?${params}`, { method: "POST", timeoutMs: 20000 });
 }
 
+export async function pauseCapacity(
+  subscriptionId: string,
+  resourceGroup: string,
+  name: string,
+): Promise<void> {
+  const params = new URLSearchParams({ subscription_id: subscriptionId, resource_group: resourceGroup, name });
+  return requestVoid(`${API_BASE}/capacity/pause?${params}`, { method: "POST", timeoutMs: 20000 });
+}
+
 export interface DeploymentCapacityMapping {
   capacityName: string;
   capacityResourceGroup: string;
@@ -538,9 +652,9 @@ export async function getDeploymentCapacity(
   }
 }
 
-export async function listAhdsRegions(): Promise<string[]> {
+export async function listFhirRegions(): Promise<string[]> {
   try {
-    return await requestJson(`${API_BASE}/scan/ahds-regions`, { timeoutMs: 15000, retry: 1 });
+    return await requestJson<string[]>(`${API_BASE}/scan/fhir-regions`, { timeoutMs: 15000, retry: 1 });
   } catch {
     return [];
   }

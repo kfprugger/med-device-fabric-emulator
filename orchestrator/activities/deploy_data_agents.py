@@ -62,7 +62,7 @@ def _build_kql_elements() -> list[dict[str, Any]]:
 
 
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
-    """Execute Phase 5: Data Agents.
+    """Execute Phase 4: Ontology-Aware Data Agents.
 
     Args:
         config: DeploymentConfig as dict.
@@ -166,7 +166,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 5: Data Agents",
+        "phase": "Phase 4: Ontology-Aware Data Agents",
         "duration_seconds": duration,
         "resources": agent_results,
     }

@@ -28,6 +28,10 @@ from datetime import datetime, timezone
 import httpx
 from azure.identity import ManagedIdentityCredential, DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
+try:
+    from azure.storage.blob import ContentSettings
+except ImportError:
+    ContentSettings = None
 
 from tcia_client import TCIAClient
 from dicom_retagger import retag_series
@@ -87,6 +91,15 @@ class AzureClient:
         blob_client = self.container_client.get_blob_client(blob_path)
         with open(file_path, "rb") as f:
             blob_client.upload_blob(f, overwrite=True)
+        return blob_client.url
+
+    def upload_text(self, blob_path: str, content: str, content_type: str = "application/json") -> str:
+        """Upload a small text payload to blob storage. Returns the blob URL."""
+        blob_client = self.container_client.get_blob_client(blob_path)
+        if ContentSettings is None:
+            blob_client.upload_blob(content, overwrite=True)
+        else:
+            blob_client.upload_blob(content, overwrite=True, content_settings=ContentSettings(content_type=content_type))
         return blob_client.url
 
 
@@ -318,6 +331,51 @@ def create_imaging_study(
     result = resp.json()
     return result.get("id", "unknown")
 
+def build_imaging_manifest_record(
+    patient_id: str,
+    device_id: str,
+    patient_info: dict,
+    study_uid: str,
+    series_uid: str,
+    planned_modality: str,
+    body_site: dict,
+    instance_count: int,
+    blob_base_path: str,
+    source_collection: str,
+    source_tcia_study_uid: str,
+    source_tcia_series_uid: str,
+    dicom_metadata: dict,
+    condition_codings: list[dict],
+    fhir_imaging_study_id: str | None,
+) -> dict:
+    """Build the canonical study manifest consumed by downstream reporting validation."""
+    primary_condition = condition_codings[0] if condition_codings else {}
+    bare_study_uid = study_uid.replace("urn:oid:", "", 1)
+    return {
+        "patientId": patient_id,
+        "patientFhirId": patient_info.get("idOrig", patient_id),
+        "dicomPatientId": dicom_metadata.get("patientId") or patient_info.get("idOrig", patient_id),
+        "deviceId": device_id,
+        "studyInstanceUid": bare_study_uid,
+        "studyInstanceUidUrn": f"urn:oid:{bare_study_uid}",
+        "seriesInstanceUid": series_uid,
+        "sopInstanceUids": dicom_metadata.get("sopInstanceUids", []),
+        "plannedModality": planned_modality,
+        "actualModality": dicom_metadata.get("modality") or planned_modality,
+        "bodyPartExamined": dicom_metadata.get("bodyPartExamined") or body_site.get("dicom_body_part"),
+        "bodySiteCode": body_site.get("code"),
+        "bodySiteDisplay": body_site.get("display"),
+        "studyDate": dicom_metadata.get("studyDate"),
+        "instanceCount": instance_count,
+        "blobBasePath": blob_base_path,
+        "sourceCollection": source_collection,
+        "sourceTciaStudyInstanceUid": source_tcia_study_uid,
+        "sourceTciaSeriesInstanceUid": source_tcia_series_uid,
+        "conditionCode": primary_condition.get("code"),
+        "conditionDisplay": primary_condition.get("display"),
+        "fhirImagingStudyId": fhir_imaging_study_id,
+    }
+
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
@@ -498,7 +556,7 @@ def process_single_patient_worker(
 
         # Re-tag with Synthea patient identifiers
         retag_dir = os.path.join(tmp_base, f"retag_{idx}")
-        study_uid, series_uid, retagged_files = retag_series(
+        study_uid, series_uid, retagged_files, dicom_metadata = retag_series(
             dcm_files=dcm_files,
             patient_info=patient_info,
             device_id=device_id,
@@ -522,6 +580,8 @@ def process_single_patient_worker(
             stats["uploaded"] += 1
         logger.info("  [%d] Uploaded study %s (%d files)", idx + 1, study_uid, len(retagged_files))
 
+        img_study_id = None
+
         # Create FHIR ImagingStudy resource
         if not no_fhir_mode:
             fhir_token = azure.fhir_token
@@ -536,6 +596,27 @@ def process_single_patient_worker(
             logger.info("  [%d] Created ImagingStudy/%s", idx + 1, img_study_id)
         else:
             logger.info("  [%d] Skipped creating FHIR ImagingStudy resource (No-FHIR mode active)", idx + 1)
+
+        manifest_record = build_imaging_manifest_record(
+            patient_id=patient_id,
+            device_id=device_id,
+            patient_info=patient_info,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            planned_modality=modality,
+            body_site=body_site,
+            instance_count=len(retagged_files),
+            blob_base_path=blob_base,
+            source_collection=target_collection,
+            source_tcia_study_uid=study_uid_tcia,
+            source_tcia_series_uid=series_uid_tcia,
+            dicom_metadata=dicom_metadata,
+            condition_codings=condition_codings,
+            fhir_imaging_study_id=img_study_id,
+        )
+        manifest_path = f"_manifest/studies/{patient_id}/{study_uid}.json"
+        azure.upload_text(manifest_path, json.dumps(manifest_record, separators=(",", ":"), sort_keys=True))
+        logger.info("  [%d] Wrote imaging manifest %s", idx + 1, manifest_path)
 
         # Clean up temp files for this patient
         shutil.rmtree(download_dir, ignore_errors=True)

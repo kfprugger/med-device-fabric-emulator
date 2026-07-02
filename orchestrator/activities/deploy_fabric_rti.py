@@ -1,4 +1,4 @@
-"""Phase 3: Deploy Fabric Real-Time Intelligence (Phase 1).
+"""Phase 2: Deploy Fabric Real-Time Intelligence ingest.
 
 Ports logic from deploy-fabric-rti.ps1 (non-Phase2 mode):
 - Create Eventhouse + KQL Database
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
-    """Execute Phase 3: Fabric RTI Phase 1.
+    """Execute Phase 2: Fabric RTI ingest.
 
     Args:
         config: DeploymentConfig as dict.
@@ -110,7 +110,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 3: Fabric RTI Phase 1",
+        "phase": "Phase 2: Fabric RTI",
         "duration_seconds": duration,
         "resources": {
             "eventhouse_id": eventhouse_id,

@@ -16,13 +16,14 @@ A complete, deployable reference architecture that unifies healthcare EHR data a
 - **Healthcare Data Solutions** — 10K synthetic FHIR R4 patients (5M+ clinical resources) flow into a Silver Lakehouse via Fabric's native HDS connector with zero custom ETL
 - **DICOM Medical Imaging** — Real TCIA chest CT studies are downloaded, re-tagged with Synthea patient identifiers, stored in ADLS Gen2, and ingested into Fabric HDS via a OneLake shortcut and the imaging pipeline
 - **Data Agents** — Two natural-language AI agents (Patient 360 + Clinical Triage) let users ask questions like *"Show me all patients with SpO2 below 90 and their active conditions"* — federating across KQL telemetry and Lakehouse clinical data in one response
-- **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo
+- **Cohorting Toolkit** — Power BI imaging report (Direct Lake) + OHIF DICOM Viewer + Cohorting Data Agent deployed via the companion [FabricDicomCohortingToolkit](../FabricDicomCohortingToolkit/) repo; imaging preflight/deploy auto-clones it to the sibling repo path when missing
 - **Fabric IQ Ontology** — A 9-entity semantic layer (Patient, Device, Encounter, Condition, MedicationRequest, Observation, DeviceAssociation, ClinicalAlert, DeviceTelemetry) with relationships across Lakehouse and Eventhouse, bound to all Data Agents
 - **Data Activator** — A Reflex item with KQL source (`fn_ClinicalAlerts`), Device object, 6 attributes, and an email rule that alerts on CRITICAL/URGENT SpO2 events — deployed fully programmatically via the Fabric REST API
 - **Population Health & Quality** — 7 CMS eCQM quality measures, 3 HEDIS PDC classes, Star Rating simulator, HCC risk adjustment (CMS-HCC V28), 30-day readmission risk ML model, cost & utilization analytics (PMPM, IP/1K, ED/1K), and a 10-page Population Health & Quality Dashboard Power BI report with Data Activator alerting
+- **Payer RTI & Ops** — Synthetic payer claims stream through `claim-stream` into KQL-native fraud, high-cost trajectory, and care-gap alert functions, with unified `PayerOpsActivator`, OperationsAgent triage, and graph-agent manual ontology attach flow
 - **OneLake** — One copy of the data, queryable from KQL, Spark, SQL, and Power BI without duplication
 
-The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches eight Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, Data Activator, Power BI, and Healthcare Data Solutions.
+The entire solution deploys in under 2 hours via the **Orchestrator UI** (browser-based deployment wizard) or a single command (`Deploy-All.ps1`) and touches Fabric workloads across Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, OperationsAgent, Data Activator, Power BI, Healthcare Data Solutions, and payer operations.
 
 ---
 
@@ -36,6 +37,7 @@ The entire solution deploys in under 2 hours via the **Orchestrator UI** (browse
 | **Stage 4: Connected Semantic Intelligence** | ClinicalDeviceOntology semantic layer, conversational data agents (Patient 360, Triage) | [Stage 4 — Connected Semantic Intelligence](docs/phase-4-ontology-and-activator.md) |
 | **Stage 5: Bedside Alerting & Action** | Data Activator Reflex engine, real-time alert attribute routing, email rules and cooldowns | [Stage 5 — Bedside Alerting & Action](docs/phase-4-ontology-and-activator.md) |
 | **Stage 6: CMS Quality & Performance** | Claims star schema tables, eCQM clinical quality measures, Power BI Quality Scorecard | [Stage 6 — CMS Quality & Performance](docs/phase-5-cms-quality-and-claims.md) |
+| **Stage 7: Payer RTI & Ops** | Claim streaming, payer fraud/high-cost/care-gap RTI scoring, ops agents, graph attach instructions | [Stage 7 — Payer RTI & Ops](docs/phase-7-payer-rti-ops.md) |
 
 **Additional guides:**
 - [Orchestrator UI](orchestrator/README.md) — Setup and usage for the browser-based deployment dashboard
@@ -69,12 +71,14 @@ flowchart LR
     classDef phase3 fill:#FDE7E9,stroke:#D13438,stroke-width:1.5px,color:#7A1F22
     classDef phase4 fill:#E8E8FF,stroke:#5C2D91,stroke-width:1.5px,color:#2E1757
     classDef consumer fill:#FFFCE5,stroke:#B89229,stroke-width:1.5px,color:#5C4615
+    classDef phase7 fill:#E6F4FF,stroke:#0078D4,stroke-width:1.5px,color:#003A5D
 
     subgraph SRC["🌐 Data Sources"]
         direction TB
         S1["🧬 Synthea<br/>Patient Generator"]
         S2["🩻 TCIA<br/>Public DICOM"]
         S3["📟 Masimo Emulator<br/>Pulse Oximetry"]
+        S4["💳 Claim Emulator<br/>Payer Claims"]
     end
 
     subgraph AZ["☁️ Azure Ingestion & Foundational Layer"]
@@ -104,6 +108,9 @@ flowchart LR
         subgraph P6["Stage 6 · CMS Quality & Performance"]
             F6["📊 Population Health & Quality Dashboard"]
         end
+        subgraph P7["Stage 7 · Payer RTI & Ops"]
+            F7["💳 Payer RTI KQL<br/>+ Ops Agents"]
+        end
     end
 
     subgraph OUT["👥 Clinical Consumers"]
@@ -118,6 +125,7 @@ flowchart LR
     S2 --> A3
     S3 --> A1
 
+    S4 --> A1
     A1 --> F1
     A2 --> A3
     A3 --> F2
@@ -127,19 +135,24 @@ flowchart LR
     F2 --> F4
     F1 --> F4
 
+    F2 --> F7
+    F1 --> F7
     F3 --> C1
     F3 --> C2
     F2 --> C3
     F4 --> C3
     F4 --> C4
 
-    class S1,S2,S3 sources
+    F7 --> C3
+    F7 --> C4
+    class S1,S2,S3,S4 sources
     class A1,A2,A3 azure
     class F1 phase1
     class F2 phase2
     class F3 phase3
     class F4 phase4
     class C1,C2,C3,C4 consumer
+    class F7 phase7
     class SRC sources
     class AZ azure
     class FAB fabric
@@ -161,12 +174,13 @@ flowchart TB
         SYNTH["Synthea\n(Patient Generator)"]
         TCIA["TCIA\n(Public DICOM)"]
         EMUL["Masimo Emulator\n(Pulse Oximeter)"]
+        CLAIM_EMUL["Claim Emulator\n(Payer Claims)"]
     end
 
     subgraph AZ["Azure Resource Group"]
         EH["Event Hub\n(telemetry-stream)"]
+        CLAIM_EH["Event Hub\n(claim-stream)"]
         FHIR_SVC["FHIR R4 Service"]
-        DICOM_SVC["DICOM Service"]
         ADLS["ADLS Gen2\n(fhir-export +\ndicom-output)"]
         ACR["Container Registry"]
     end
@@ -206,13 +220,22 @@ flowchart TB
         subgraph P6["Stage 6 — CMS Quality & Performance"]
             PBI_CMS["Population Health\n& Quality Dashboard"]
         end
+        subgraph P7["Stage 7 — Payer RTI & Ops"]
+            PAYER_KQL["Payer RTI KQL\nFraud + High-Cost + Care Gaps"]
+            PAYER_AGENTS["HealthcareOpsAgent\nPayer Ops Triage\nHealthcare Graph Agent"]
+        end
     end
 
     subgraph VIEWER["Azure (Viewer)"]
         OHIF["OHIF Viewer\n(Static Web App)"]
     end
 
+    subgraph COMPANION["Companion Repo"]
+        FDCT["FabricDicomCohortingToolkit\n(auto-cloned for imaging paths)"]
+    end
+
     EMUL --> EH --> ES --> EVH --> DASH1
+    CLAIM_EMUL --> CLAIM_EH --> ES
     SYNTH --> ADLS --> FHIR_SVC
     TCIA --> ADLS
     FHIR_SVC -->|"$export"| ADLS
@@ -221,6 +244,9 @@ flowchart TB
     SC --> MAP
     EVH --> DA
     SLV --> DA
+    FDCT -.-> COHORT
+    FDCT -.-> RPT
+    FDCT -.-> OHIF
     GOLD --> COHORT
     SLV --> RPT --> PBI
     RPT -.-> OHIF
@@ -228,17 +254,21 @@ flowchart TB
     ONT -.-> COHORT
     EVH --> ACT
     SLV -.-> PBI_CMS
+    EVH --> PAYER_KQL --> PAYER_AGENTS
+    ONT -.-> PAYER_AGENTS
 
     style EXT fill:#f5f5f5,stroke:#999,stroke-dasharray:5
     style AZ fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
     style FAB fill:#f0e6ff,stroke:#8000d4,stroke-width:2px
     style VIEWER fill:#e6f3ff,stroke:#0078d4,stroke-width:2px
+    style COMPANION fill:#fff7ed,stroke:#c2410c,stroke-width:1.5px,stroke-dasharray:5
     style P1 fill:#FFF4E5,stroke:#FF8C00,stroke-width:1.5px
     style P2 fill:#E2F0D9,stroke:#385723,stroke-width:1.5px
     style P3 fill:#FDE7E9,stroke:#D13438,stroke-width:1.5px
     style P4 fill:#E8E8FF,stroke:#5C2D91,stroke-width:1.5px
     style P5 fill:#FFF2CC,stroke:#D6B656,stroke-width:1.5px
     style P6 fill:#E1F5FE,stroke:#0288D1,stroke-width:1.5px
+    style P7 fill:#E6F4FF,stroke:#0078D4,stroke-width:1.5px
 ```
 
 ### Deployment Sequence
@@ -252,11 +282,12 @@ flowchart TB
 | 3 | `deploy-fabric-rti.ps1` | 1 | Eventhouse, Eventstream, KQL, dashboard, FHIR $export |
 | 4 | **Manual** (Fabric portal) | — | Deploy HDS + add scipy + run pipelines |
 | 5 | `deploy-fabric-rti.ps1 -Phase2` | 2 | Silver shortcuts, enriched alerts, alerts map |
-| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines |
+| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines, then optional non-blocking CMA |
 | 6 | `phase-2/deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents |
-| 7 | FabricDicomCohortingToolkit | 3 | Cohorting Agent, DICOM Viewer, reporting notebook, PBI report |
+| 7 | FabricDicomCohortingToolkit | 3 | Cohorting Agent, DICOM Viewer, reporting notebook, PBI report; auto-cloned as sibling repo if missing |
 | 8 | `phase-4/deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entity types, 5 relationships) |
 | 9 | `Deploy-All.ps1 -Phase4` | 4 | Ontology binding to agents, Data Activator (Reflex) with email rule |
+| 10 | `Deploy-All.ps1 -Phase7` | 7 | `claim-stream`, payer KQL functions, claim emulator, `PayerOpsActivator`, ops agents, graph attach instructions |
 
 ### FHIR Resource Relationships
 
@@ -386,6 +417,9 @@ These cloud permissions and settings must be configured prior to running the dep
         *   **Data Activator** (for real-time oximeter alerting)
         *   **Copilot and Azure OpenAI Service** (for the AI Patient 360 & Triage Data Agents)
 
+> [!IMPORTANT]
+> **Manual HDS Deployment Required:** While the orchestrator automates the majority of this architecture, the core Healthcare Data Solutions (HDS) capabilities—including Healthcare Data Foundations, the OMOP pipelines, and the Care Management Analytics (CMA) models—must be **manually deployed** in the Fabric portal. The deployment scripts expect these capabilities to be present. For full instructions, refer to [Step 4 in the Stage 1 documentation](docs/phase-1-infrastructure-and-ingestion.md#step-4--healthcare-data-solutions-manual).
+
 ### Deploy with the Orchestrator UI
 
 The Orchestrator UI is a browser-based deployment dashboard that handles the entire lifecycle — wizard-driven deploys, real-time phase monitoring, parallel teardowns, resource scanning, lock protection, and deployment history. A background resource scan fires the moment the UI loads, so every tab has its data ready before you click.
@@ -498,12 +532,12 @@ The UI calls the same underlying scripts shown below. Use these directly only if
     -FabricWorkspaceName "med-device-rti-hds" `
     -Tags @{SecurityControl='Ignore'}
 
-# Phase 3: Imaging toolkit (~10 min)
+# Phase 3: Imaging toolkit (~10 min). If the companion repo is missing,
+# imaging preflight/deploy auto-clones it to ../FabricDicomCohortingToolkit.
 .\Deploy-All.ps1 -Phase3 `
     -FabricWorkspaceName "med-device-rti-hds" `
     -Location "eastus" `
-    -ResourceGroupName "rg-medtech-rti-fhir" `
-    -DicomToolkitPath "C:\git\FabricDicomCohortingToolkit"
+    -ResourceGroupName "rg-medtech-rti-fhir"
 
 # Phase 4: Ontology + Data Activator (~5 min)
 .\Deploy-All.ps1 -Phase4 `

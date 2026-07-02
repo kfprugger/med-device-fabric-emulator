@@ -215,16 +215,17 @@ def deploy_all_orchestrator(context):
     """Main deployment orchestrator — maps to Deploy-All.ps1.
 
     Phase sequence:
-      1. Base Azure Infrastructure (phase-1/deploy.ps1)
-      1b. Fabric Workspace (inline in Deploy-All.ps1)
-      2. FHIR Service + Synthea + FHIR Loader (phase-1/deploy-fhir.ps1)
-      2b. DICOM Infrastructure + Loader (phase-1/deploy-fhir.ps1 -RunDicom)
-      3. Fabric RTI Phase 1 (deploy-fabric-rti.ps1)
-      -- Human interaction gate: wait for HDS manual deployment --
-      4. Fabric RTI Phase 2 (deploy-fabric-rti.ps1 -Phase2)
-      4b. HDS Pipeline Triggers (phase-2/storage-access-trusted-workspace.ps1)
-      5. Data Agents (phase-2/deploy-data-agents.ps1)
-      6. Ontology (phase-4/deploy-ontology.ps1)
+      1a. Fabric Workspace + identity (inline in Deploy-All.ps1)
+      1b. Base Azure Infrastructure (phase-1/deploy.ps1)
+      1c. FHIR Service + Synthea + FHIR Loader (phase-1/deploy-fhir.ps1)
+      1d. DICOM Loader + ImagingStudy linkage (phase-1/deploy-fhir.ps1 -RunDicom)
+      2a. Fabric RTI ingest: Eventhouse, KQL, Eventstream, dashboard, FHIR $export
+      3a. HDS deployment detection / manual resume gate
+      2b. Fabric RTI enrichment (deploy-fabric-rti.ps1 -Phase2)
+      3b. DICOM Shortcut + HDS pipelines and row gates
+      4b. ClinicalDeviceOntology + DeviceAssociation
+      4c. Ontology-aware Data Agents
+      6. CMS Quality & Claims
     """
     config: dict = context.get_input()
     resources: dict = {}
@@ -236,11 +237,19 @@ def deploy_all_orchestrator(context):
             "status": status,
             "detail": detail,
             "completedPhases": len([p for p in phases if p.get("status") == "succeeded"]),
-            "totalPhases": 9,
+            "totalPhases": 11,
             "resources": resources,
         })
 
-    # ── Phase 1: Base Azure Infrastructure ─────────────────────────
+    # ── Phase 1a: Fabric Workspace ────────────────────────────────
+    update_status("Phase 1: Fabric Workspace", "running")
+    result = yield context.call_activity_with_retry(
+        "activity_provision_workspace", RETRY_POLICY, config
+    )
+    resources.update(result.get("resources", {}))
+    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+
+    # ── Phase 1b: Base Azure Infrastructure ───────────────────────
     if not config.get("skip_base_infra"):
         update_status("Phase 1: Base Azure Infrastructure", "running")
         result = yield context.call_activity_with_retry(
@@ -251,126 +260,118 @@ def deploy_all_orchestrator(context):
     else:
         phases.append({"phase": "Phase 1: Base Azure Infrastructure", "status": "skipped"})
 
-    # ── Phase 1b: Fabric Workspace ─────────────────────────────────
-    update_status("Phase 1b: Fabric Workspace", "running")
-    result = yield context.call_activity_with_retry(
-        "activity_provision_workspace", RETRY_POLICY, config
-    )
-    resources.update(result.get("resources", {}))
-    phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
-
-    # ── Phase 2: FHIR Service + Data Loading ───────────────────────
+    # ── Phase 1c: FHIR Service + Data Loading ─────────────────────
     if not config.get("skip_fhir"):
-        update_status("Phase 2: FHIR Service & Data Loading", "running")
-        phase2_input = {"config": config, "resources": resources}
+        update_status("Phase 1: FHIR Service + Synthea + Loader", "running")
+        phase1c_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_fhir", RETRY_POLICY, phase2_input
+            "activity_deploy_fhir", RETRY_POLICY, phase1c_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 2: FHIR Service & Data Loading", "status": "skipped"})
+        phases.append({"phase": "Phase 1: FHIR Service + Synthea + Loader", "status": "skipped"})
 
-    # ── Phase 2b: DICOM (can run in parallel with Phase 2 in future) ──
+    # ── Phase 1d: DICOM Loader ────────────────────────────────────
     if not config.get("skip_dicom"):
-        update_status("Phase 2b: DICOM Infrastructure & Loading", "running")
-        phase2b_input = {"config": config, "resources": resources}
+        update_status("Phase 1: DICOM Loader", "running")
+        phase1d_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_dicom", RETRY_POLICY, phase2b_input
+            "activity_deploy_dicom", RETRY_POLICY, phase1d_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 2b: DICOM", "status": "skipped"})
+        phases.append({"phase": "Phase 1: DICOM Loader", "status": "skipped"})
 
-    # ── Phase 3: Fabric RTI Phase 1 ───────────────────────────────
+    # ── Phase 2a: Fabric RTI ingest ───────────────────────────────
     if not config.get("skip_fabric"):
-        update_status("Phase 3: Fabric RTI Phase 1", "running")
-        phase3_input = {"config": config, "resources": resources}
+        update_status("Phase 2: Fabric RTI", "running")
+        phase2a_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_fabric_rti", RETRY_POLICY, phase3_input
+            "activity_deploy_fabric_rti", RETRY_POLICY, phase2a_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 2: Fabric RTI", "status": "skipped"})
 
-    # ── Human Interaction Gate: Wait for HDS ──────────────────────
-    update_status("Waiting for HDS Deployment", "waiting_for_input",
+    # ── Phase 3a: Human Interaction Gate / HDS detection ──────────
+    update_status("Phase 3: HDS Deployment Detection", "waiting_for_input",
                   "Deploy Healthcare Data Solutions (HDS) manually in the Fabric portal, "
                   "install scipy in the environment, then click 'Continue' in the dashboard.")
 
-    # Wait up to 24 hours for the user to deploy HDS and resume
     hds_event = yield context.wait_for_external_event("hds_deployed", timedelta(hours=24))
 
     if not hds_event:
-        # Timeout — mark as waiting and return partial results
-        phases.append({"phase": "HDS Deployment", "status": "timeout"})
+        phases.append({"phase": "Phase 3: HDS Deployment Detection", "status": "timeout"})
         return {
             "status": "waiting_for_hds",
             "phases": phases,
             "resources": resources,
         }
 
-    phases.append({"phase": "HDS Deployment", "status": "succeeded"})
+    phases.append({"phase": "Phase 3: HDS Deployment Detection", "status": "succeeded"})
 
-    # ── Phase 4: Fabric RTI Phase 2 ───────────────────────────────
+    # ── Phase 2b: Fabric RTI enrichment ───────────────────────────
     if not config.get("skip_fabric") and not config.get("skip_rti_phase2"):
-        update_status("Phase 4: Fabric RTI Phase 2", "running")
-        phase4_input = {"config": config, "resources": resources}
+        update_status("Phase 2: Fabric RTI Enrichment", "running")
+        phase2b_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_rti_phase2", RETRY_POLICY, phase4_input
+            "activity_deploy_rti_phase2", RETRY_POLICY, phase2b_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 4: Fabric RTI Phase 2", "status": "skipped"})
+        phases.append({"phase": "Phase 2: Fabric RTI Enrichment", "status": "skipped"})
 
-    # ── Phase 4b: HDS Pipeline Triggers ───────────────────────────
+    # ── Phase 3b: HDS Pipeline Triggers ───────────────────────────
     if not config.get("skip_hds_pipelines"):
-        update_status("Phase 4b: HDS Pipeline Triggers", "running")
+        update_status("Phase 3: DICOM Shortcut + HDS Pipelines", "running")
+        phase3b_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_hds_pipelines", RETRY_POLICY, phase3b_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 3: DICOM Shortcut + HDS Pipelines", "status": "skipped"})
+
+    # ── Phase 4b: Ontology ────────────────────────────────────────
+    if not config.get("skip_ontology"):
+        update_status("Phase 4: Ontology", "running")
         phase4b_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_hds_pipelines", RETRY_POLICY, phase4b_input
+            "activity_deploy_ontology", RETRY_POLICY, phase4b_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 4b: HDS Pipeline Triggers", "status": "skipped"})
+        phases.append({"phase": "Phase 4: Ontology", "status": "skipped"})
 
-    # ── Phase 5: Data Agents ──────────────────────────────────────
+    # ── Phase 4c: Data Agents ─────────────────────────────────────
     if not config.get("skip_data_agents"):
-        update_status("Phase 5: Data Agents", "running")
-        phase5_input = {"config": config, "resources": resources}
+        update_status("Phase 4: Ontology-Aware Data Agents", "running")
+        phase4c_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_data_agents", RETRY_POLICY, phase5_input
+            "activity_deploy_data_agents", RETRY_POLICY, phase4c_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 5: Data Agents", "status": "skipped"})
+        phases.append({"phase": "Phase 4: Ontology-Aware Data Agents", "status": "skipped"})
 
-    # ── Phase 6: Ontology ─────────────────────────────────────────
-    if not config.get("skip_ontology"):
-        update_status("Phase 6: Ontology", "running")
+    # ── Phase 6: CMS Quality & Claims ─────────────────────────────
+    if not config.get("skip_quality_measures"):
+        update_status("Phase 6: CMS Quality & Claims", "running")
         phase6_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
-            "activity_deploy_ontology", RETRY_POLICY, phase6_input
+            "activity_deploy_quality_measures", RETRY_POLICY, phase6_input
         )
         resources.update(result.get("resources", {}))
         phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
     else:
-        phases.append({"phase": "Phase 6: Ontology", "status": "skipped"})
-
-    # ── Phase 7: CMS Quality & Claims ─────────────────────────────
-    if not config.get("skip_quality_measures"):
-        update_status("Phase 7: CMS Quality & Claims", "running")
-        phase7_input = {"config": config, "resources": resources}
-        result = yield context.call_activity_with_retry(
-            "activity_deploy_quality_measures", RETRY_POLICY, phase7_input
-        )
-        resources.update(result.get("resources", {}))
-        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
-    else:
-        phases.append({"phase": "Phase 7: CMS Quality & Claims", "status": "skipped"})
+        phases.append({"phase": "Phase 6: CMS Quality & Claims", "status": "skipped"})
 
     # ── Complete ──────────────────────────────────────────────────
     update_status("Deployment Complete", "succeeded")
@@ -417,56 +418,56 @@ def activity_provision_workspace(config: dict) -> dict:
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_fhir(input_data: dict) -> dict:
-    """Phase 2: FHIR Service & Data Loading."""
+    """Phase 1: FHIR Service + Synthea + Loader."""
     from activities.deploy_fhir import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_dicom(input_data: dict) -> dict:
-    """Phase 2b: DICOM Infrastructure & Loading."""
+    """Phase 1: DICOM Loader."""
     from activities.deploy_dicom import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_fabric_rti(input_data: dict) -> dict:
-    """Phase 3: Fabric RTI Phase 1."""
+    """Phase 2: Fabric RTI ingest."""
     from activities.deploy_fabric_rti import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_rti_phase2(input_data: dict) -> dict:
-    """Phase 4: Fabric RTI Phase 2."""
+    """Phase 2: Fabric RTI Enrichment."""
     from activities.deploy_rti_phase2 import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_hds_pipelines(input_data: dict) -> dict:
-    """Phase 4b: HDS Pipeline Triggers."""
+    """Phase 3: DICOM Shortcut + HDS Pipelines."""
     from activities.deploy_hds_pipelines import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_data_agents(input_data: dict) -> dict:
-    """Phase 5: Data Agents."""
+    """Phase 4: Ontology-Aware Data Agents."""
     from activities.deploy_data_agents import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_ontology(input_data: dict) -> dict:
-    """Phase 6: Ontology."""
+    """Phase 4: Ontology."""
     from activities.deploy_ontology import run
     return run(input_data["config"], input_data["resources"])
 
 
 @app.activity_trigger(input_name="input_data")
 def activity_deploy_quality_measures(input_data: dict) -> dict:
-    """Phase 7: CMS Quality & Claims."""
+    """Phase 6: CMS Quality & Claims."""
     from activities.deploy_quality_measures import run
     return run(input_data["config"], input_data["resources"])
 

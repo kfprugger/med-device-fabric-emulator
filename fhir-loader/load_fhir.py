@@ -477,14 +477,20 @@ def is_conditional_reference(ref: str) -> bool:
     return isinstance(ref, str) and '?' in ref
 
 
-def transform_urn_uuid_reference(ref: str) -> str:
-    """Transform urn:uuid:XXX references to just XXX.
-    E.g., 'Patient/urn:uuid:abc123' becomes 'Patient/abc123'
-    and 'urn:uuid:abc123' becomes 'abc123'"""
+def transform_urn_uuid_reference(ref: str, full_url_ref_map: Dict[str, str] = None) -> str:
+    """Transform urn:uuid references to typed direct FHIR references.
+
+    HDS downstream transforms require ResourceType/id references. A bare UUID is
+    syntactically accepted by some FHIR stores but flattens to null in HDS Silver,
+    which breaks OMOP/CMA joins. Unknown transaction URNs are preserved instead of
+    being degraded to a bare id.
+    """
     if not isinstance(ref, str):
         return ref
-    if 'urn:uuid:' in ref:
-        return ref.replace('urn:uuid:', '')
+    if full_url_ref_map and ref in full_url_ref_map:
+        return full_url_ref_map[ref]
+    if ref.startswith('urn:uuid:'):
+        return ref
     return ref
 
 
@@ -793,6 +799,21 @@ def build_conditional_reference_map(bundle: Dict) -> Dict[str, str]:
     
     return ref_map
 
+def build_full_url_reference_map(bundle: Dict) -> Dict[str, str]:
+    """Map transaction fullUrl values to typed FHIR direct references."""
+    ref_map = {}
+    for entry in bundle.get('entry', []):
+        resource = entry.get('resource', {})
+        resource_type = resource.get('resourceType', '')
+        full_url = entry.get('fullUrl', '')
+        resource_id = resource.get('id', '')
+
+        if not resource_type or not resource_id or not full_url:
+            continue
+        ref_map[full_url] = f"{resource_type}/{resource_id}"
+    return ref_map
+
+
 
 def transform_conditional_to_direct(obj: Any, ref_map: Dict[str, str]) -> Any:
     """Recursively transform conditional references to direct references using the map."""
@@ -815,18 +836,18 @@ def transform_conditional_to_direct(obj: Any, ref_map: Dict[str, str]) -> Any:
         return obj
 
 
-def transform_references_in_resource(obj: Any) -> Any:
-    """Recursively transform all urn:uuid: references in a resource"""
+def transform_references_in_resource(obj: Any, full_url_ref_map: Dict[str, str] = None) -> Any:
+    """Recursively transform transaction URN references to typed direct references."""
     if isinstance(obj, dict):
         result = {}
         for key, value in obj.items():
             if key == 'reference' and isinstance(value, str):
-                result[key] = transform_urn_uuid_reference(value)
+                result[key] = transform_urn_uuid_reference(value, full_url_ref_map)
             else:
-                result[key] = transform_references_in_resource(value)
+                result[key] = transform_references_in_resource(value, full_url_ref_map)
         return result
     elif isinstance(obj, list):
-        return [transform_references_in_resource(item) for item in obj]
+        return [transform_references_in_resource(item, full_url_ref_map) for item in obj]
     else:
         return obj
 
@@ -956,6 +977,10 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
             # conditional refs resolve to the real Location resource IDs
             if existing_locations:
                 ref_map.update(existing_locations)
+
+            full_url_ref_map = build_full_url_reference_map(bundle)
+            ref_map.update(full_url_ref_map)
+
             
             # Convert to transaction bundle
             bundle['type'] = 'transaction'
@@ -976,8 +1001,8 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
                 if resource_id:
                     resource['id'] = resource_id
                 
-                # Transform all urn:uuid: references within the resource
-                transformed_resource = transform_references_in_resource(resource)
+                # Transform transaction urn:uuid references to ResourceType/id references
+                transformed_resource = transform_references_in_resource(resource, full_url_ref_map)
                 
                 # Convert conditional references to direct references
                 transformed_resource = transform_conditional_to_direct(transformed_resource, ref_map)

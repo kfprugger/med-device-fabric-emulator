@@ -49,7 +49,11 @@ param(
 
     [string]$ImagingPipelineName = "healthcare1_msft_imaging_with_clinical_foundation_ingestion",
     [string]$ClinicalPipelineName = "healthcare1_msft_clinical_data_foundation_ingestion",
-    [string]$OmopPipelineName = "healthcare1_msft_omop_analytics"
+    [string]$OmopPipelineName = "healthcare1_msft_omop_analytics",
+    [string]$CmaPipelineName = "healthcare1_msft_cma",
+
+    [switch]$RequireClinicalFhirData,
+    [switch]$RequireImagingDicomData
 )
 
 Set-StrictMode -Version Latest
@@ -153,22 +157,36 @@ function Invoke-FabricApiRequest {
     )
     Write-Log "FABRIC API: $Method $Uri ($Description)" 'INFO'
 
-    $invokeParams = @{ Method = $Method; Uri = $Uri; Headers = $Headers; ErrorAction = 'Stop' }
-    if ($null -ne $Body) {
-        $json = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 10 }
-        $invokeParams['Body'] = $json
-        $invokeParams['ContentType'] = 'application/json'
-        Write-Log "  Body: $json" 'DEBUG'
-    }
-    $cmd = Get-Command Invoke-WebRequest
-    if ($cmd.Parameters.ContainsKey('SkipHttpErrorCheck')) { $invokeParams['SkipHttpErrorCheck'] = $true }
+    $attempts = 8
+    for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+        $invokeParams = @{ Method = $Method; Uri = $Uri; Headers = $Headers; ErrorAction = 'Stop' }
+        if ($null -ne $Body) {
+            $json = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 10 }
+            $invokeParams['Body'] = $json
+            $invokeParams['ContentType'] = 'application/json'
+            Write-Log "  Body: $json" 'DEBUG'
+        }
+        $cmd = Get-Command Invoke-WebRequest
+        if ($cmd.Parameters.ContainsKey('SkipHttpErrorCheck')) { $invokeParams['SkipHttpErrorCheck'] = $true }
 
-    $raw = Invoke-WebRequest @invokeParams
-    $sc = [int]$raw.StatusCode
-    $content = [string]$raw.Content
+        try {
+            $raw = Invoke-WebRequest @invokeParams
+            $sc = [int]$raw.StatusCode
+            $content = [string]$raw.Content
+        } catch {
+            $sc = 0
+            $content = $_.Exception.Message
+        }
 
-    if ($sc -lt 200 -or $sc -ge 300) {
+        if ($sc -ge 200 -and $sc -lt 300) { break }
+
         $msg = "FABRIC API $Method $Uri returned $sc. Body: $content"
+        if ($attempt -lt $attempts -and ($sc -eq 0 -or $sc -eq 429 -or $sc -ge 500 -or ($sc -eq 403 -and $content -match 'RequestDeniedByInboundPolicy'))) {
+            $delay = [Math]::Min(120, 10 * [Math]::Pow(2, $attempt - 1))
+            Write-Log "$msg Retrying in ${delay}s ($attempt/$attempts)..." 'WARN'
+            Start-Sleep -Seconds $delay
+            continue
+        }
         Write-Log $msg 'ERROR'
         throw [System.Net.Http.HttpRequestException]::new($msg)
     }
@@ -179,6 +197,199 @@ function Invoke-FabricApiRequest {
         try { $parsed = $content | ConvertFrom-Json -Depth 50 } catch { $parsed = $content }
     }
     return [pscustomobject]@{ Response = $parsed; StatusCode = $sc; Headers = $raw.Headers; RawContent = $content }
+}
+
+function Invoke-LakehouseScalarQuery {
+    param(
+        [Parameter(Mandatory)][string]$Server,
+        [Parameter(Mandatory)][string]$Database,
+        [Parameter(Mandatory)][string]$Token,
+        [Parameter(Mandatory)][string]$Query
+    )
+
+    $env:_HDS_SQL_SERVER = $Server
+    $env:_HDS_SQL_DATABASE = $Database
+    $env:_HDS_SQL_TOKEN = $Token
+    $env:_HDS_SQL_QUERY = $Query
+    $pyScript = @"
+import os
+import struct
+import pyodbc
+
+token = os.environ['_HDS_SQL_TOKEN']
+token_bytes = token.encode('utf-16-le')
+token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)
+conn = pyodbc.connect(
+    'DRIVER={ODBC Driver 18 for SQL Server};'
+    f"SERVER={os.environ['_HDS_SQL_SERVER']};"
+    f"DATABASE={os.environ['_HDS_SQL_DATABASE']};"
+    'Encrypt=Yes;TrustServerCertificate=no;Connection Timeout=30',
+    attrs_before={1256: token_struct},
+    timeout=30,
+)
+try:
+    cur = conn.cursor()
+    cur.execute(os.environ['_HDS_SQL_QUERY'])
+    row = cur.fetchone()
+    print('' if row is None or row[0] is None else row[0])
+finally:
+    conn.close()
+"@
+    try {
+        $result = $pyScript | python - 2>&1
+        if ($LASTEXITCODE -ne 0) { throw ($result -join "`n") }
+        return (($result | Where-Object { $_ -and $_.ToString().Trim() } | Select-Object -Last 1).ToString().Trim())
+    } finally {
+        Remove-Item Env:\_HDS_SQL_SERVER -ErrorAction SilentlyContinue
+        Remove-Item Env:\_HDS_SQL_DATABASE -ErrorAction SilentlyContinue
+        Remove-Item Env:\_HDS_SQL_TOKEN -ErrorAction SilentlyContinue
+        Remove-Item Env:\_HDS_SQL_QUERY -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-BronzeTableRowCount {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$LakehouseId,
+        [Parameter(Mandatory)][string]$LakehouseName,
+        [Parameter(Mandatory)][string]$TableName,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders
+    )
+
+    if ($TableName -notin @('ClinicalFhir','ImagingDicom')) {
+        throw "Unsupported Bronze readiness table '$TableName'."
+    }
+
+    $sqlToken = Get-CachedTokenValue -Key 'sql' -ResourceUrl 'https://database.windows.net/'
+    $lakehouseDetail = Invoke-FabricApiRequest -Method Get `
+        -Uri "$FabricManagementEndpoint/v1/workspaces/$WorkspaceId/lakehouses/$LakehouseId" `
+        -Headers $FabricHeaders -Description "Get Bronze Lakehouse SQL endpoint"
+    $server = $lakehouseDetail.Response.properties.sqlEndpointProperties.connectionString
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw "Bronze Lakehouse SQL endpoint is not available yet."
+    }
+
+    $query = "SELECT COUNT_BIG(*) FROM dbo.[$TableName]"
+    $rawCount = Invoke-LakehouseScalarQuery -Server $server -Database $LakehouseName -Token $sqlToken -Query $query
+    $count = 0L
+    if (-not [long]::TryParse($rawCount, [ref]$count)) {
+        throw "Could not parse row count for dbo.$TableName from '$rawCount'."
+    }
+    return $count
+}
+
+function Get-LakehouseTableRowCount {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$LakehouseId,
+        [Parameter(Mandatory)][string]$LakehouseName,
+        [Parameter(Mandatory)][string]$TableName,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders,
+        [string]$Label = 'Lakehouse'
+    )
+
+    if ($TableName -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+        throw "Unsafe table name '$TableName'."
+    }
+
+    $sqlToken = Get-CachedTokenValue -Key 'sql' -ResourceUrl 'https://database.windows.net/'
+    $lakehouseDetail = Invoke-FabricApiRequest -Method Get `
+        -Uri "$FabricManagementEndpoint/v1/workspaces/$WorkspaceId/lakehouses/$LakehouseId" `
+        -Headers $FabricHeaders -Description "Get $Label SQL endpoint"
+    $server = $lakehouseDetail.Response.properties.sqlEndpointProperties.connectionString
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw "$Label SQL endpoint is not available yet."
+    }
+
+    $query = "SELECT COUNT_BIG(*) FROM dbo.[$TableName]"
+    $rawCount = Invoke-LakehouseScalarQuery -Server $server -Database $LakehouseName -Token $sqlToken -Query $query
+    $count = 0L
+    if (-not [long]::TryParse($rawCount, [ref]$count)) {
+        throw "Could not parse row count for $Label dbo.$TableName from '$rawCount'."
+    }
+    return $count
+}
+
+function Assert-LakehouseTableHasData {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$LakehouseId,
+        [Parameter(Mandatory)][string]$LakehouseName,
+        [Parameter(Mandatory)][string]$TableName,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders,
+        [Parameter(Mandatory)][string]$Reason,
+        [string]$Label = 'Lakehouse'
+    )
+
+    Write-Log "  Validating $Label table dbo.$TableName after $Reason..." 'INFO'
+    $count = Get-LakehouseTableRowCount -WorkspaceId $WorkspaceId -LakehouseId $LakehouseId -LakehouseName $LakehouseName -TableName $TableName -FabricHeaders $FabricHeaders -Label $Label
+    if ($count -le 0) {
+        throw "$Label table dbo.$TableName has 0 rows after $Reason. Downstream report visuals will be empty."
+    }
+    Write-Log "  ✓ $Label table dbo.$TableName contains $count rows." 'INFO'
+}
+
+function Assert-SilverFhirReferencesIntact {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$LakehouseId,
+        [Parameter(Mandatory)][string]$LakehouseName,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders
+    )
+
+    Write-Log "  Validating Silver FHIR references required by OMOP/CMA (reference/msftSourceReference/idOrig)..." 'INFO'
+    $sqlToken = Get-CachedTokenValue -Key 'sql' -ResourceUrl 'https://database.windows.net/'
+    $lakehouseDetail = Invoke-FabricApiRequest -Method Get `
+        -Uri "$FabricManagementEndpoint/v1/workspaces/$WorkspaceId/lakehouses/$LakehouseId" `
+        -Headers $FabricHeaders -Description "Get Silver Lakehouse SQL endpoint"
+    $server = $lakehouseDetail.Response.properties.sqlEndpointProperties.connectionString
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw "Silver Lakehouse SQL endpoint is not available yet."
+    }
+
+    $checks = @(
+        @{ Label = 'Condition.subject'; Table = 'Condition'; Column = 'subject_string'; JsonPath = '$.reference' },
+        @{ Label = 'Condition.encounter'; Table = 'Condition'; Column = 'encounter_string'; JsonPath = '$.reference' },
+        @{ Label = 'Observation.subject'; Table = 'Observation'; Column = 'subject_string'; JsonPath = '$.reference' },
+        @{ Label = 'Observation.encounter'; Table = 'Observation'; Column = 'encounter_string'; JsonPath = '$.reference' },
+        @{ Label = 'Procedure.subject'; Table = 'Procedure'; Column = 'subject_string'; JsonPath = '$.reference' },
+        @{ Label = 'Procedure.encounter'; Table = 'Procedure'; Column = 'encounter_string'; JsonPath = '$.reference' },
+        @{ Label = 'Encounter.subject'; Table = 'Encounter'; Column = 'subject_string'; JsonPath = '$.reference' },
+        @{ Label = 'CarePlan.subject'; Table = 'CarePlan'; Column = 'subject_string'; JsonPath = '$.reference' },
+        @{ Label = 'Claim.patient'; Table = 'Claim'; Column = 'patient_string'; JsonPath = '$.reference' },
+        @{ Label = 'ExplanationOfBenefit.patient'; Table = 'ExplanationOfBenefit'; Column = 'patient_string'; JsonPath = '$.reference' }
+    )
+
+    foreach ($check in $checks) {
+        $query = "SELECT COUNT_BIG(*) FROM dbo.[$($check.Table)] WHERE [$($check.Column)] IS NOT NULL AND COALESCE(NULLIF(JSON_VALUE([$($check.Column)], '$.reference'), ''), NULLIF(JSON_VALUE([$($check.Column)], '$.msftSourceReference'), ''), NULLIF(JSON_VALUE([$($check.Column)], '$.idOrig'), '')) IS NULL"
+        $rawCount = Invoke-LakehouseScalarQuery -Server $server -Database $LakehouseName -Token $sqlToken -Query $query
+        $broken = 0L
+        if (-not [long]::TryParse($rawCount, [ref]$broken)) {
+            throw "Could not parse broken reference count for $($check.Label) from '$rawCount'."
+        }
+        if ($broken -gt 0) {
+            throw "Silver FHIR reference check failed for $($check.Label): $broken rows have missing $.reference/$.msftSourceReference/$.idOrig. Fix FHIR typed references before OMOP/CMA."
+        }
+    }
+    Write-Log "  ✓ Silver FHIR references/source identifiers are present for OMOP/CMA source tables." 'INFO'
+}
+
+function Assert-BronzeTableHasData {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$LakehouseId,
+        [Parameter(Mandatory)][string]$LakehouseName,
+        [Parameter(Mandatory)][string]$TableName,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders,
+        [Parameter(Mandatory)][string]$Reason
+    )
+
+    Write-Log "  Validating Bronze table dbo.$TableName for synthesized data path..." 'INFO'
+    $count = Get-BronzeTableRowCount -WorkspaceId $WorkspaceId -LakehouseId $LakehouseId -LakehouseName $LakehouseName -TableName $TableName -FabricHeaders $FabricHeaders
+    if ($count -le 0) {
+        throw "Synthesized data was selected, but Bronze table dbo.$TableName has 0 rows after $Reason. Stop before downstream HDS steps use empty data."
+    }
+    Write-Log "  ✓ Bronze table dbo.$TableName contains $count rows." 'INFO'
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -513,10 +724,32 @@ foreach ($mod in @('Az.Accounts','Az.Storage')) {
     if (-not (Get-Module -Name $mod)) { Import-Module $mod -ErrorAction Stop }
 }
 
+$script:DeploymentSubscriptionId = $null
+try {
+    $azContext = Get-AzContext -ErrorAction SilentlyContinue
+    if ($azContext -and $azContext.Subscription -and $azContext.Subscription.Id) {
+        $script:DeploymentSubscriptionId = $azContext.Subscription.Id
+    }
+} catch { }
+if (-not $script:DeploymentSubscriptionId) {
+    $script:DeploymentSubscriptionId = (az account show --query id -o tsv 2>$null)
+}
+
+function Use-DeploymentAzSubscription {
+    if ($script:DeploymentSubscriptionId) {
+        az account set --subscription $script:DeploymentSubscriptionId 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Azure CLI context drifted and could not be reset to subscription $script:DeploymentSubscriptionId"
+        }
+    }
+}
+
+
 # ── Step 1: Resolve storage account from deployment outputs ──
 $step1Timer = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Log '─── Step 1: Resolving infrastructure from deployment outputs ───' 'INFO'
 
+Use-DeploymentAzSubscription
 $fhirOutputs = az deployment group show --resource-group $ResourceGroupName --name fhir-infra --query properties.outputs 2>$null
 $storageAccountName = $null
 if ($LASTEXITCODE -eq 0 -and $fhirOutputs) {
@@ -527,6 +760,7 @@ if ($LASTEXITCODE -eq 0 -and $fhirOutputs) {
 # Fallback: if deployment failed (e.g. RoleAssignmentExists) but resources exist, find storage account directly
 if (-not $storageAccountName) {
     Write-Log "  Deployment outputs not available — searching for storage account in resource group..." 'WARN'
+    Use-DeploymentAzSubscription
     $storageAccountName = (az storage account list -g $ResourceGroupName `
         --query "[?starts_with(name,'stfhir')].name" -o tsv 2>$null) | Select-Object -Last 1
     if ($storageAccountName) {
@@ -556,6 +790,9 @@ if (-not $container) {
 }
 $blobCount = (Get-AzStorageBlob -Container $DicomContainerName -Context $ctx -MaxCount 5 | Measure-Object).Count
 Write-Log "  Container '$DicomContainerName' exists with blobs (sampled $blobCount)." 'INFO'
+if ($blobCount -eq 0) {
+    throw "Container '$DicomContainerName' exists in storage account '$storageAccountName' but contains no sampled blobs. DICOM ingestion cannot proceed."
+}
 $step1Timer.Stop()
 Record-Step -Name 'Resolve Infrastructure' -Status 'OK' -Seconds $step1Timer.Elapsed.TotalSeconds
 
@@ -860,6 +1097,7 @@ try {
         $envId = $hdsEnv.id
         $envName = $hdsEnv.displayName
         Write-Log "  ✓ Environment: $envName ($envId)" 'INFO'
+        $scipyReady = $false
 
         # Check published libraries for scipy
         $scipyAlreadyPublished = $false
@@ -870,6 +1108,7 @@ try {
             if ($scipyLib) {
                 $scipyAlreadyPublished = $true
                 Write-Log "  ✓ scipy already published (v$($scipyLib.version))" 'INFO'
+                $scipyReady = $true
             }
         } catch {
             Write-Log "  Could not query published libraries. Proceeding to verify staging." 'DEBUG'
@@ -956,6 +1195,7 @@ dependencies:
                     if ($pubState -eq "Success") {
                         Write-Log "  ✓ Environment published — scipy==1.11.4 is now available" 'INFO'
                         $pubSuccess = $true
+                        $scipyReady = $true
                         break
                     } elseif ($pubState -eq "Failed" -or $pubState -eq "Cancelled") {
                         Write-Log "  ✗ Environment publish $pubState" 'WARN'
@@ -968,10 +1208,12 @@ dependencies:
                 }
             }
 
-            if (-not $pubSuccess -and (New-TimeSpan -Start $pubStart).TotalMinutes -ge $maxPubMin) {
-                Write-Log "  ⚠ Environment still publishing after ${maxPubMin}m — continuing" 'WARN'
-                Write-Log "    Check status in Fabric portal → Environments." 'WARN'
+            if (-not $pubSuccess) {
+                throw "HDS Spark environment did not publish scipy==1.11.4 within ${maxPubMin}m"
             }
+        }
+        if (-not $scipyReady) {
+            throw "scipy==1.11.4 was not verified in the HDS Spark environment"
         }
         $step85Timer.Stop()
         Record-Step -Name 'Ensure scipy in Spark Env' -Status 'OK' -Seconds $step85Timer.Elapsed.TotalSeconds
@@ -981,6 +1223,7 @@ dependencies:
         Write-Log "    Then manually add scipy==1.11.4 to the environment." 'WARN'
         $step85Timer.Stop()
         Record-Step -Name 'Ensure scipy in Spark Env' -Status 'NOT FOUND' -Seconds $step85Timer.Elapsed.TotalSeconds
+        throw "HDS Spark environment not found in workspace"
     }
 } catch {
     $envErr = $_.Exception.Message
@@ -989,6 +1232,7 @@ dependencies:
     Write-Log "    Manually add scipy==1.11.4 to the HDS Spark environment." 'WARN'
     $step85Timer.Stop()
     Record-Step -Name 'Ensure scipy in Spark Env' -Status 'FAILED' -Seconds $step85Timer.Elapsed.TotalSeconds
+    throw "Could not update HDS Spark environment: $envErr"
 }
 
 # ── Step 9: Run Clinical Ingestion Pipeline, then Imaging Ingestion Pipeline, then OMOP ──
@@ -1015,31 +1259,55 @@ if ($pipelineResult.Response.PSObject.Properties['value']) {
 # Find pipelines
 $clinicalPipeline = $pipelines | Where-Object { $_.displayName -eq $ClinicalPipelineName } | Select-Object -First 1
 $imagingPipeline = $pipelines | Where-Object { $_.displayName -eq $ImagingPipelineName } | Select-Object -First 1
+$imagingId = if ($imagingPipeline) { [string]$imagingPipeline.id } else { $null }
+$cmaPipeline = $pipelines | Where-Object { $_.displayName -eq $CmaPipelineName } | Select-Object -First 1
+$cmaId = if ($cmaPipeline) { [string]$cmaPipeline.id } else { $null }
+if ($cmaPipeline) {
+    Write-Log "  Detected optional CMA pipeline '$CmaPipelineName' (ID: $cmaId). It will be invoked after OMOP completes." 'INFO'
+} else {
+    Write-Log "  Optional CMA pipeline '$CmaPipelineName' not found; no CMA follow-up action will run." 'INFO'
+}
+
 
 $clinInvoked = $false
 $clinicalCompleted = $false
 $clinicalFailed = $false
 
-if ($clinicalPipeline) {
-    $clinicalId = $clinicalPipeline.id
-    Write-Log "  Found '$ClinicalPipelineName' (ID: $clinicalId)" 'INFO'
-    $clinRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/Pipeline/instances"
-    Write-Log "  Invoking clinical pipeline run..." 'INFO'
+if ($RequireClinicalFhirData) {
     try {
-        Invoke-FabricApiRequest -Method Post -Uri $clinRunUri -Headers $fabHeaders -Description "Run pipeline '$ClinicalPipelineName'"
-        Write-Log "  ✓ Clinical pipeline invoked successfully." 'INFO'
-        $clinInvoked = $true
-    } catch {
-        $errMsg = $_.Exception.Message
-        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log "  Clinical pipeline is already running or recently invoked — will poll for completion." 'WARN'
-            $clinInvoked = $true
-        } else {
-            Write-Log "  ⚠ Could not invoke clinical pipeline: $errMsg" 'WARN'
+        $clinicalRows = Get-BronzeTableRowCount -WorkspaceId $workspaceId -LakehouseId $lakehouseId -LakehouseName $BronzeLakehouseName -TableName 'ClinicalFhir' -FabricHeaders $fabHeaders
+        if ($clinicalRows -gt 0) {
+            Write-Log "  ✓ Bronze ClinicalFhir already contains $clinicalRows rows — skipping clinical pipeline rerun." 'INFO'
+            $clinicalCompleted = $true
+            $step9bTimer.Stop()
         }
+    } catch {
+        Write-Log "  Clinical readiness pre-check did not pass: $($_.Exception.Message). Will invoke clinical pipeline." 'WARN'
     }
-} else {
-    Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found." 'WARN'
+}
+
+if (-not $clinicalCompleted) {
+    if ($clinicalPipeline) {
+        $clinicalId = $clinicalPipeline.id
+        Write-Log "  Found '$ClinicalPipelineName' (ID: $clinicalId)" 'INFO'
+        $clinRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$clinicalId/jobs/Pipeline/instances"
+        Write-Log "  Invoking clinical pipeline run..." 'INFO'
+        try {
+            Invoke-FabricApiRequest -Method Post -Uri $clinRunUri -Headers $fabHeaders -Description "Run pipeline '$ClinicalPipelineName'"
+            Write-Log "  ✓ Clinical pipeline invoked successfully." 'INFO'
+            $clinInvoked = $true
+        } catch {
+            $errMsg = $_.Exception.Message
+            if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+                Write-Log "  Clinical pipeline is already running or recently invoked — will poll for completion." 'WARN'
+                $clinInvoked = $true
+            } else {
+                Write-Log "  ⚠ Could not invoke clinical pipeline: $errMsg" 'WARN'
+            }
+        }
+    } else {
+        Write-Log "  Clinical pipeline '$ClinicalPipelineName' not found." 'WARN'
+    }
 }
 
 if ($clinInvoked) {
@@ -1094,6 +1362,29 @@ if ($clinInvoked) {
     if (-not $clinicalCompleted -and -not $clinicalFailed) {
         Write-Log "  ⚠ Clinical pipeline did not complete within $maxPollMin min." 'WARN'
     }
+    if ($clinicalCompleted -and $RequireClinicalFhirData) {
+        try {
+            Assert-BronzeTableHasData -WorkspaceId $workspaceId -LakehouseId $lakehouseId -LakehouseName $BronzeLakehouseName -TableName 'ClinicalFhir' -FabricHeaders $fabHeaders -Reason 'Clinical pipeline completion'
+        } catch {
+            Write-Log "  ✗ Bronze ClinicalFhir readiness check failed: $($_.Exception.Message)" 'ERROR'
+            $clinicalCompleted = $false
+            $clinicalFailed = $true
+        }
+    }
+    if ($clinicalCompleted) {
+        try {
+            $silverResult = Invoke-FabricApiRequest -Method Get `
+                -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items?type=Lakehouse" `
+                -Headers $fabHeaders -Description 'List lakehouses for Silver reference validation'
+            $silverLh = $silverResult.Response.value | Where-Object { $_.displayName -eq 'healthcare1_msft_silver' } | Select-Object -First 1
+            if (-not $silverLh) { throw "Silver Lakehouse 'healthcare1_msft_silver' not found." }
+            Assert-SilverFhirReferencesIntact -WorkspaceId $workspaceId -LakehouseId $silverLh.id -LakehouseName $silverLh.displayName -FabricHeaders $fabHeaders
+        } catch {
+            Write-Log "  ✗ Silver FHIR reference validation failed: $($_.Exception.Message)" 'ERROR'
+            $clinicalCompleted = $false
+            $clinicalFailed = $true
+        }
+    }
 } else {
     $step9bTimer.Stop()
 }
@@ -1105,7 +1396,6 @@ $imgFailed = $false
 if ($clinicalCompleted) {
     Write-Log '─── Step 9b: Running Imaging Ingestion Pipeline ───' 'INFO'
     if ($imagingPipeline) {
-        $imagingId = $imagingPipeline.id
         Write-Log "  Found '$ImagingPipelineName' (ID: $imagingId)" 'INFO'
         $imgRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$imagingId/jobs/Pipeline/instances"
         Write-Log "  Invoking imaging pipeline run..." 'INFO'
@@ -1177,6 +1467,30 @@ if ($clinicalCompleted) {
         if ($step9Timer.IsRunning) { $step9Timer.Stop() }
         if (-not $imgCompleted -and -not $imgFailed) {
             Write-Log "  ⚠ Imaging pipeline did not complete within $maxPollMin min." 'WARN'
+        }
+        if ($imgCompleted -and $RequireImagingDicomData) {
+            try {
+                Assert-BronzeTableHasData -WorkspaceId $workspaceId -LakehouseId $lakehouseId -LakehouseName $BronzeLakehouseName -TableName 'ImagingDicom' -FabricHeaders $fabHeaders -Reason 'Imaging pipeline completion'
+            } catch {
+                Write-Log "  ✗ Bronze ImagingDicom readiness check failed: $($_.Exception.Message)" 'ERROR'
+                $imgCompleted = $false
+                $imgFailed = $true
+            }
+        }
+        if ($imgCompleted) {
+            try {
+                $silverResult = Invoke-FabricApiRequest -Method Get `
+                    -Uri "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items?type=Lakehouse" `
+                    -Headers $fabHeaders -Description 'List lakehouses for Silver imaging validation'
+                $silverLh = $silverResult.Response.value | Where-Object { $_.displayName -eq 'healthcare1_msft_silver' } | Select-Object -First 1
+                if (-not $silverLh) { throw "Silver Lakehouse 'healthcare1_msft_silver' not found." }
+                Assert-LakehouseTableHasData -WorkspaceId $workspaceId -LakehouseId $silverLh.id -LakehouseName $silverLh.displayName -TableName 'ImagingStudy' -FabricHeaders $fabHeaders -Reason 'Imaging pipeline completion' -Label 'Silver Lakehouse'
+                Assert-LakehouseTableHasData -WorkspaceId $workspaceId -LakehouseId $silverLh.id -LakehouseName $silverLh.displayName -TableName 'ImagingMetastore' -FabricHeaders $fabHeaders -Reason 'Imaging pipeline completion' -Label 'Silver Lakehouse'
+            } catch {
+                Write-Log "  ✗ Silver imaging readiness check failed: $($_.Exception.Message)" 'ERROR'
+                $imgCompleted = $false
+                $imgFailed = $true
+            }
         }
     } else {
         $step9Timer.Stop()
@@ -1314,15 +1628,64 @@ if (-not $omopPipeline) {
 }
 } # end: if ($imgCompleted) — OMOP only runs after imaging completes
 
+# ── Step 10b: Optional CMA follow-up (non-blocking) ──
+# Care Management Analytics is optional in HDS. If deployed, launch it only after
+# the blocking HDS sequence has completed; never fail the deployment on CMA.
+$step10bTimer = [System.Diagnostics.Stopwatch]::StartNew()
+$cmaInvoked = $false
+$cmaAlreadyRunning = $false
+if (-not $cmaPipeline) {
+    Write-Log "─── Step 10b: SKIPPING CMA pipeline ('$CmaPipelineName' not deployed) ───" 'INFO'
+    $step10bTimer.Stop()
+    Record-Step -Name 'CMA Pipeline' -Status 'SKIPPED' -Seconds $step10bTimer.Elapsed.TotalSeconds
+} elseif (-not (Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -or -not $omopCompleted) {
+    Write-Log '─── Step 10b: SKIPPING CMA pipeline (OMOP did not complete) ───' 'WARN'
+    Write-Log "  CMA is a non-blocking follow-up and must start after the last blocking HDS pipeline completes." 'WARN'
+    $step10bTimer.Stop()
+    Record-Step -Name 'CMA Pipeline' -Status 'SKIPPED' -Seconds $step10bTimer.Elapsed.TotalSeconds
+} else {
+    Write-Log '─── Step 10b: Running optional CMA pipeline (non-blocking) ───' 'INFO'
+    Write-Log "  Found '$CmaPipelineName' (ID: $cmaId)" 'INFO'
+    $cmaRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$cmaId/jobs/Pipeline/instances"
+    try {
+        Invoke-FabricApiRequest -Method Post -Uri $cmaRunUri -Headers $fabHeaders -Description "Run optional pipeline '$CmaPipelineName'"
+        Write-Log '  CMA pipeline invoked successfully (non-blocking).' 'INFO'
+        $cmaInvoked = $true
+        $step10bTimer.Stop()
+        Record-Step -Name 'CMA Pipeline' -Status 'INVOKED' -Seconds $step10bTimer.Elapsed.TotalSeconds
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+            Write-Log '  CMA pipeline is already running or recently invoked (non-blocking).' 'WARN'
+            $cmaAlreadyRunning = $true
+            $step10bTimer.Stop()
+            Record-Step -Name 'CMA Pipeline' -Status 'ALREADY RUNNING' -Seconds $step10bTimer.Elapsed.TotalSeconds
+        } else {
+            Write-Log "  ⚠ Could not invoke optional CMA pipeline: $errMsg" 'WARN'
+            $step10bTimer.Stop()
+            Record-Step -Name 'CMA Pipeline' -Status 'WARN' -Seconds $step10bTimer.Elapsed.TotalSeconds
+        }
+    }
+}
+
 # ── Summary ──
 $overallTimer.Stop()
 $totalSeconds = $overallTimer.Elapsed.TotalSeconds
 $totalDisplay = if ($totalSeconds -ge 60) { "{0:N1} min" -f ($totalSeconds / 60) } else { "{0:N0} sec" -f $totalSeconds }
+$blockingFailures = @()
+if (-not $clinicalCompleted) { $blockingFailures += 'Clinical pipeline did not complete successfully' }
+if (-not $imgCompleted) { $blockingFailures += 'Imaging pipeline did not complete successfully' }
+if (-not $omopPipeline) {
+    $blockingFailures += 'OMOP pipeline was not found'
+} elseif (-not (Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -or -not $omopCompleted) {
+    $blockingFailures += 'OMOP pipeline did not complete successfully'
+}
+
 
 Write-Host ""
-Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host "  DEPLOYMENT COMPLETE" -ForegroundColor Green
-Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
+Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor $(if ($blockingFailures.Count -eq 0) { 'Green' } else { 'Red' })
+Write-Host $(if ($blockingFailures.Count -eq 0) { "  DEPLOYMENT COMPLETE" } else { "  DEPLOYMENT INCOMPLETE" }) -ForegroundColor $(if ($blockingFailures.Count -eq 0) { 'Green' } else { 'Red' })
+Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor $(if ($blockingFailures.Count -eq 0) { 'Green' } else { 'Red' })
 Write-Host ""
 Write-Host "  Step Summary:" -ForegroundColor White
 Write-Host "  $('─' * 55)" -ForegroundColor DarkGray
@@ -1346,7 +1709,28 @@ Write-Host ""
 Write-Host "  The HDS pipeline sequence:" -ForegroundColor Cyan
 Write-Host "    1. Imaging with Clinical Foundation pipeline — $(if ($imgCompleted) { 'COMPLETED ✓' } else { 'IN PROGRESS / NOT COMPLETED' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
 if ($omopPipeline) {
-    Write-Host "    2. OMOP Analytics pipeline — $(if ($imgCompleted) { 'INVOKED ✓' } else { 'SKIPPED (waiting for imaging)' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
+    $omopStatus = if ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) {
+        'COMPLETED ✓'
+    } elseif ((Get-Variable -Name omopFailed -ErrorAction SilentlyContinue) -and $omopFailed) {
+        'FAILED'
+    } elseif ($imgCompleted) {
+        'IN PROGRESS / NOT COMPLETED'
+    } else {
+        'SKIPPED (waiting for imaging)'
+    }
+    Write-Host "    2. OMOP Analytics pipeline — $omopStatus" -ForegroundColor $(if ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) { 'Green' } else { 'Yellow' })
+}
+if ($cmaPipeline) {
+    $cmaStatus = if ($cmaInvoked) {
+        'INVOKED ✓ (non-blocking)'
+    } elseif ($cmaAlreadyRunning) {
+        'ALREADY RUNNING ✓ (non-blocking)'
+    } elseif ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) {
+        'NOT INVOKED (non-blocking warning)'
+    } else {
+        'SKIPPED (waiting for OMOP)'
+    }
+    Write-Host "    3. Care Management Analytics pipeline — $cmaStatus" -ForegroundColor $(if ($cmaInvoked -or $cmaAlreadyRunning) { 'Green' } else { 'Yellow' })
 }
 Write-Host ""
 
@@ -1359,6 +1743,10 @@ if ($imagingPipeline) {
 if ($omopPipeline) {
     $omopUrl = "$fabricPortalBase/datapipelines/$omopId"
     Write-Host "    OMOP Pipeline:     $omopUrl" -ForegroundColor DarkCyan
+}
+if ($cmaPipeline) {
+    $cmaUrl = "$fabricPortalBase/datapipelines/$cmaId"
+    Write-Host "    CMA Pipeline:      $cmaUrl" -ForegroundColor DarkCyan
 }
 Write-Host ""
 
@@ -1392,7 +1780,20 @@ if (-not $imgCompleted) {
     Write-Host "  │  $($omopUrl.PadRight(58))│" -ForegroundColor Green
     Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Green
     Write-Host ""
+    if ($cmaPipeline) {
+        $cmaMessage = if ($cmaInvoked) { 'CMA follow-up pipeline was invoked non-blocking.' } elseif ($cmaAlreadyRunning) { 'CMA follow-up pipeline was already running.' } else { 'CMA follow-up pipeline was not invoked; check warnings above.' }
+        Write-Host "  $cmaMessage" -ForegroundColor $(if ($cmaInvoked -or $cmaAlreadyRunning) { 'Green' } else { 'Yellow' })
+        if ($cmaUrl) { Write-Host "  $cmaUrl" -ForegroundColor DarkCyan }
+        Write-Host ""
+    }
 }
 Write-Host "  Monitor pipeline progress in the Fabric portal:" -ForegroundColor DarkGray
 Write-Host "  https://app.fabric.microsoft.com" -ForegroundColor DarkGray
 Write-Host ""
+
+
+if ($blockingFailures.Count -gt 0) {
+    Write-Host "  ✗ HDS deployment incomplete:" -ForegroundColor Red
+    foreach ($failure in $blockingFailures) { Write-Host "    - $failure" -ForegroundColor Red }
+    exit 1
+}

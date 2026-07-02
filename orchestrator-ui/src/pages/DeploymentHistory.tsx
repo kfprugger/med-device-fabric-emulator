@@ -22,7 +22,7 @@ import {
   ChevronUpRegular,
   OpenRegular,
 } from "@fluentui/react-icons";
-import { listDeployments, deleteDeployment, clearAllDeployments, type DeploymentSummary } from "../api";
+import { listDeployments, getTeardownBatch, deleteDeployment, clearAllDeployments, type DeploymentSummary } from "../api";
 import { listMockDeployments } from "../mockDeployment";
 import { MockDataBanner } from "../components/MockDataBanner";
 import { AzureBadge, FabricBadge } from "../components/TypeBadges";
@@ -143,6 +143,26 @@ function statusColor(
   return "subtle";
 }
 
+function isRunningTeardownBatch(deployment: DeploymentSummary): boolean {
+  const cs = deployment.customStatus as Record<string, unknown> | null;
+  return cs?.runType === "teardownBatch" && deployment.runtimeStatus === "Running";
+}
+
+async function hydrateRunningTeardownBatches(deployments: DeploymentSummary[]): Promise<DeploymentSummary[]> {
+  const hydrated = await Promise.all(
+    deployments.map(async (deployment) => {
+      if (!isRunningTeardownBatch(deployment)) return deployment;
+      try {
+        const status = await getTeardownBatch(deployment.instanceId);
+        return status.batch ?? deployment;
+      } catch {
+        return deployment;
+      }
+    })
+  );
+  return hydrated;
+}
+
 export function DeploymentHistory() {
   const styles = useStyles();
   const navigate = useNavigate();
@@ -163,6 +183,7 @@ export function DeploymentHistory() {
   const [dateTo, setDateTo] = useState(() => searchParams.get("to") ?? "");
   const [liveUpdates, setLiveUpdates] = useState(() => searchParams.get("live") !== "0");
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
+  const [relatedFor, setRelatedFor] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const toggleExpanded = (id: string) => {
@@ -178,8 +199,8 @@ export function DeploymentHistory() {
     setError("");
     const mockDeps = listMockDeployments();
     listDeployments()
-      .then((real) => {
-        const merged = [...mockDeps, ...real];
+      .then(async (real) => {
+        const merged = [...mockDeps, ...(await hydrateRunningTeardownBatches(real))];
         const nextSignature = merged
           .map((d) => `${d.instanceId}|${d.runtimeStatus}|${d.lastUpdatedTime ?? ""}`)
           .sort()
@@ -427,6 +448,14 @@ export function DeploymentHistory() {
           const isMock = d.instanceId.startsWith("mock-");
           const isExpanded = expandedIds.has(d.instanceId);
           const links = cs?.links as Record<string, string> | undefined;
+          const relatedCount = deployments.filter((other) => {
+            if (other.instanceId === d.instanceId) return false;
+            const otherCs = other.customStatus as Record<string, unknown> | null;
+            return !!(
+              (workspace && otherCs?.workspaceName === workspace) ||
+              (rgName && otherCs?.resourceGroupName === rgName)
+            );
+          }).length;
 
           return (
             <div key={d.instanceId} className={styles.card}>
@@ -449,7 +478,7 @@ export function DeploymentHistory() {
                     <Badge color="informative" size="small" style={{ marginLeft: 6 }}>mock</Badge>
                   )}
                 </div>
-                <Text className={styles.workspace} style={{ flex: 1 }}>{displayName}</Text>
+                <Text className={styles.workspace} style={{ flex: 1, cursor: isTeardown ? "pointer" : "default", textDecoration: isTeardown ? "underline" : "none" }} onClick={isTeardown ? () => navigate(`/monitor/${d.instanceId}`) : undefined}>{displayName}{relatedCount > 0 && <Button size="small" appearance="transparent" onClick={(event) => { event.stopPropagation(); setRelatedFor(d.instanceId); }} style={{ marginLeft: 6, padding: 0, minWidth: 0 }}><Badge size="small" color="informative">{relatedCount} related</Badge></Button>}</Text>
                 <div style={{ width: 100 }}>
                   <Badge color={isTeardown ? "warning" : "brand"}>
                     {isTeardown ? "Teardown" : "Deployment"}
@@ -543,6 +572,36 @@ export function DeploymentHistory() {
           </Text>
         )}
       </div>
+      {relatedFor && (() => {
+        const base = deployments.find((run) => run.instanceId === relatedFor);
+        const baseCs = base?.customStatus as Record<string, unknown> | null;
+        const baseWs = (baseCs?.workspaceName as string) || "";
+        const baseRg = (baseCs?.resourceGroupName as string) || "";
+        const related = deployments.filter((run) => {
+          if (run.instanceId === relatedFor) return true;
+          const cs = run.customStatus as Record<string, unknown> | null;
+          return !!((baseWs && cs?.workspaceName === baseWs) || (baseRg && cs?.resourceGroupName === baseRg));
+        });
+        return (
+          <div style={{ position: "fixed", right: 24, top: 96, width: 420, maxHeight: "75vh", overflow: "auto", background: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, boxShadow: tokens.shadow16, zIndex: 100, padding: tokens.spacingHorizontalL }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: tokens.spacingVerticalS }}>
+              <Text weight="semibold">Related run timeline</Text>
+              <Button size="small" appearance="subtle" onClick={() => setRelatedFor(null)}>Close</Button>
+            </div>
+            <div style={{ display: "grid", gap: tokens.spacingVerticalS }}>
+              {related.map((run) => {
+                const cs = run.customStatus as Record<string, unknown> | null;
+                const label = (cs?.displayName as string) || (cs?.workspaceName as string) || (cs?.resourceGroupName as string) || run.instanceId;
+                return (
+                  <Button key={run.instanceId} appearance="subtle" onClick={() => navigate(`/monitor/${run.instanceId}`)} style={{ justifyContent: "flex-start" }}>
+                    {new Date(run.createdTime || "").toLocaleString()} · {run.runtimeStatus} · {label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

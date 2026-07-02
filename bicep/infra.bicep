@@ -33,6 +33,12 @@ resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2021-11-01' = if (dep
   properties: { messageRetentionInDays: 1, partitionCount: 2 }
 }
 
+resource claimEventHub 'Microsoft.EventHub/namespaces/eventhubs@2021-11-01' = if (deployEventHubs) {
+  parent: ehNamespace
+  name: 'claim-stream'
+  properties: { messageRetentionInDays: 1, partitionCount: 2 }
+}
+
 // Use namespace-level auth rule for better compatibility
 resource nsAuthRule 'Microsoft.EventHub/namespaces/authorizationRules@2021-11-01' = if (deployEventHubs) {
   parent: ehNamespace
@@ -134,5 +140,6 @@ resource ehDataOwnerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 output acrLoginServer string = deployAcr ? acr.properties.loginServer : ''
 output acrName string = deployAcr ? acr.name : ''
 output eventHubName string = deployEventHubs ? eventHub.name : ''
+output claimEventHubName string = deployEventHubs ? claimEventHub.name : ''
 output eventHubNamespace string = deployEventHubs ? ehNamespace.name : ''
 output keyVaultName string = keyVault.name

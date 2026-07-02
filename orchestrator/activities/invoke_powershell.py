@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import re
+from shared.policy_tags import normalize_policy_tags
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,92 @@ STEP_BANNER_RE = re.compile(r"^\|\s+STEP\s+(\d+):\s+(.+?)\s*\|$")
 STEP_RESULT_RE = re.compile(r"[✓✗û]\s+(.+?)\s+[-—]\s+(\d+\.?\d*\s*min|—)")
 # Fallback: summary lines use space-padded names with duration at end (no dash separator)
 STEP_SUMMARY_RE = re.compile(r"[✓✗û]\s+(.+?)\s{2,}(\d+\.?\d*\s*min|—)")
+# HDS Record-Step summary rows include a separate status column before duration.
+PIPELINE_SUMMARY_RE = re.compile(
+    r"[✓✗û]\s+(Clinical|Imaging|OMOP)\s+Pipeline\s{2,}(.+?)\s{2,}(\d+\.?\d*\s*(?:min|sec)|—)",
+    re.IGNORECASE,
+)
 # Phase transition marker: @@PHASE|<number>|<label>|<stepCount>@@
 PHASE_TRANSITION_RE = re.compile(r"@@PHASE\|(\d+)\|(.+?)\|(\d+)@@")
 
 # HDS pipeline sub-step names (failures here are warnings, not hard failures)
 HDS_PIPELINE_SUBSTEPS = {"Imaging Pipeline", "Clinical Pipeline", "OMOP Pipeline"}
-# Regex to detect HDS pipeline warning/failure lines from PowerShell
-HDS_PIPELINE_WARN_RE = re.compile(
-    r"⚠.*(?:pipeline|Pipeline).*(?:Failed|FAILED|Cancelled|TIMEOUT|did not complete|SKIPPED)"
-    r"|(?:pipeline|Pipeline).*(?:FAILED|Failed|Cancelled)"
-    r"|SKIPPING OMOP pipeline",
-    re.IGNORECASE,
-)
+# Regexes for HDS/Fabric pipeline lifecycle lines emitted by storage-access-trusted-workspace.ps1.
+PIPELINE_NAME_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b", re.IGNORECASE)
+PIPELINE_POLL_RE = re.compile(r"\[([\d.]+)\s*min\]\s*Status:\s*(\w+)", re.IGNORECASE)
+PIPELINE_STATUS_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline status:\s*(\w+)\s*\(([\d.]+)\s*min elapsed\)", re.IGNORECASE)
+PIPELINE_COMPLETED_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline completed\b", re.IGNORECASE)
+PIPELINE_FAILED_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\s+(Failed|Cancelled|Canceled)\b", re.IGNORECASE)
+PIPELINE_TIMEOUT_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline did not complete within\s+([\d.]+)\s*min", re.IGNORECASE)
+PIPELINE_SKIP_RE = re.compile(r"(?:SKIPPING|Skipping)\s+(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline|\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b.*\bSKIPPED\b", re.IGNORECASE)
+PIPELINE_INVOKE_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b.*\b(invoking|invoked|already running|recently invoked|will poll|waiting for .*completion)\b", re.IGNORECASE)
+PIPELINE_URL_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+Pipeline:\s+(https?://\S+)", re.IGNORECASE)
+
+
+
+def _ps_single_quoted(value: Any) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _ps_hashtable_literal(values: dict[str, str]) -> str:
+    entries = [f"{_ps_single_quoted(k)}={_ps_single_quoted(v)}" for k, v in values.items()]
+    return "@{" + ";".join(entries) + "}"
+
+def _pipeline_substep_name(kind: str) -> str:
+    normalized = kind.upper() if kind.upper() == "OMOP" else kind.capitalize()
+    return f"{normalized} Pipeline"
+
+
+def _pipeline_status(raw: str) -> str:
+    status = raw.lower()
+    if status in {"completed", "succeeded", "success"}:
+        return "succeeded"
+    if status in {"failed", "cancelled", "canceled"}:
+        return "failed"
+    if status in {"skipped", "skip"}:
+        return "skipped"
+    if status in {"notstarted", "not_started", "queued", "pending"}:
+        return "pending"
+    if status in {"inprogress", "running", "executing"}:
+        return "running"
+    if status in {"timeout", "timedout", "timed_out"}:
+        return "warning"
+    return "warning"
+
+
+def _pipeline_status_from_detail(detail: str) -> str:
+    normalized = detail.lower()
+    if "skipped" in normalized or "skipping" in normalized:
+        return "skipped"
+    if "failed" in normalized or "cancelled" in normalized or "canceled" in normalized:
+        return "failed"
+    if "timeout" in normalized or "did not complete" in normalized or "warn" in normalized:
+        return "warning"
+    if "completed" in normalized or "succeeded" in normalized or "success" in normalized:
+        return "succeeded"
+    return "warning"
+
+
+def _emit_substep(
+    step_callback: Any,
+    name: str,
+    status: str,
+    detail: str,
+    duration: str = "",
+    *,
+    run_id: str = "",
+    url: str = "",
+) -> None:
+    if not step_callback:
+        return
+    payload = {"status": status, "detail": detail}
+    if run_id:
+        payload["runId"] = run_id
+    if url:
+        payload["url"] = url
+    step_callback("substep_update", name, json.dumps(payload), duration)
+
+ # Callback type for step events
 
 # Callback type for step events
 StepCallback = Any
@@ -116,6 +191,18 @@ def run_preflight(config: dict[str, Any]) -> dict[str, Any]:
         args += ["-Location", config.get("location", "eastus")]
     if config.get("admin_security_group"):
         args += ["-AdminSecurityGroup", config["admin_security_group"]]
+    if config.get("dicom_toolkit_path"):
+        args += ["-DicomToolkitPath", config["dicom_toolkit_path"]]
+    if config.get("phase2_only"):
+        args.append("-Phase2")
+    if config.get("phase3_only"):
+        args.append("-Phase3")
+    if config.get("phase4_only"):
+        args.append("-Phase4")
+    if config.get("phase7_only"):
+        args.append("-Phase7")
+    if config.get("skip_imaging"):
+        args.append("-SkipImaging")
 
     logger.info("Running preflight checks...")
 
@@ -165,25 +252,30 @@ def run_preflight(config: dict[str, Any]) -> dict[str, Any]:
 
 def _build_deploy_args(config: dict[str, Any]) -> list[str]:
     """Build the pwsh command line for Deploy-All.ps1."""
-    tags = config.get("tags", {})
+    tags = normalize_policy_tags(config.get("tags", {}))
 
-    # If tags are present, we must use -Command mode (not -File)
-    # because -File can't parse hashtable literals
+    # Tags require a PowerShell hashtable. Use -Command mode and quote every
+    # string literal explicitly so policy-tag injection does not make apostrophes
+    # in user-supplied names/tags break argument parsing.
     if tags:
         params = [
-            f"-FabricWorkspaceName '{config['fabric_workspace_name']}'",
-            f"-Location '{config.get('location', 'eastus')}'",
+            f"-FabricWorkspaceName {_ps_single_quoted(config['fabric_workspace_name'])}",
+            f"-Location {_ps_single_quoted(config.get('location', 'eastus'))}",
         ]
         if config.get("resource_group_name"):
-            params.append(f"-ResourceGroupName '{config['resource_group_name']}'")
+            params.append(f"-ResourceGroupName {_ps_single_quoted(config['resource_group_name'])}")
         if config.get("admin_security_group"):
-            params.append(f"-AdminSecurityGroup '{config['admin_security_group']}'")
+            params.append(f"-AdminSecurityGroup {_ps_single_quoted(config['admin_security_group'])}")
         if config.get("patient_count"):
             params.append(f"-PatientCount {config['patient_count']}")
         if config.get("alert_email"):
-            params.append(f"-AlertEmail '{config['alert_email']}'")
+            params.append(f"-AlertEmail {_ps_single_quoted(config['alert_email'])}")
+        if config.get("payer_ops_email"):
+            params.append(f"-PayerOpsEmail {_ps_single_quoted(config['payer_ops_email'])}")
+        if config.get("claim_event_rate_per_minute"):
+            params.append(f"-ClaimEventRatePerMinute {config['claim_event_rate_per_minute']}")
         if config.get("dicom_toolkit_path"):
-            params.append(f"-DicomToolkitPath '{config['dicom_toolkit_path']}'")
+            params.append(f"-DicomToolkitPath {_ps_single_quoted(config['dicom_toolkit_path'])}")
         if config.get("skip_base_infra"):
             params.append("-SkipBaseInfra")
         if config.get("skip_fhir"):
@@ -195,7 +287,7 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         if config.get("reuse_patients"):
             params.append("-ReusePatients")
         if config.get("source_resource_group"):
-            params.append(f"-SourceResourceGroup '{config['source_resource_group']}'")
+            params.append(f"-SourceResourceGroup {_ps_single_quoted(config['source_resource_group'])}")
         if config.get("use_cached_synthea"):
             params.append("-UseCachedSynthea")
         if config.get("skip_synthea"):
@@ -218,17 +310,32 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append("-SkipActivator")
         if config.get("skip_quality_measures"):
             params.append("-SkipQualityMeasures")
+        if config.get("require_bronze_clinical_fhir"):
+            params.append("-RequireBronzeClinicalFhir")
+        if config.get("require_bronze_imaging_dicom"):
+            params.append("-RequireBronzeImagingDicom")
+        if config.get("skip_phase7"):
+            params.append("-SkipPhase7")
+        if config.get("skip_payer_rti"):
+            params.append("-SkipPayerRti")
+        if config.get("skip_payer_activator"):
+            params.append("-SkipPayerActivator")
+        if config.get("skip_ops_agent"):
+            params.append("-SkipOpsAgent")
+        if config.get("skip_graph_agent"):
+            params.append("-SkipGraphAgent")
         if config.get("phase2_only"):
             params.append("-Phase2")
         if config.get("phase3_only"):
             params.append("-Phase3")
         if config.get("phase4_only"):
             params.append("-Phase4")
+        if config.get("phase7_only"):
+            params.append("-Phase7")
 
-        tag_str = "@{" + ";".join(f"'{k}'='{v}'" for k, v in tags.items()) + "}"
-        params.append(f"-Tags {tag_str}")
+        params.append(f"-Tags {_ps_hashtable_literal(tags)}")
 
-        cmd = f"& '{DEPLOY_SCRIPT}' {' '.join(params)}"
+        cmd = f"& {_ps_single_quoted(DEPLOY_SCRIPT)} {' '.join(params)}"
         return ["pwsh", "-NoProfile", "-NonInteractive", "-Command", cmd]
 
     # No tags — use simpler -File mode
@@ -247,6 +354,10 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args += ["-PatientCount", str(config["patient_count"])]
     if config.get("alert_email"):
         args += ["-AlertEmail", config["alert_email"]]
+    if config.get("payer_ops_email"):
+        args += ["-PayerOpsEmail", config["payer_ops_email"]]
+    if config.get("claim_event_rate_per_minute"):
+        args += ["-ClaimEventRatePerMinute", str(config["claim_event_rate_per_minute"])]
     if config.get("dicom_toolkit_path"):
         args += ["-DicomToolkitPath", config["dicom_toolkit_path"]]
 
@@ -284,6 +395,20 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-SkipActivator")
     if config.get("skip_quality_measures"):
         args.append("-SkipQualityMeasures")
+    if config.get("require_bronze_clinical_fhir"):
+        args.append("-RequireBronzeClinicalFhir")
+    if config.get("require_bronze_imaging_dicom"):
+        args.append("-RequireBronzeImagingDicom")
+    if config.get("skip_phase7"):
+        args.append("-SkipPhase7")
+    if config.get("skip_payer_rti"):
+        args.append("-SkipPayerRti")
+    if config.get("skip_payer_activator"):
+        args.append("-SkipPayerActivator")
+    if config.get("skip_ops_agent"):
+        args.append("-SkipOpsAgent")
+    if config.get("skip_graph_agent"):
+        args.append("-SkipGraphAgent")
 
     if config.get("phase2_only"):
         args.append("-Phase2")
@@ -291,6 +416,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args.append("-Phase3")
     if config.get("phase4_only"):
         args.append("-Phase4")
+    if config.get("phase7_only"):
+        args.append("-Phase7")
 
     return args
 
@@ -328,6 +455,7 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
 
     current_phase = 0
     current_phase_label = ""
+    current_pipeline_name = ""
 
     env_dict = {**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     if instance_id:
@@ -375,6 +503,86 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
             logger.info(line)
             continue
 
+        pipeline_match = PIPELINE_NAME_RE.search(line)
+        if pipeline_match:
+            current_pipeline_name = _pipeline_substep_name(pipeline_match.group(1))
+
+        url_match = PIPELINE_URL_RE.search(line)
+        if url_match:
+            current_pipeline_name = _pipeline_substep_name(url_match.group(1))
+            _emit_substep(step_callback, current_pipeline_name, "running", line.strip(), "", url=url_match.group(2).strip())
+
+        named_status_match = PIPELINE_STATUS_RE.search(line)
+        if named_status_match:
+            current_pipeline_name = _pipeline_substep_name(named_status_match.group(1))
+            raw_status = named_status_match.group(2)
+            duration = f"{named_status_match.group(3)} min"
+            status = _pipeline_status(raw_status)
+            _emit_substep(step_callback, current_pipeline_name, status, line.strip(), duration)
+            if status in {"failed", "warning"} and step_callback:
+                step_callback("step_warning", current_pipeline_name, line.strip(), duration)
+
+        poll_match = PIPELINE_POLL_RE.search(line)
+        if poll_match and current_pipeline_name:
+            raw_status = poll_match.group(2)
+            status = _pipeline_status(raw_status)
+            _emit_substep(step_callback, current_pipeline_name, status, line.strip(), f"{poll_match.group(1)} min")
+            if status in {"failed", "warning"} and step_callback:
+                step_callback("step_warning", current_pipeline_name, line.strip(), f"{poll_match.group(1)} min")
+
+        completed_match = PIPELINE_COMPLETED_RE.search(line)
+        if completed_match:
+            current_pipeline_name = _pipeline_substep_name(completed_match.group(1))
+            _emit_substep(step_callback, current_pipeline_name, "succeeded", line.strip(), "")
+
+        failed_match = PIPELINE_FAILED_RE.search(line)
+        if failed_match:
+            current_pipeline_name = _pipeline_substep_name(failed_match.group(1))
+            _emit_substep(step_callback, current_pipeline_name, "failed", line.strip(), "")
+            if step_callback:
+                step_callback("step_warning", current_pipeline_name, line.strip(), "")
+
+        timeout_match = PIPELINE_TIMEOUT_RE.search(line)
+        if timeout_match:
+            current_pipeline_name = _pipeline_substep_name(timeout_match.group(1))
+            duration = f"{timeout_match.group(2)} min"
+            _emit_substep(step_callback, current_pipeline_name, "warning", line.strip(), duration)
+            if step_callback:
+                step_callback("step_warning", current_pipeline_name, line.strip(), duration)
+
+        skip_match = PIPELINE_SKIP_RE.search(line)
+        if skip_match:
+            skipped_kind = skip_match.group(1) or skip_match.group(2)
+            current_pipeline_name = _pipeline_substep_name(skipped_kind)
+            _emit_substep(step_callback, current_pipeline_name, "skipped", line.strip(), "")
+
+        invoke_match = PIPELINE_INVOKE_RE.search(line)
+        if invoke_match:
+            current_pipeline_name = _pipeline_substep_name(invoke_match.group(1))
+            _emit_substep(step_callback, current_pipeline_name, "running", line.strip(), "")
+        elif current_pipeline_name and any(
+            marker in line.lower()
+            for marker in ["invoking", "invoked", "waiting for", "already running", "recently invoked", "will poll"]
+        ):
+            _emit_substep(step_callback, current_pipeline_name, "running", line.strip(), "")
+
+        if current_pipeline_name and ("could not invoke" in line.lower() or "not found" in line.lower()) and "pipeline" in line.lower():
+            _emit_substep(step_callback, current_pipeline_name, "warning", line.strip(), "")
+            if step_callback:
+                step_callback("step_warning", current_pipeline_name, line.strip(), "")
+
+        pipeline_summary_match = PIPELINE_SUMMARY_RE.search(line)
+        if pipeline_summary_match:
+            step_name = _pipeline_substep_name(pipeline_summary_match.group(1))
+            raw_status = pipeline_summary_match.group(2).strip()
+            duration = pipeline_summary_match.group(3).strip()
+            status = _pipeline_status_from_detail(raw_status)
+            _emit_substep(step_callback, step_name, status, line.strip(), duration)
+            if status in {"failed", "warning"} and step_callback:
+                step_callback("step_warning", step_name, line.strip(), duration)
+            logger.info(line) if status in {"succeeded", "skipped"} else logger.warning(line)
+            continue
+
         # Parse step result: ✓/✗/û  StepName - Duration
         result_match = STEP_RESULT_RE.search(line) or STEP_SUMMARY_RE.search(line)
         if result_match:
@@ -391,19 +599,14 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
                 event = "step_failed"
             if step_callback:
                 step_callback(event, step_name, "", duration)
+            if step_name in HDS_PIPELINE_SUBSTEPS:
+                _emit_substep(step_callback, step_name, "succeeded" if is_success else _pipeline_status_from_detail(line), line.strip(), duration)
             if is_success:
                 logger.info(line)
             elif event == "step_warning":
                 logger.warning(line)
             else:
                 logger.error(line)
-            continue
-
-        # Detect HDS pipeline warning/failure lines (e.g. "⚠ Clinical pipeline Failed")
-        if HDS_PIPELINE_WARN_RE.search(line):
-            logger.warning(line)
-            if step_callback:
-                step_callback("step_warning", "HDS Pipeline", line.strip(), "")
             continue
 
         # Detect skipped steps (e.g. ">>  Skipping FHIR / Synthea (--SkipFhir)")
@@ -418,6 +621,8 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
 
         # Regular log line
         if any(marker in line for marker in ["✓", "succeeded", "Succeeded", "created", "deployed", "complete"]):
+            logger.info(line)
+        elif re.search(r"(?<![A-Za-z])Failed:\s*0(?!\d)", line):
             logger.info(line)
         elif any(marker in line for marker in ["✗", "ERROR", "error", "failed", "Failed", "FAILED"]):
             logger.error(line)

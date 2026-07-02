@@ -89,16 +89,23 @@ class FabricClient:
                 if resp.status_code == 202:
                     return self._poll_lro(resp)
 
-                # 429 — Rate limited
-                if resp.status_code == 429 and attempt < max_retries:
-                    retry_after = int(
-                        resp.headers.get("Retry-After", "30")
-                    )
+                retryable_inbound_policy = (
+                    resp.status_code == 403
+                    and "RequestDeniedByInboundPolicy" in resp.text
+                )
+                retryable_status = resp.status_code == 429 or resp.status_code >= 500 or retryable_inbound_policy
+                if retryable_status and attempt < max_retries:
+                    retry_after = int(resp.headers.get("Retry-After", "0") or "0")
+                    if retry_after <= 0:
+                        retry_after = min(20, 5 * attempt)
                     logger.warning(
-                        "Rate limited (429). Waiting %ds (attempt %d/%d)…",
+                        "HTTP %s on %s. Waiting %ds (attempt %d/%d): %s",
+                        resp.status_code,
+                        endpoint,
                         retry_after,
                         attempt,
                         max_retries,
+                        resp.text[:500],
                     )
                     time.sleep(retry_after)
                     continue
@@ -108,6 +115,7 @@ class FabricClient:
 
             except requests.exceptions.HTTPError:
                 if attempt < max_retries:
+                    retry_after = min(20, 5 * attempt)
                     logger.warning(
                         "HTTP %s on %s (attempt %d/%d): %s",
                         resp.status_code,
@@ -116,7 +124,7 @@ class FabricClient:
                         max_retries,
                         resp.text[:500],
                     )
-                    time.sleep(5 * attempt)
+                    time.sleep(retry_after)
                     continue
                 raise
 
@@ -161,9 +169,9 @@ class FabricClient:
 
     # ── Workspace Operations ───────────────────────────────────────────
 
-    def find_workspace(self, name: str) -> dict[str, Any] | None:
+    def find_workspace(self, name: str, max_retries: int = 3) -> dict[str, Any] | None:
         """Find a workspace by display name."""
-        result = self.call("GET", "/workspaces")
+        result = self.call("GET", "/workspaces", max_retries=max_retries)
         if result and "value" in result:
             for ws in result["value"]:
                 if ws.get("displayName") == name:
@@ -183,13 +191,13 @@ class FabricClient:
     # ── Item Discovery ─────────────────────────────────────────────────
 
     def list_items(
-        self, workspace_id: str, item_type: str | None = None
+        self, workspace_id: str, item_type: str | None = None, max_retries: int = 3
     ) -> list[dict[str, Any]]:
         """List items in a workspace, optionally filtered by type."""
         endpoint = f"/workspaces/{workspace_id}/items"
         if item_type:
             endpoint += f"?type={item_type}"
-        result = self.call("GET", endpoint)
+        result = self.call("GET", endpoint, max_retries=max_retries)
         return result.get("value", []) if result else []
 
     def find_item(

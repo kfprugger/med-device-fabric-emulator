@@ -67,7 +67,6 @@ flowchart TB
     subgraph AZ["Azure Resource Group"]
         EH["Event Hub<br/>(telemetry-stream)"]
         FHIR_SVC["FHIR R4 Service"]
-        DICOM_SVC["DICOM Service"]
         ADLS["ADLS Gen2<br/>(fhir-export + dicom-output)"]
         ACR["Container Registry"]
         ACI["Container Instances<br/>(Synthea, FHIR Loader,<br/>DICOM Loader, Emulator)"]
@@ -358,7 +357,6 @@ graph LR
 | `emulator.bicep` | Container Instance for Masimo device simulator |
 | `fhir-infra.bicep` | Azure Health Data Services FHIR workspace + storage |
 | `fhir-loader-job.bicep` | Container Instance for FHIR bundle loader |
-| `dicom-infra.bicep` | DICOM Service integration |
 | `dicom-loader-job.bicep` | Container Instance for TCIA DICOM pipeline |
 | `synthea-job.bicep` | Container Instance for Synthea patient generator |
 | `orchestrator-infra.bicep` | Azure Durable Functions app + storage (production) |
@@ -418,9 +416,9 @@ gantt
 | 3 | `deploy-fabric-rti.ps1` | 1 | Eventhouse, Eventstream, KQL tables/functions, dashboard | ~15 min |
 | 4 | **Manual** (Fabric portal) | — | Healthcare Data Solutions + DICOM modality | ~45 min |
 | 5 | `deploy-fabric-rti.ps1 -Phase2` | 2 | KQL shortcuts (6 Silver tables), enriched alert functions | ~15 min |
-| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS pipeline triggers (clinical, imaging, OMOP) | ~25 min |
+| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS pipeline triggers (clinical, imaging, OMOP, optional non-blocking CMA) | ~25 min |
 | 6 | `phase-2/deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents | ~10 min |
-| 7 | `FabricDicomCohortingToolkit` | 3 | Cohorting Agent, OHIF Viewer, materialization notebook, PBI report | ~20 min |
+| 7 | `FabricDicomCohortingToolkit` | 3 | Cohorting Agent, OHIF Viewer, materialization notebook, PBI report; preflight/deploy auto-clones the companion repo if missing | ~20 min |
 | 8 | `phase-4/deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entities, 5 relationships) | ~10 min |
 | 9 | `Deploy-All.ps1 -Phase4` | 4 | Agent ontology binding + Data Activator (Reflex + email rule) | ~5 min |
 
@@ -511,7 +509,6 @@ mindmap
     Azure Services
       Event Hub
       FHIR R4 Service
-      DICOM Service
       ADLS Gen2
       Key Vault
     Fabric Workloads
@@ -636,7 +633,6 @@ Eventhouse (MasimoKQLDB)
 │  └─ Resource Group (rg-medtech-rti-fhir)        │
 │      ├─ Event Hub Namespace                      │
 │      ├─ FHIR Service                             │
-│      ├─ DICOM Service                            │
 │      ├─ ADLS Gen2 Storage                        │
 │      ├─ Container Registry                       │
 │      └─ Container Instances (batch jobs)         │

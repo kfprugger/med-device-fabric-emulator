@@ -35,6 +35,20 @@ $BackendScript = Join-Path $BackendDir "local_server.py"
 $BackendPort = 7071
 $FrontendPort = 5173
 
+# Prefer Joey's isolated BrakeKat Azure CLI profile for this repo. The backend
+# launches PowerShell deployment scripts and Azure CLI scans; letting it inherit
+# the global CLI profile can point Fabric/Azure calls at the wrong tenant.
+$BrakeKatAzureConfig = Join-Path $HOME ".azure-isolated/BrakeKat"
+if (-not $env:AZURE_CONFIG_DIR -and (Test-Path $BrakeKatAzureConfig)) {
+    $env:AZURE_CONFIG_DIR = $BrakeKatAzureConfig
+}
+if ($env:AZURE_CONFIG_DIR -eq $BrakeKatAzureConfig -and -not $env:AZURE_TENANT_ID) {
+    $env:AZURE_TENANT_ID = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478"
+}
+if ($env:AZURE_CONFIG_DIR) {
+    Write-Host "  Azure CLI profile: $env:AZURE_CONFIG_DIR" -ForegroundColor DarkGray
+}
+
 # ── Helpers ────────────────────────────────────────────────────────────
 
 function Write-Banner {
@@ -79,6 +93,53 @@ function Test-PortListening {
         return -not [string]::IsNullOrEmpty($lsofOut)
     }
 }
+
+function Start-DetachedProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [string[]]$ArgumentList = @(),
+        [Parameter(Mandatory = $true)][string]$StandardOutputPath,
+        [Parameter(Mandatory = $true)][string]$StandardErrorPath
+    )
+
+    $params = @{
+        WorkingDirectory       = $WorkingDirectory
+        PassThru               = $true
+        RedirectStandardOutput = $StandardOutputPath
+        RedirectStandardError  = $StandardErrorPath
+    }
+
+    if ($IsWindows) {
+        $params["WindowStyle"] = "Hidden"
+        return Start-Process -FilePath $FilePath -ArgumentList $ArgumentList @params
+    }
+
+    $nohup = Get-Command "nohup" -ErrorAction SilentlyContinue
+    if ($nohup) {
+        return Start-Process -FilePath $nohup.Source -ArgumentList (@($FilePath) + $ArgumentList) @params
+    }
+
+    return Start-Process -FilePath $FilePath -ArgumentList $ArgumentList @params
+}
+
+function Show-RecentLog {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Tail = 80
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Host "    Log not found: $Path" -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host "    Last $Tail lines from ${Path}:" -ForegroundColor DarkGray
+    Get-Content -Path $Path -Tail $Tail -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "      $_" -ForegroundColor DarkGray
+    }
+}
+
 
 function Stop-PortProcess {
     param([int]$Port, [string]$Label)
@@ -174,14 +235,12 @@ if ($backendBlocked -or $frontendBlocked) {
 Write-Host ""
 Write-Host "  Starting backend (port $BackendPort)..." -ForegroundColor White
 
-$backendParams = @{
-    WorkingDirectory = $BackendDir
-    PassThru = $true
-    RedirectStandardOutput = (Join-Path $BackendDir "backend-stdout.log")
-    RedirectStandardError = (Join-Path $BackendDir "backend-stderr.log")
-}
-if ($IsWindows) { $backendParams["WindowStyle"] = "Hidden" }
-$backendProc = Start-Process -FilePath $VenvPython -ArgumentList $BackendScript @backendParams
+$backendProc = Start-DetachedProcess `
+    -FilePath $VenvPython `
+    -WorkingDirectory $BackendDir `
+    -ArgumentList @($BackendScript) `
+    -StandardOutputPath (Join-Path $BackendDir "backend-stdout.log") `
+    -StandardErrorPath (Join-Path $BackendDir "backend-stderr.log")
 
 # Wait for backend to come up (max 10 seconds)
 $waited = 0
@@ -196,7 +255,10 @@ while ($waited -lt 10) {
     }
     if ($backendProc.HasExited) {
         Write-Host "  ✗ Backend process exited immediately (exit code: $($backendProc.ExitCode))" -ForegroundColor Red
+        Show-RecentLog -Path (Join-Path $BackendDir "backend-stderr.log")
+        Show-RecentLog -Path (Join-Path $BackendDir "backend-crash-dump.log")
         Write-Host "    Check: $BackendDir\backend-stderr.log" -ForegroundColor DarkGray
+        Write-Host "    Check: $BackendDir\backend-crash-dump.log" -ForegroundColor DarkGray
         exit 1
     }
 }
@@ -213,14 +275,12 @@ if ($backendReady) {
 Write-Host "  Starting frontend (port $FrontendPort)..." -ForegroundColor White
 
 $npmExe = if ($IsWindows) { "npm.cmd" } else { "npm" }
-$frontendParams = @{
-    WorkingDirectory = $FrontendDir
-    PassThru = $true
-    RedirectStandardOutput = (Join-Path $FrontendDir "frontend-stdout.log")
-    RedirectStandardError = (Join-Path $FrontendDir "frontend-stderr.log")
-}
-if ($IsWindows) { $frontendParams["WindowStyle"] = "Hidden" }
-$frontendProc = Start-Process -FilePath $npmExe -ArgumentList "run","dev" @frontendParams
+$frontendProc = Start-DetachedProcess `
+    -FilePath $npmExe `
+    -WorkingDirectory $FrontendDir `
+    -ArgumentList @("run", "dev") `
+    -StandardOutputPath (Join-Path $FrontendDir "frontend-stdout.log") `
+    -StandardErrorPath (Join-Path $FrontendDir "frontend-stderr.log")
 
 # Wait for frontend to come up (max 15 seconds)
 $waited = 0
@@ -247,6 +307,14 @@ if ($frontendReady) {
     Write-Host "    PID: $($frontendProc.Id) — check frontend-stderr.log" -ForegroundColor DarkGray
 }
 
+try { $backendProc.Refresh() } catch { }
+if ($backendProc.HasExited) {
+    Write-Host "  ✗ Backend exited during startup (exit code: $($backendProc.ExitCode))" -ForegroundColor Red
+    Show-RecentLog -Path (Join-Path $BackendDir "backend-stderr.log")
+    Show-RecentLog -Path (Join-Path $BackendDir "backend-crash-dump.log")
+    exit 1
+}
+
 # ── Summary ───────────────────────────────────────────────────────────
 
 Write-Host ""
@@ -259,6 +327,7 @@ Write-Host "  │                                                        │" -F
 Write-Host "  │  Logs:                                                 │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator\orchestrator.log                       │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator\backend-stderr.log                     │" -ForegroundColor DarkCyan
+Write-Host "  │    orchestrator\backend-crash-dump.log                 │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator-ui\frontend-stderr.log                 │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
 Write-Host "  │  Stop:  .\Start-WebUI.ps1 -Stop                       │" -ForegroundColor DarkCyan

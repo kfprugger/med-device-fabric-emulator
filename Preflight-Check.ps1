@@ -10,7 +10,11 @@ param (
     [string]$Location = "eastus",
     [string]$AdminSecurityGroup = "",
     [string]$DicomToolkitPath = "",
-    [switch]$Phase3
+    [switch]$Phase2,
+    [switch]$Phase3,
+    [switch]$Phase4,
+    [switch]$Phase7,
+    [switch]$SkipImaging
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +34,58 @@ function Get-CachedAccessToken {
     $script:AccessTokenCache[$key] = @{ Token = $token; ExpiresOn = $tokenObj.ExpiresOn }
     return $token
 }
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$DicomToolkitRepoUrl = "https://github.com/kfprugger/FabricDicomCohortingToolkit.git"
+
+function Resolve-DicomToolkitPath {
+    param([string]$RequestedPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedPath) -and $RequestedPath -ne "C:\git\FabricDicomCohortingToolkit") {
+        return $RequestedPath
+    }
+
+    if ($IsMacOS -or $IsLinux) {
+        $siblingPath = Join-Path (Split-Path -Parent $ScriptDir) "FabricDicomCohortingToolkit"
+        if (Test-Path $siblingPath) { return $siblingPath }
+        return $siblingPath
+    }
+
+    return "C:\git\FabricDicomCohortingToolkit"
+}
+
+function Ensure-DicomToolkitRepo {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (Test-Path (Join-Path $Path "Deploy-DataAgent.ps1")) {
+        return @{ Success = $true; Cloned = $false; Message = "DICOM Toolkit found at $Path" }
+    }
+
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        return @{ Success = $false; Cloned = $false; Message = "DICOM Toolkit missing at '$Path' and Git is not installed." }
+    }
+
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    if (Test-Path $Path) {
+        $hasContent = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue).Count -gt 0
+        if ($hasContent) {
+            return @{ Success = $false; Cloned = $false; Message = "DICOM Toolkit path '$Path' exists but does not contain Deploy-DataAgent.ps1. Set -DicomToolkitPath or move/remove the incomplete directory." }
+        }
+    }
+
+    Write-Host "  → DICOM Toolkit missing; cloning $DicomToolkitRepoUrl to $Path" -ForegroundColor Yellow
+    git clone $DicomToolkitRepoUrl $Path
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Path "Deploy-DataAgent.ps1"))) {
+        return @{ Success = $false; Cloned = $false; Message = "Failed to clone DICOM Toolkit from $DicomToolkitRepoUrl to '$Path'." }
+    }
+
+    return @{ Success = $true; Cloned = $true; Message = "DICOM Toolkit cloned to $Path" }
+}
+
+$DicomToolkitPath = Resolve-DicomToolkitPath -RequestedPath $DicomToolkitPath
 
 # Source the prerequisite check function from Deploy-All.ps1
 # We duplicate it here to avoid running the full script
@@ -358,6 +414,20 @@ try {
     $checks += @{ name = "Fabric Capacity"; status = "fail"; detail = "API unreachable" }
     $failures += "Cannot access Fabric API. Ensure Az login has Fabric permissions."
     Write-Host "  ✗ Fabric API unreachable" -ForegroundColor Red
+}
+
+# 12. DICOM Cohorting Toolkit repo
+$requiresDicomToolkit = -not $SkipImaging -and ($Phase2 -or $Phase3 -or (-not $Phase4 -and -not $Phase7))
+if ($requiresDicomToolkit) {
+    $toolkit = Ensure-DicomToolkitRepo -Path $DicomToolkitPath
+    if ($toolkit.Success) {
+        $checks += @{ name = "DICOM Toolkit"; status = "pass"; detail = $toolkit.Message }
+        Write-Host "  ✓ $($toolkit.Message)" -ForegroundColor Green
+    } else {
+        $checks += @{ name = "DICOM Toolkit"; status = "fail"; detail = $toolkit.Message }
+        $failures += $toolkit.Message
+        Write-Host "  ✗ $($toolkit.Message)" -ForegroundColor Red
+    }
 }
 
 Write-Host ""

@@ -106,7 +106,7 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 1b: Fabric Workspace",
+        "phase": "Phase 1: Fabric Workspace",
         "duration_seconds": duration,
         "resources": {
             "fabric_workspace_id": workspace_id,

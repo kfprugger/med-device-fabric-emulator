@@ -1,126 +1,140 @@
-# Real-Time Dashboard Setup Guide
+# Masimo Patient Monitoring Real-Time Dashboard
 
-> **Prerequisites:** All local tools must be installed before deploying. Run `setup-prereqs.ps1` from the repo root to verify — it works for both the Orchestrator UI and command-line deployments and provides OS-specific install commands.
+The automated Fabric RTI deployment creates the `Masimo Patient Monitoring` KQL Dashboard from `fabric-rti/dashboard/masimo-clinical-dashboard.json` and injects the target Eventhouse data source at deploy time.
 
-Create a Fabric Real-Time Dashboard using the pre-built queries from `fabric-rti/kql/05-dashboard-queries.kql`.
+Manual query reference: `fabric-rti/kql/05-dashboard-queries.kql`.
 
-## Quick Setup
+## Data Source
 
-1. **Create Dashboard**: In workspace `med-device-real-time`, select **New item → Real-Time Dashboard**
-2. **Name it**: `Masimo Clinical Alerts`
-3. **Connect data source**: Add your KQL Database (`MasimoEventhouse`) as a data source
+Connect the dashboard to the `MasimoEventhouse` KQL database. The dashboard uses the Fabric `kusto-trident` data source kind in automated deployments.
 
-## Dashboard Panels
+## Device Parameter
 
-Create **7 tiles** using the queries below. Each tile can be added via **+ Add tile** → paste the KQL query → choose the visual type.
+The dashboard includes one global parameter:
 
-### Panel 1: Device Status (Donut Chart)
-```kql
-fn_DeviceStatus()
-| summarize device_count = count() by status
-| order by status asc
-```
-- **Visual**: Donut / Pie chart
-- **Layout**: Top-left, small
+- Display name: `Device`
+- Variable: `_selectedDevices`
+- Selection: `single-all`
+- Values: `TelemetryRaw | distinct device_id | order by device_id asc`
 
-### Panel 2: Active Clinical Alerts (Table)
-```kql
-fn_ClinicalAlerts(5)
-| project alert_tier, device_id, alert_type, spo2, pr, message
-| order by alert_tier asc
-```
-- **Visual**: Table with conditional formatting
-  - `alert_tier = CRITICAL` → Red background
-  - `alert_tier = URGENT` → Orange background
-  - `alert_tier = WARNING` → Yellow background
-- **Layout**: Top-right, wide
+Tiles that use `_selectedDevices` are rendered by Fabric with the selected device or `All` substituted at runtime.
 
-### Panel 3: SpO2 Heatmap (Line Chart)
-```kql
-TelemetryRaw
-| where todatetime(timestamp) > ago(30m)
-| summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)
-  by device_id, bin(todatetime(timestamp), 1m)
-| order by timestamp asc, device_id asc
-```
-- **Visual**: Multi-line chart (series per device_id)
-- **Layout**: Middle-left
+## Pages
 
-### Panel 4: Alert Trend — 24h (Stacked Bar)
-```kql
-AlertHistory
-| where alert_time > ago(24h)
-| summarize alert_count = count() by alert_tier, bin(alert_time, 15m)
-| order by alert_time asc
-```
-- **Visual**: Stacked bar chart (series by alert_tier)
-- **Layout**: Middle-right
+### 1. Command Center
 
-### Panel 5: Top Alerting Devices (Bar Chart)
-```kql
-AlertHistory
-| where alert_time > ago(24h)
-| summarize
-    total_alerts = count(),
-    critical = countif(alert_tier == "CRITICAL"),
-    urgent   = countif(alert_tier == "URGENT"),
-    warning  = countif(alert_tier == "WARNING")
-  by device_id
-| top 10 by total_alerts desc
-```
-- **Visual**: Horizontal bar chart
-- **Layout**: Bottom-left
+Purpose: live command view for clinicians.
 
-### Panel 6: Vital Signs Snapshot (Table)
-```kql
-fn_LatestReadings()
-| extend
-    spo2_status = case(spo2 < 85, "🔴", spo2 < 90, "🟠", spo2 < 94, "🟡", "🟢"),
-    pr_status   = case(pr > 150 or pr < 40, "🔴", pr > 130 or pr < 45, "🟠",
-                       pr > 110 or pr < 50, "🟡", "🟢")
-| project device_id, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_iq, timestamp
-| order by spo2 asc
-```
-- **Visual**: Table
-- **Layout**: Bottom-right, wide
+Tiles:
 
-### Panel 7: Degraded Signal Quality (Table)
-```kql
-fn_LatestReadings()
-| where signal_iq < 95
-| project device_id, signal_iq, spo2, pr, timestamp
-| order by signal_iq asc
-```
-- **Visual**: Table (filtered — only devices with degraded signal)
-- **Layout**: Bottom, half-width
+- `Online Devices` — card, online device count.
+- `Open Clinical Alerts` — card, current `fn_ClinicalAlerts(60)` count.
+- `Critical Alerts`, `Urgent Alerts`, `Warning Alerts` — severity KPI cards.
+- `Ingestion Lag (seconds)` — latest telemetry freshness.
+- `Clinical Alert Feed` — color-coded active alert table with age, patient, vitals, risk context, and recommended action.
+- `SpO₂ Trend + Alert Markers + Thresholds` — selected-device SpO₂ trend with alert markers and 94/90/85 threshold lines.
+- `Data Freshness / Throughput` — latest event timestamp, events/minute, active devices, and observed throughput.
+- `Pulse Rate Trend — Last 60 Minutes` — selected-device pulse trend.
+- `Alert Markers — Selected Device` — selected-device active alert table.
 
-## Auto-Refresh
+### 2. Clinical Alerts
 
-After creating all tiles, enable **Auto-refresh** at 30-second intervals:
-- Click the ⚙️ gear icon in the dashboard toolbar
-- Set **Auto refresh** → **On**
-- Interval: **30 seconds**
+Purpose: triage and explain active clinical risk.
 
-## Layout Reference
+Tiles:
 
-```
-┌───────────────┬───────────────────────────────┐
-│ Device Status │     Active Clinical Alerts     │
-│  (Donut)      │         (Table)                │
-├───────────────┼───────────────┬────────────────┤
-│ SpO2 Heatmap  │               │  Alert Trend   │
-│ (Line Chart)  │               │  (Stacked Bar) │
-├───────────────┼───────────────┴────────────────┤
-│ Top Alerting  │     Vital Signs Snapshot        │
-│ (Bar Chart)   │         (Table)                 │
-├───────────────┴─────────────────────────────────┤
-│     Degraded Signal Quality (Table)             │
-└─────────────────────────────────────────────────┘
+- `Clinical Alert Triage Queue` — enriched alert table with patient ID/name, SpO₂, PR, signal IQ, condition context, repeat/new status, and action guidance.
+- `Why Alerts Fired` — explainability table showing threshold reason, clinical context, and recommended action.
+- `Clinical Load by Severity — 24h` — severity trend from `AlertHistory`.
+- `Top Noisy Devices — 24h` — devices with the highest alert volume.
+
+### 3. Device Detail
+
+Purpose: selected-device drilldown.
+
+Tiles:
+
+- `Selected Device Vitals` — latest bedside vitals and status labels.
+- `Selected Device SpO₂ + Alert Markers + Thresholds` — two-hour trend with thresholds and active alert markers.
+- `Selected Device Pulse Rate` — pulse trend.
+- `Selected Device Alert History` — recent selected-device alerts.
+- `Patient Risk Context` — linked patient and condition escalation context.
+- `Signal Quality Trend` — selected-device signal quality over time.
+
+### 4. Operations
+
+Purpose: device fleet and ingestion health.
+
+Tiles:
+
+- `Device Connectivity Status` — color-coded online/stale/offline table.
+- `Signal Quality vs Clinical Risk` — separates low SpO₂ clinical risk from likely sensor issues.
+- `Devices Needing Sensor / Clinical Review` — actionable signal/vital watchlist.
+- `Events per Minute — Last 60 Minutes` — ingestion throughput trend.
+- `Data Freshness / Throughput` — event and active-device freshness summary.
+
+### 5. Facility Map
+
+Purpose: location-aware clinical alert view from `fn_AlertLocationMap(60)`.
+
+Tiles:
+
+- `Alert Locations` — map visual by facility/location.
+- `Alerts by Hospital` — severity counts by facility.
+- `Facility Alert Detail` — color-coded alert table with facility context.
+
+## Color Rules
+
+Severity tables use consistent `alert_tier` formatting:
+
+- `CRITICAL` → red critical icon.
+- `URGENT` → yellow warning icon.
+- `WARNING` → blue circle icon.
+
+Device status tables use:
+
+- `OFFLINE` → red critical icon.
+- `STALE` → yellow warning icon.
+- `ONLINE` → green/blue normal icon, depending on visual schema support.
+
+Signal quality tables separate:
+
+- `Low SpO2 + poor signal` — clinical + sensor risk.
+- `Poor signal only` — sensor check.
+- `Low SpO2 + good signal` — likely clinical risk.
+
+## Auto Refresh
+
+Automated deployment enables 30-second auto-refresh:
+
+```json
+"autoRefresh": {
+  "enabled": true,
+  "defaultInterval": "30s",
+  "minInterval": "30s"
+}
 ```
 
-## Dashboard JSON Template
+## Automated Deployment
 
-A machine-readable tile definition is available at:
-`fabric-rti/dashboard/masimo-clinical-dashboard.json`
+Use the normal RTI deployment path. Step 7b reads `fabric-rti/dashboard/masimo-clinical-dashboard.json`, replaces runtime placeholders, and posts `RealTimeDashboard.json` through the Fabric REST API.
 
-This can be used as a reference when programmatically creating dashboards via the Fabric API.
+Runtime placeholders in the template:
+
+- `__DASHBOARD_TITLE__`
+- `__DATA_SOURCE_ID__`
+- `__KQL_DB_NAME__`
+- `__KUSTO_URI__`
+- `__KQL_DB_ID__`
+- `__WORKSPACE_ID__`
+
+## Manual Setup
+
+If the automated dashboard update fails:
+
+1. Create or open the `Masimo Patient Monitoring` Real-Time Dashboard.
+2. Add the `MasimoEventhouse` KQL database as the data source.
+3. Create the `_selectedDevices` global parameter.
+4. Use `fabric-rti/kql/05-dashboard-queries.kql` to recreate the page/tile queries.
+5. Apply the color rules above to all alert/status tables.
+6. Enable 30-second auto-refresh.

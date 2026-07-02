@@ -2,6 +2,17 @@
 
 ## [Unreleased] — May 28, 2026
 
+### Deployment Bootstrap
+- **Added** automatic bootstrap for the companion `FabricDicomCohortingToolkit` repository. Deploy and UI preflight now resolve the default sibling path and clone the downstream repo when an imaging path executes the Phase 3 toolkit block.
+- **Updated** Orchestrator preflight argument threading so imaging validation can pass `-Phase2`/`-Phase3`, `-DicomToolkitPath`, and imaging skip state into `Preflight-Check.ps1`.
+- **Fixed** History teardown batch status hydration and replaced unreadable whole-card phase tooltips with accessible `i` popovers in the monitor UI.
+
+### Phase 7: Payer RTI & Ops
+- **Added** Phase 7 Payer RTI & Ops.
+- **Added** `claim-stream`, `claim-emulator-grp`, `claims_events`, `fraud_scores`, `highcost_alerts`, `care_gap_alerts`.
+- **Added** KQL functions `fn_FraudRisk`, `fn_HighCostTrajectory`, `fn_CareGapOnAlert`, `fn_PayerOpsWorklist` and agent wrappers.
+- **Added** `PayerOpsActivator`, `HealthcareOpsAgent`, `Payer Ops Triage`, and `Healthcare Graph Agent` shell/manual ontology attach path.
+
 ### Phase Monitor & Gantt Matching Upgrades
 - **Fixed** Gantt chart in-progress highlighting (pulsing yellow stripes) and updated slow phase threshold from `> 5m` to `> 6m` in Orchestrator UI.
 - **Improved** Gantt component pattern matching logic to reliably map custom-normalized step labels and avoid name mismatches.

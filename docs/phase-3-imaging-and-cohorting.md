@@ -6,7 +6,7 @@
 
 > [!NOTE]
 > **Deployment Prerequisites:**
-> Before running this phase, ensure Stage 2 is complete, the companion `FabricDicomCohortingToolkit` repo is cloned locally, and the Gold OMOP Lakehouse tables are populated. Refer to the centralized [📋 Prerequisites & Requirements](file:///Users/joey/git/med-device-fabric-emulator/README.md#📋-prerequisites--requirements) in the root repository folder.
+> Before running this phase, ensure Stage 2 is complete and the Gold OMOP Lakehouse tables are populated. The companion `FabricDicomCohortingToolkit` repo is required, but imaging preflight/deploy auto-clones it to the sibling `../FabricDicomCohortingToolkit` path when missing. Use `-DicomToolkitPath` only to override that default.
 
 ---
 
@@ -156,12 +156,12 @@ cd ..\FabricDicomCohortingToolkit\dicom-viewer
 ## Running Phase 3
 
 ```powershell
-# Via Deploy-All.ps1 (recommended — runs all sub-steps in order)
+# Via Deploy-All.ps1 (recommended — runs all sub-steps in order).
+# If the companion repo is missing, imaging preflight/deploy auto-clones it beside this repo.
 .\Deploy-All.ps1 -Phase3 `
     -FabricWorkspaceName "med-device-rti-hds" `
     -Location "eastus" `
-    -ResourceGroupName "rg-medtech-rti-fhir" `
-    -DicomToolkitPath "C:\git\FabricDicomCohortingToolkit"
+    -ResourceGroupName "rg-medtech-rti-fhir"
 
 # Or run each step individually from the toolkit repo:
 cd ..\FabricDicomCohortingToolkit

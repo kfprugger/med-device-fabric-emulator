@@ -148,19 +148,19 @@ TABLES AND RELATIONSHIPS:
   dbo.Basic — DeviceAssociation records linking devices to patients (~100). This is THE key table for device-patient mapping.
   dbo.Location — Facility/location info
   dbo.Encounter — Patient visits/admissions (~363K). Key columns: class, type_string, period_start, period_end, subject_string
-  dbo.Observation — Vital signs, lab results (~2.8M). Key cols: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime, subject_string. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference').
-  dbo.MedicationRequest — Medication orders (~250K). Key cols: medicationCodeableConcept_string, status, authoredOn, subject_string. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference').
-  dbo.Procedure — Surgical/clinical procedures (~1M). Key cols: code_string (SNOMED), performedDateTime, status, subject_string. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference').
-  dbo.Immunization — Vaccination records (~116K). Key cols: vaccineCode_string, occurrenceDateTime, status, patient_string. Links to Patient via JSON_VALUE(patient_string, '$.msftSourceReference'). NOTE: uses patient_string not subject_string.
-  dbo.ImagingStudy — DICOM imaging studies. Key cols: modality, description, started, numberOfSeries, numberOfInstances, subject_string. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference').
+  dbo.Observation — Vital signs, lab results (~2.8M). Key cols: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime, subject_string. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')).
+  dbo.MedicationRequest — Medication orders (~250K). Key cols: medicationCodeableConcept_string, status, authoredOn, subject_string. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')).
+  dbo.Procedure — Surgical/clinical procedures (~1M). Key cols: code_string (SNOMED), performedDateTime, status, subject_string. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')).
+  dbo.Immunization — Vaccination records (~116K). Key cols: vaccineCode_string, occurrenceDateTime, status, patient_string. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(patient_string, '$.idOrig'), '')). NOTE: uses patient_string not subject_string.
+  dbo.ImagingStudy — DICOM imaging studies. Key cols: modality, description, started, numberOfSeries, numberOfInstances, subject_string. Links to Patient via COALESCE(NULLIF(JSON_VALUE(subject_string, '$.identifier.value'), ''), REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')).
 
   JOINING NEW TABLES TO DEVICE-ASSOCIATED PATIENTS:
   To find Observations/Medications/Procedures/Immunizations for device-linked patients:
     SELECT ... FROM dbo.Basic b
-    INNER JOIN dbo.<Table> t ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(t.subject_string, '$.msftSourceReference')
+    INNER JOIN dbo.<Table> t ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(t.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(t.subject_string, '$.idOrig'), ''))
     WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc'
   For Immunization, use patient_string instead of subject_string:
-    INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(i.patient_string, '$.msftSourceReference')
+    INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(i.patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(i.patient_string, '$.idOrig'), ''))
 
   DISCOVERING TABLE SCHEMAS:
   For tables you haven't queried before, run SELECT TOP 5 * FROM dbo.<TableName> first to discover the exact column names.
@@ -193,7 +193,7 @@ DEVICE-TO-PATIENT LINKING VIA dbo.Basic (CRITICAL):
     AND JSON_VALUE(b.extension, '$[0].valueReference.display') LIKE '%MASIMO-RADIUS7-0033%'
 
 CONDITION LOOKUP:
-  dbo.Condition links to Patient via: JSON_VALUE(c.subject_string, '$.msftSourceReference') = p.idOrig
+  dbo.Condition links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), '')) = p.idOrig
   Condition names are in code_string JSON: JSON_VALUE(code_string, '$.coding[0].display')
   For text match: code_string LIKE '%asthma%' OR code_string LIKE '%copd%' OR code_string LIKE '%pneumonia%' etc.
   For respiratory conditions, search for: asthma, copd, pneumonia, lung, respiratory, bronchitis
@@ -722,16 +722,16 @@ CRITICAL — dbo.Basic device-to-patient linking:
 - Patient id: JSON_VALUE(subject_string, '$.idOrig') → patient UUID for joining to Condition table
 
 Other relationships:
-- dbo.Condition links to Patient via: JSON_VALUE(subject_string, '$.msftSourceReference') = Patient.idOrig. Condition name: JSON_VALUE(code_string, '$.coding[0].display')
+- dbo.Condition links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')) = Patient.idOrig. Condition name: JSON_VALUE(code_string, '$.coding[0].display')
 - JOIN Basic to Condition (find conditions for device-associated patients):
-    ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(c.subject_string, '$.msftSourceReference')
-    Both values are bare UUIDs — this join works directly.
+    ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), ''))
+    Basic.subject_string.idOrig is a bare UUID; HDS clinical references may be typed (Patient/<uuid>) in msftSourceReference, so strip the prefix before joining.
 - dbo.Patient has patient demographics.
-- dbo.Observation (~2.8M rows): Vital signs, lab results. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference'). Key: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime.
-- dbo.MedicationRequest (~250K rows): Medication orders. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference'). Key: medicationCodeableConcept_string, status, authoredOn.
-- dbo.Procedure (~1M rows): Surgical/clinical procedures. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference'). Key: code_string (SNOMED), performedDateTime, status.
-- dbo.Immunization (~116K rows): Vaccination records. Links to Patient via JSON_VALUE(patient_string, '$.msftSourceReference'). NOTE: uses patient_string not subject_string. Key: vaccineCode_string, occurrenceDateTime, status.
-- dbo.ImagingStudy: DICOM imaging studies. Links to Patient via JSON_VALUE(subject_string, '$.msftSourceReference'). Key: modality, description, started.
+- dbo.Observation (~2.8M rows): Vital signs, lab results. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')). Key: code_string (LOINC), valueQuantity_value, valueQuantity_unit, effectiveDateTime.
+- dbo.MedicationRequest (~250K rows): Medication orders. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')). Key: medicationCodeableConcept_string, status, authoredOn.
+- dbo.Procedure (~1M rows): Surgical/clinical procedures. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')). Key: code_string (SNOMED), performedDateTime, status.
+- dbo.Immunization (~116K rows): Vaccination records. Links to Patient via COALESCE(REPLACE(NULLIF(JSON_VALUE(patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(patient_string, '$.idOrig'), '')). NOTE: uses patient_string not subject_string. Key: vaccineCode_string, occurrenceDateTime, status.
+- dbo.ImagingStudy: DICOM imaging studies. Links to Patient via COALESCE(NULLIF(JSON_VALUE(subject_string, '$.identifier.value'), ''), REPLACE(NULLIF(JSON_VALUE(subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(subject_string, '$.idOrig'), '')). Key: modality, description, started.
 - For unfamiliar tables, run SELECT TOP 5 * FROM dbo.<TableName> first to discover exact column names.
 
 If the user asks about SpO2, vitals, pulse rate, or alerts, you MUST ALSO query the KQL datasource. This datasource has NO telemetry.
@@ -766,12 +766,12 @@ $lhFewShots = @(
     @{
         id       = "c1c2c3c4-6666-4000-c000-000000000006"
         question = "Find patients and their conditions for alerting devices MASIMO-RADIUS7-0021 and MASIMO-RADIUS7-0085"
-        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS condition_name FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(c.subject_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND (JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0021%' OR JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0085%')"
+        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS condition_name FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND (JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0021%' OR JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0085%')"
     },
     @{
         id       = "c1c2c3c4-7777-4000-c000-000000000007"
         question = "List all conditions for patients linked to any device"
-        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS condition_name, c.onsetDateTime FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(c.subject_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, c.onsetDateTime DESC"
+        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS condition_name, c.onsetDateTime FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, c.onsetDateTime DESC"
     },
     @{
         id       = "c1c2c3c4-8888-4000-c000-000000000008"
@@ -781,7 +781,7 @@ $lhFewShots = @(
     @{
         id       = "c1c2c3c4-9999-4000-c000-000000000009"
         question = "What medications are prescribed for patients linked to devices?"
-        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(m.medicationCodeableConcept_string, '$.coding[0].display') AS medication, m.status, m.authoredOn FROM dbo.Basic b INNER JOIN dbo.MedicationRequest m ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(m.subject_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, m.authoredOn DESC"
+        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(m.medicationCodeableConcept_string, '$.coding[0].display') AS medication, m.status, m.authoredOn FROM dbo.Basic b INNER JOIN dbo.MedicationRequest m ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(m.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(m.subject_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, m.authoredOn DESC"
     },
     @{
         id       = "c1c2c3c4-aaaa-4000-c000-000000000010"
@@ -791,22 +791,22 @@ $lhFewShots = @(
     @{
         id       = "c1c2c3c4-bbbb-4000-c000-000000000011"
         question = "Show immunization history for patients linked to monitoring devices"
-        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(i.vaccineCode_string, '$.coding[0].display') AS vaccine, i.occurrenceDateTime, i.status FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(i.patient_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, i.occurrenceDateTime DESC"
+        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(i.vaccineCode_string, '$.coding[0].display') AS vaccine, i.occurrenceDateTime, i.status FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(i.patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(i.patient_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' ORDER BY patient_name, i.occurrenceDateTime DESC"
     },
     @{
         id       = "c1c2c3c4-cccc-4000-c000-000000000012"
         question = "How many immunizations does each monitored patient have?"
-        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, COUNT(*) AS total_immunizations, MAX(i.occurrenceDateTime) AS most_recent_immunization FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(i.patient_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND i.status = 'completed' GROUP BY JSON_VALUE(b.extension, '$[0].valueReference.reference'), JSON_VALUE(b.subject_string, '$.display') ORDER BY total_immunizations ASC"
+        query    = "SELECT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, COUNT(*) AS total_immunizations, MAX(i.occurrenceDateTime) AS most_recent_immunization FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(i.patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(i.patient_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND i.status = 'completed' GROUP BY JSON_VALUE(b.extension, '$[0].valueReference.reference'), JSON_VALUE(b.subject_string, '$.display') ORDER BY total_immunizations ASC"
     },
     @{
         id       = "c1c2c3c4-dddd-4000-c000-000000000013"
         question = "Show conditions and immunizations together for a specific device like MASIMO-RADIUS7-0033"
-        query    = "SELECT JSON_VALUE(b.subject_string, '$.display') AS patient_name, 'Condition' AS record_type, JSON_VALUE(c.code_string, '$.coding[0].display') AS description, c.onsetDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(c.subject_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '$.display') AS patient_name, 'Immunization' AS record_type, JSON_VALUE(i.vaccineCode_string, '$.coding[0].display') AS description, i.occurrenceDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(i.patient_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' ORDER BY patient_name, date_recorded DESC"
+        query    = "SELECT JSON_VALUE(b.subject_string, '$.display') AS patient_name, 'Condition' AS record_type, JSON_VALUE(c.code_string, '$.coding[0].display') AS description, c.onsetDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' UNION ALL SELECT JSON_VALUE(b.subject_string, '$.display') AS patient_name, 'Immunization' AS record_type, JSON_VALUE(i.vaccineCode_string, '$.coding[0].display') AS description, i.occurrenceDateTime AS date_recorded FROM dbo.Basic b INNER JOIN dbo.Immunization i ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(i.patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(i.patient_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND JSON_VALUE(b.extension, '$[0].valueReference.reference') LIKE '%MASIMO-RADIUS7-0033%' ORDER BY patient_name, date_recorded DESC"
     },
     @{
         id       = "c1c2c3c4-eeee-4000-c000-000000000014"
         question = "Which monitored patients with respiratory conditions are missing pneumococcal vaccine?"
-        query    = "SELECT DISTINCT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS respiratory_condition FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = JSON_VALUE(c.subject_string, '$.msftSourceReference') WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND (c.code_string LIKE '%asthma%' OR c.code_string LIKE '%copd%' OR c.code_string LIKE '%pneumonia%' OR c.code_string LIKE '%respiratory%') AND JSON_VALUE(b.subject_string, '$.idOrig') NOT IN (SELECT JSON_VALUE(i.patient_string, '$.msftSourceReference') FROM dbo.Immunization i WHERE i.vaccineCode_string LIKE '%Pneumococcal%')"
+        query    = "SELECT DISTINCT JSON_VALUE(b.extension, '$[0].valueReference.reference') AS device_ref, JSON_VALUE(b.subject_string, '$.display') AS patient_name, JSON_VALUE(c.code_string, '$.coding[0].display') AS respiratory_condition FROM dbo.Basic b INNER JOIN dbo.Condition c ON JSON_VALUE(b.subject_string, '$.idOrig') = COALESCE(REPLACE(NULLIF(JSON_VALUE(c.subject_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(c.subject_string, '$.idOrig'), '')) WHERE JSON_VALUE(b.code_string, '$.coding[0].code') = 'device-assoc' AND (c.code_string LIKE '%asthma%' OR c.code_string LIKE '%copd%' OR c.code_string LIKE '%pneumonia%' OR c.code_string LIKE '%respiratory%') AND JSON_VALUE(b.subject_string, '$.idOrig') NOT IN (SELECT COALESCE(REPLACE(NULLIF(JSON_VALUE(i.patient_string, '$.msftSourceReference'), ''), 'Patient/', ''), NULLIF(JSON_VALUE(i.patient_string, '$.idOrig'), '')) FROM dbo.Immunization i WHERE i.vaccineCode_string LIKE '%Pneumococcal%')"
     },
     @{
         id       = "c1c2c3c4-ffff-4000-c000-000000000015"

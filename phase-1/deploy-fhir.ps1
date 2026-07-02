@@ -8,7 +8,7 @@
 #   .\deploy-fhir.ps1 -RunLoader               # Load FHIR data only (infra + blobs must exist)
 #   .\deploy-fhir.ps1 -RunSynthea -RunLoader   # Generate + load (infra must exist)
 #   .\deploy-fhir.ps1 -RunSynthea -RebuildContainers  # Force rebuild of container images
-#   .\deploy-fhir.ps1 -RunDicom                # DICOM infra + TCIA download + upload only
+#   .\deploy-fhir.ps1 -RunDicom                # TCIA DICOM download + ADLS/FHIR ImagingStudy load only
 #   .\deploy-fhir.ps1 -SkipDicom               # Full run but skip DICOM steps
 
 param (
@@ -56,6 +56,52 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 # Prevent interactive `az` extension-install prompts from hanging the orchestrator
 # (which runs pwsh with -NonInteractive — any prompt = infinite hang). See #fix-2.
 $null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
+
+
+$script:DeploymentSubscriptionId = $null
+try {
+    $azContext = Get-AzContext -ErrorAction SilentlyContinue
+    if ($azContext -and $azContext.Subscription -and $azContext.Subscription.Id) {
+        $script:DeploymentSubscriptionId = $azContext.Subscription.Id
+    }
+} catch { }
+if (-not $script:DeploymentSubscriptionId) {
+    $script:DeploymentSubscriptionId = (az account show --query id -o tsv 2>$null)
+}
+
+function Use-DeploymentAzSubscription {
+    if ($script:DeploymentSubscriptionId) {
+        az account set --subscription $script:DeploymentSubscriptionId 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Azure CLI context drifted and could not be reset to subscription $script:DeploymentSubscriptionId"
+        }
+    }
+}
+
+function Get-AciContainerState {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    Use-DeploymentAzSubscription
+    $stateRaw = az container show `
+        --resource-group $ResourceGroup `
+        --name $Name `
+        --query "{container:containers[0].instanceView.currentState.state, group:instanceView.state}" -o json 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or -not $stateRaw) {
+        return ""
+    }
+
+    try {
+        $stateInfo = $stateRaw | ConvertFrom-Json
+        if ($stateInfo.container) { return "$($stateInfo.container)".Trim() }
+        if ($stateInfo.group) { return "$($stateInfo.group)".Trim() }
+    } catch { }
+
+    return ""
+}
 
 $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 $procArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
@@ -159,6 +205,7 @@ function Invoke-ArmGroupDeployment {
     Write-Host "  ARM deployment started: $DeploymentName (template: $TemplateFile)" -ForegroundColor DarkGray
     Write-Host "    Waiting for provisioning result (heartbeat every ~15s)..." -ForegroundColor DarkGray
 
+    Use-DeploymentAzSubscription
     $result = az @cmd 2>&1
     $createExitCode = $LASTEXITCODE
 
@@ -170,16 +217,32 @@ function Invoke-ArmGroupDeployment {
     $startTime = Get-Date
     $lastHeartbeat = [datetime]::MinValue
     $state = ""
+    $statusFailureCount = 0
     while ($true) {
         $stateRaw = az deployment group show `
             --resource-group $ResourceGroup `
             --name $DeploymentName `
-            --query "properties.provisioningState" -o tsv 2>$null
+            --query "properties.provisioningState" -o tsv 2>&1
 
         if ($LASTEXITCODE -eq 0 -and $stateRaw) {
             $state = "$stateRaw".Trim()
+            $statusFailureCount = 0
         } else {
-            $state = "Running"
+            $statusFailureCount++
+            $statusError = "$stateRaw".Trim()
+            if ($statusError -match "ResourceGroupNotFound") {
+                Write-Host "    ARM status lookup failed: $statusError" -ForegroundColor Yellow
+                $state = "Failed"
+            } elseif ($statusError -match "DeploymentNotFound|could not be found|was not found" -and $statusFailureCount -ge 3) {
+                Write-Host "    ARM status lookup failed: $statusError" -ForegroundColor Yellow
+                $state = "Failed"
+            } elseif ($statusFailureCount -ge 18) {
+                Write-Host "    ARM status lookup failed $statusFailureCount consecutive times; treating deployment as failed." -ForegroundColor Yellow
+                if ($statusError) { Write-Host "    Last status error: $statusError" -ForegroundColor DarkGray }
+                $state = "Failed"
+            } else {
+                $state = "Running"
+            }
         }
 
         $now = Get-Date
@@ -205,6 +268,7 @@ function Invoke-ArmGroupDeployment {
     }
 
     if ($Query) {
+        Use-DeploymentAzSubscription
         $result = az deployment group show `
             --resource-group $ResourceGroup `
             --name $DeploymentName `
@@ -214,6 +278,7 @@ function Invoke-ArmGroupDeployment {
         }
     }
 
+    Use-DeploymentAzSubscription
     Write-Host "  ARM deployment diagnostics: $DeploymentName" -ForegroundColor DarkGray
     Show-ArmDeploymentDiagnostics -ResourceGroup $ResourceGroup -DeploymentName $DeploymentName
 
@@ -221,6 +286,123 @@ function Invoke-ArmGroupDeployment {
     return $result
 }
 
+function Get-AcrImageMetadata {
+    param(
+        [Parameter(Mandatory)][string]$Registry,
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Tag
+    )
+
+    $raw = az acr manifest list-metadata --registry $Registry --name $Repository --query "[?tags[?contains(@, '$Tag')]][0].{digest:digest, createdTime:createdTime, lastUpdateTime:lastUpdateTime}" -o json 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw) -or $raw -eq "null") { return $null }
+    return $raw | ConvertFrom-Json
+}
+
+function Test-AcrImageUpdated {
+    param(
+        [object]$Metadata,
+        [string]$PreviousDigest,
+        [datetime]$StartedUtc
+    )
+
+    if (-not $Metadata) { return $false }
+    if (-not $PreviousDigest) { return $true }
+    if ($Metadata.digest -and $Metadata.digest -ne $PreviousDigest) { return $true }
+
+    $lastUpdate = $null
+    if ($Metadata.lastUpdateTime) {
+        try { $lastUpdate = [datetime]::Parse($Metadata.lastUpdateTime).ToUniversalTime() } catch { $lastUpdate = $null }
+    }
+    return ($lastUpdate -and $lastUpdate -ge $StartedUtc.AddMinutes(-1))
+}
+
+function Invoke-AcrBuildWithTagVerification {
+    param(
+        [Parameter(Mandatory)][string]$Registry,
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$ContextPath,
+        [Parameter(Mandatory)][string]$ErrorLog,
+        [int]$RemoteCompletionWaitSeconds = 300,
+        [switch]$NoLogs
+    )
+
+    $before = Get-AcrImageMetadata -Registry $Registry -Repository $Repository -Tag $Tag
+    $previousDigest = if ($before) { $before.digest } else { $null }
+    $startedUtc = (Get-Date).ToUniversalTime()
+
+    $buildArgs = @("acr", "build", "--registry", $Registry, "--image", "${Repository}:${Tag}", $ContextPath)
+    if ($NoLogs) { $buildArgs += "--no-logs" }
+    az @buildArgs 2>$ErrorLog
+    $buildExitCode = $LASTEXITCODE
+    Write-Host "  az acr build exit code: $buildExitCode" -ForegroundColor DarkGray
+
+    if ($buildExitCode -eq 0) { return }
+
+    Write-Host "  ⚠ ACR build command returned non-zero exit code ($buildExitCode)" -ForegroundColor Yellow
+    $stderrTail = Get-Content $ErrorLog -ErrorAction SilentlyContinue | Select-Object -Last 10
+    if ($stderrTail) {
+        Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
+        $stderrTail | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    }
+
+    Write-Host "  ACR command failed before confirming remote completion; polling for ${Repository}:${Tag}..." -ForegroundColor Yellow
+    $deadline = (Get-Date).AddSeconds($RemoteCompletionWaitSeconds)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 15
+        $metadata = Get-AcrImageMetadata -Registry $Registry -Repository $Repository -Tag $Tag
+        if (Test-AcrImageUpdated -Metadata $metadata -PreviousDigest $previousDigest -StartedUtc $startedUtc) {
+            Write-Host "  ✓ Image ${Repository}:${Tag} is present/updated in ACR after command disconnect — continuing" -ForegroundColor Yellow
+            return
+        }
+        Write-Host "  Waiting for remote ACR build result..." -ForegroundColor DarkGray
+    }
+
+    Write-Host "  ✗ Image ${Repository}:${Tag} was not published after ACR command failure" -ForegroundColor Red
+    exit $buildExitCode
+}
+
+function Ensure-FhirStorageNetworkAccess {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$StorageAccountName
+    )
+
+    $storageStateRaw = az storage account show --resource-group $ResourceGroup --name $StorageAccountName --query "{publicNetworkAccess:publicNetworkAccess, defaultAction:networkRuleSet.defaultAction, bypass:networkRuleSet.bypass}" -o json 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($storageStateRaw)) {
+        Write-Host "  ⚠ Could not inspect storage network rules for $StorageAccountName" -ForegroundColor Yellow
+        return
+    }
+
+    $storageState = $storageStateRaw | ConvertFrom-Json
+    $needsUpdate = $false
+    $updateArgs = @("storage", "account", "update", "--resource-group", $ResourceGroup, "--name", $StorageAccountName)
+
+    if ($storageState.publicNetworkAccess -ne "Enabled") {
+        Write-Host "  Enabling storage public network access so ACI Synthea/FHIR loader jobs can reach blob endpoints..." -ForegroundColor Yellow
+        $updateArgs += @("--public-network-access", "Enabled")
+        $needsUpdate = $true
+    }
+    if ($storageState.defaultAction -ne "Allow") {
+        Write-Host "  Setting storage default network action to Allow for deployment data-plane jobs..." -ForegroundColor Yellow
+        $updateArgs += @("--default-action", "Allow")
+        $needsUpdate = $true
+    }
+    if ($storageState.bypass -notmatch "AzureServices") {
+        Write-Host "  Enabling AzureServices storage firewall bypass..." -ForegroundColor Yellow
+        $updateArgs += @("--bypass", "AzureServices")
+        $needsUpdate = $true
+    }
+
+    if ($needsUpdate) {
+        az @updateArgs --output none
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ✗ Failed to update storage network rules for $StorageAccountName" -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "  ✓ Storage network rules allow deployment data-plane access" -ForegroundColor Green
+    }
+}
 # ── Reusable FHIR $export function ────────────────────────────────────
 # Triggers a bulk FHIR $export to ADLS Gen2, waits for completion, and
 # returns $true on success. Safe to call multiple times — each export
@@ -237,19 +419,18 @@ function Invoke-FhirExport {
     Write-Host "--- $Label → ADLS GEN2 ---" -ForegroundColor Cyan
 
     if (-not $FhirServiceUrl) {
-        Write-Host "  ⚠ FHIR Service URL not available — skipping `$export" -ForegroundColor Yellow
-        return $false
+        throw "FHIR Service URL not available; cannot run required `$export"
     }
 
     # Detect storage account
+    Use-DeploymentAzSubscription
     Write-Host "  Detecting storage account in $ResourceGroupName..." -ForegroundColor Gray
     $storageAccounts = az storage account list --resource-group $ResourceGroupName `
         --query "[?kind=='StorageV2'].{name:name, id:id, hns:isHnsEnabled}" `
         -o json 2>$null | ConvertFrom-Json
 
     if (-not $storageAccounts -or $storageAccounts.Count -eq 0) {
-        Write-Host "  ⚠ No StorageV2 account found — skipping `$export" -ForegroundColor Yellow
-        return $false
+        throw "No StorageV2 account found; cannot run required FHIR `$export"
     }
 
     $exportStorage = $storageAccounts | Where-Object { $_.hns -eq $true } | Select-Object -First 1
@@ -258,22 +439,24 @@ function Invoke-FhirExport {
     Write-Host "  ✓ Storage account: $exportStorageName" -ForegroundColor Green
 
     # Create export container
+    Use-DeploymentAzSubscription
     try { $null = az storage container create --name $ExportContainerName --account-name $exportStorageName --auth-mode login 2>$null } catch {}
     Write-Host "  ✓ Export container: $ExportContainerName" -ForegroundColor Green
 
     # Detect FHIR service resource
+    Use-DeploymentAzSubscription
     $fhirResourceId = az resource list --resource-group $ResourceGroupName `
         --resource-type "Microsoft.HealthcareApis/workspaces/fhirservices" `
         --query "[0].id" -o tsv 2>$null
 
     if (-not $fhirResourceId) {
-        Write-Host "  ⚠ FHIR service resource not found — skipping `$export" -ForegroundColor Yellow
-        return $false
+        throw "FHIR service resource not found; cannot run required `$export"
     }
     Write-Host "  ✓ FHIR service resource detected" -ForegroundColor Green
 
     # Configure export destination
     try {
+        Use-DeploymentAzSubscription
         $null = az rest --method patch `
             --url "$fhirResourceId`?api-version=2023-11-01" `
             --body "{`"properties`":{`"exportConfiguration`":{`"storageAccountName`":`"$exportStorageName`"}}}" 2>$null
@@ -283,6 +466,7 @@ function Invoke-FhirExport {
     }
 
     # Ensure RBAC
+    Use-DeploymentAzSubscription
     $fhirMiPrincipalId = az resource show --ids $fhirResourceId --query "identity.principalId" -o tsv 2>$null
     if ($fhirMiPrincipalId) {
         try {
@@ -302,8 +486,7 @@ function Invoke-FhirExport {
     Write-Host "  Triggering FHIR `$export..." -ForegroundColor White
     $fhirToken = az account get-access-token --resource $FhirServiceUrl --query accessToken -o tsv 2>$null
     if (-not $fhirToken) {
-        Write-Host "  ⚠ Could not acquire FHIR access token" -ForegroundColor Yellow
-        return $false
+        throw "Could not acquire FHIR access token for required `$export"
     }
 
     $exportDone = $false
@@ -370,13 +553,10 @@ function Invoke-FhirExport {
                                     Write-Host "  ✓ Verified: blobs exist at prefix '$prefix'" -ForegroundColor Green
                                     $exportDone = $true
                                 } else {
-                                    Write-Host "  ⚠ FHIR `$export reported success but NO blobs found in storage!" -ForegroundColor Red
-                                    Write-Host "    Expected URL: $firstUrl" -ForegroundColor DarkGray
-                                    Write-Host "    This may be a FHIR service export config issue or RBAC timing." -ForegroundColor DarkGray
-                                    Write-Host "    Try running `$export manually: az rest --method get --url '$FhirServiceUrl/`$export?_container=$ExportContainerName'" -ForegroundColor DarkGray
+                                    throw "FHIR `$export reported success but no blobs were found in '$ExportContainerName'. Expected URL: $firstUrl"
                                 }
                             } else {
-                                Write-Host "  ⚠ FHIR `$export reported success but blob verification failed" -ForegroundColor Yellow
+                                throw "FHIR `$export reported success but blob verification failed"
                             }
                         }
                         break
@@ -393,22 +573,18 @@ function Invoke-FhirExport {
             }
 
             if (-not $exportDone) {
-                Write-Host "  ⚠ Export still running after ${maxPollMin}m — will complete in background" -ForegroundColor Yellow
-                $exportDone = $true
+                throw "FHIR `$export did not complete within ${maxPollMin}m"
             }
         } else {
-            Write-Host "  ⚠ Unexpected FHIR `$export response: HTTP $($exportResp.StatusCode)" -ForegroundColor Yellow
-            Write-Host "    Expected 202 Accepted." -ForegroundColor DarkGray
-            try { Write-Host "    Body: $($exportResp.Content.Substring(0, [math]::Min(200, $exportResp.Content.Length)))" -ForegroundColor DarkGray } catch {}
+            throw "Unexpected FHIR `$export response: HTTP $($exportResp.StatusCode); expected 202 Accepted."
         }
     } catch {
         $sc = $null
         try { $sc = $_.Exception.Response.StatusCode.value__ } catch {}
         if ($sc -eq 409) {
-            Write-Host "  ⚠ Another `$export is already running — will wait for it" -ForegroundColor Yellow
-            $exportDone = $true
+            throw "Another FHIR `$export is already running; deployment cannot verify required export output"
         } else {
-            Write-Host "  ⚠ Failed to trigger `$export: $($_.Exception.Message)" -ForegroundColor Yellow
+            throw "Failed to trigger FHIR `$export: $($_.Exception.Message)"
         }
     }
 
@@ -628,6 +804,8 @@ if (-not $infraExists) {
     Write-Host "  Blob Container: $containerName"
 }
 
+Ensure-FhirStorageNetworkAccess -ResourceGroup $ResourceGroupName -StorageAccountName $storageAccountName
+
 if ($InfraOnly) {
     Write-Host ""
     Write-Host "Infrastructure-only mode complete." -ForegroundColor Green
@@ -635,6 +813,7 @@ if ($InfraOnly) {
     
     # Catch-up export (since Deploy-All.ps1 uses InfraOnly to trigger the export pipeline)
     Invoke-FhirExport -ResourceGroupName $ResourceGroupName -FhirServiceUrl $fhirServiceUrl -Label "FHIR `$export"
+    Write-Host "  ✓ FHIR `$export completed successfully" -ForegroundColor Green
     
     exit 0
 }
@@ -756,26 +935,7 @@ if ($syntheaImageExists -eq "true" -and -not $RebuildContainers) {
         Write-Host "  Building image: $acrName/synthea-generator:v1" -ForegroundColor DarkGray
         Write-Host "  Context: $(Get-Location)" -ForegroundColor DarkGray
         Write-Host "  Stderr log: $acrBuildErrLog" -ForegroundColor DarkGray
-        az acr build --registry $acrName --image "synthea-generator:v1" . --no-logs 2>$acrBuildErrLog
-        $buildExitCode = $LASTEXITCODE
-        Write-Host "  az acr build exit code: $buildExitCode" -ForegroundColor DarkGray
-        if ($buildExitCode -ne 0) {
-            Write-Host "  ⚠ ACR build command returned non-zero exit code ($buildExitCode)" -ForegroundColor Yellow
-            $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 10
-            if ($stderrTail) {
-                Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
-                $stderrTail | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-            }
-            Write-Host "  Checking if image exists in ACR despite build error..." -ForegroundColor DarkGray
-            $tagCheck = az acr repository show-tags --name $acrName --repository synthea-generator --query "contains(@, 'v1')" -o tsv 2>$null
-            Write-Host "  Tag check result: $tagCheck" -ForegroundColor DarkGray
-            if ($tagCheck -eq "true") {
-                Write-Host "  ✓ Image exists in ACR despite build log error — continuing" -ForegroundColor Yellow
-            } else {
-                Write-Host "  ✗ Image NOT found in ACR — build actually failed" -ForegroundColor Red
-                exit 1
-            }
-        }
+        Invoke-AcrBuildWithTagVerification -Registry $acrName -Repository "synthea-generator" -Tag "v1" -ContextPath "." -ErrorLog $acrBuildErrLog -NoLogs
     } finally {
         Pop-Location
     }
@@ -876,10 +1036,7 @@ if ($UseCachedSynthea) {
     $lastLogLines = 0
 
     while ($waitedMinutes -lt $maxWaitMinutes) {
-        $state = az container show `
-            --resource-group $ResourceGroupName `
-            --name synthea-generator-job `
-            --query "instanceView.state" -o tsv 2>$null
+        $state = Get-AciContainerState -ResourceGroup $ResourceGroupName -Name "synthea-generator-job"
         
         if ($state -eq "Succeeded") {
             Write-Host ""
@@ -955,9 +1112,11 @@ if ($UseCachedSynthea) {
             Write-Host "  ⚠ Synthea reported success but NO blobs found in '$containerName'!" -ForegroundColor Red
             Write-Host "    Storage account: $storageAccountName" -ForegroundColor DarkGray
             Write-Host "    The FHIR Loader will have no data to process." -ForegroundColor DarkGray
+            exit 1
         }
     } catch {
-        Write-Host "  ⚠ Could not verify Synthea blobs: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  ✗ Could not verify Synthea blobs: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
     }
 
 } else {
@@ -997,27 +1156,7 @@ if ($loaderImageExists -eq "true" -and -not $RebuildContainers) {
         Write-Host "  Building image: $acrName/fhir-loader:v1" -ForegroundColor DarkGray
         Write-Host "  Context: $(Get-Location)" -ForegroundColor DarkGray
         Write-Host "  Stderr log: $acrBuildErrLog" -ForegroundColor DarkGray
-        az acr build --registry $acrName --image "fhir-loader:v1" . --no-logs 2>$acrBuildErrLog
-        $buildExitCode = $LASTEXITCODE
-        Write-Host "  az acr build exit code: $buildExitCode" -ForegroundColor DarkGray
-        if ($buildExitCode -ne 0) {
-            Write-Host "  ⚠ ACR build command returned non-zero exit code ($buildExitCode)" -ForegroundColor Yellow
-            $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 10
-            if ($stderrTail) {
-                Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
-                $stderrTail | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-            }
-            # Check if image actually exists despite the stream error
-            Write-Host "  Checking if image exists in ACR despite build error..." -ForegroundColor DarkGray
-            $tagCheck = az acr repository show-tags --name $acrName --repository fhir-loader --query "contains(@, 'v1')" -o tsv 2>$null
-            Write-Host "  Tag check result: $tagCheck" -ForegroundColor DarkGray
-            if ($tagCheck -eq "true") {
-                Write-Host "  ✓ Image exists in ACR despite build log error — continuing" -ForegroundColor Yellow
-            } else {
-                Write-Host "  ✗ Image NOT found in ACR — build actually failed" -ForegroundColor Red
-                exit 1
-            }
-        }
+        Invoke-AcrBuildWithTagVerification -Registry $acrName -Repository "fhir-loader" -Tag "v1" -ContextPath "." -ErrorLog $acrBuildErrLog -NoLogs
     } finally {
         Pop-Location
     }
@@ -1070,10 +1209,7 @@ $waitedMinutes = 0
 $lastLogLines = 0
 
 while ($waitedMinutes -lt $maxWaitMinutes) {
-    $state = az container show `
-        --resource-group $ResourceGroupName `
-        --name fhir-loader-job `
-        --query "instanceView.state" -o tsv 2>$null
+    $state = Get-AciContainerState -ResourceGroup $ResourceGroupName -Name "fhir-loader-job"
     
     if ($state -eq "Succeeded") {
         Write-Host ""
@@ -1146,10 +1282,10 @@ az container logs --resource-group $ResourceGroupName --name fhir-loader-job 2>$
             -FhirServiceUrl $fhirServiceUrl `
             -Label "POST-LOADER: FHIR `$export (clinical data)"
         if (-not $postLoaderExportResult) {
-            Write-Host "  ⚠ POST-LOADER `$export did not complete — HDS pipelines may have incomplete data" -ForegroundColor Yellow
+            throw "POST-LOADER FHIR `$export did not complete"
         }
     } else {
-        Write-Host "  ⚠ Skipping POST-LOADER `$export — FHIR URL not available" -ForegroundColor Yellow
+        throw "Skipping POST-LOADER `$export — FHIR URL not available"
     }
 
 } else {
@@ -1204,26 +1340,7 @@ if ($dicomImageExists -eq "true" -and -not $RebuildContainers) {
         Write-Host "  Building image: $acrName/dicom-loader:v1" -ForegroundColor DarkGray
         Write-Host "  Context: $(Get-Location)" -ForegroundColor DarkGray
         Write-Host "  Stderr log: $acrBuildErrLog" -ForegroundColor DarkGray
-        az acr build --registry $acrName --image "dicom-loader:v1" . --no-logs 2>$acrBuildErrLog
-        $buildExitCode = $LASTEXITCODE
-        Write-Host "  az acr build exit code: $buildExitCode" -ForegroundColor DarkGray
-        if ($buildExitCode -ne 0) {
-            Write-Host "  ⚠ ACR build command returned non-zero exit code ($buildExitCode)" -ForegroundColor Yellow
-            $stderrTail = Get-Content $acrBuildErrLog -ErrorAction SilentlyContinue | Select-Object -Last 10
-            if ($stderrTail) {
-                Write-Host "  ACR stderr (tail):" -ForegroundColor Yellow
-                $stderrTail | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-            }
-            Write-Host "  Checking if image exists in ACR despite build error..." -ForegroundColor DarkGray
-            $tagCheck = az acr repository show-tags --name $acrName --repository dicom-loader --query "contains(@, 'v1')" -o tsv 2>$null
-            Write-Host "  Tag check result: $tagCheck" -ForegroundColor DarkGray
-            if ($tagCheck -eq "true") {
-                Write-Host "  ✓ Image exists in ACR despite build log error — continuing" -ForegroundColor Yellow
-            } else {
-                Write-Host "  ✗ Image NOT found in ACR — build actually failed" -ForegroundColor Red
-                exit 1
-            }
-        }
+        Invoke-AcrBuildWithTagVerification -Registry $acrName -Repository "dicom-loader" -Tag "v1" -ContextPath "." -ErrorLog $acrBuildErrLog -NoLogs
     } finally {
         Pop-Location
     }
@@ -1275,10 +1392,7 @@ $waitedMinutes = 0
 $lastLogLines = 0
 
 while ($waitedMinutes -lt $maxWaitMinutes) {
-    $state = az container show `
-        --resource-group $ResourceGroupName `
-        --name dicom-loader-job `
-        --query "instanceView.state" -o tsv 2>$null
+    $state = Get-AciContainerState -ResourceGroup $ResourceGroupName -Name "dicom-loader-job"
 
     if ($state -eq "Succeeded") {
         Write-Host ""
@@ -1359,10 +1473,12 @@ az container logs --resource-group $ResourceGroupName --name dicom-loader-job 2>
                 Write-Host "  ⚠ DICOM Loader reported success but NO blobs found in 'dicom-output'!" -ForegroundColor Red
                 Write-Host "    Storage account: $storageAccountName" -ForegroundColor DarkGray
                 Write-Host "    The DICOM loader may not have uploaded studies to storage." -ForegroundColor DarkGray
+                exit 1
             }
         }
     } catch {
-        Write-Host "  ⚠ Could not verify DICOM blobs: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "  ✗ Could not verify DICOM blobs: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
     }
 
     # FHIR $export after DICOM — now includes ImagingStudy resources in addition to clinical data
@@ -1372,10 +1488,10 @@ az container logs --resource-group $ResourceGroupName --name dicom-loader-job 2>
             -FhirServiceUrl $fhirServiceUrl `
             -Label "POST-DICOM: FHIR `$export (clinical + imaging data)"
         if (-not $postDicomExportResult) {
-            Write-Host "  ⚠ POST-DICOM `$export did not complete — ImagingStudy data may be missing" -ForegroundColor Yellow
+            throw "POST-DICOM FHIR `$export did not complete"
         }
     } else {
-        Write-Host "  ⚠ Skipping POST-DICOM `$export — FHIR URL not available" -ForegroundColor Yellow
+        throw "Skipping POST-DICOM `$export — FHIR URL not available"
     }
 
 } else {
@@ -1393,14 +1509,14 @@ Write-Host ""
 Write-Host "--- STEP 8: FHIR `$EXPORT CHECK ---" -ForegroundColor Cyan
 
 if (-not $fhirServiceUrl) {
-    Write-Host "  ⚠ FHIR Service URL not available — cannot run `$export" -ForegroundColor Yellow
-    Write-Host "    This usually means the FHIR infrastructure was not detected." -ForegroundColor DarkGray
+    throw "FHIR Service URL not available — cannot run required `$export"
 } else {
     Write-Host "  FHIR URL: $fhirServiceUrl" -ForegroundColor DarkGray
     # Check if any export data already exists
     $exportNeeded = $true
     $stAcct = $null
     try {
+        Use-DeploymentAzSubscription
         $stAcct = az storage account list -g $ResourceGroupName `
             --query "[?kind=='StorageV2'].name | [0]" -o tsv 2>$null
         Write-Host "  Storage account: $stAcct" -ForegroundColor DarkGray
@@ -1431,7 +1547,7 @@ if (-not $fhirServiceUrl) {
         if ($exportResult) {
             Write-Host "  ✓ FHIR `$export completed successfully" -ForegroundColor Green
         } else {
-            Write-Host "  ⚠ FHIR `$export may not have completed — check storage" -ForegroundColor Yellow
+            throw "FHIR `$export may not have completed — check storage"
         }
     }
 }

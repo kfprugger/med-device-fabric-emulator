@@ -11,7 +11,7 @@ export interface LogEntry {
   timestamp: string;
   level: string;
   message: string;
-  phase?: number;
+  phase?: string | number;
 }
 
 interface AllLogsStreamProps {
@@ -33,7 +33,7 @@ export function AllLogsStream({ logs }: AllLogsStreamProps) {
       const matchesSearch =
         !searchQuery ||
         (log.message || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (log.phase !== undefined && `phase ${log.phase}`.includes(searchQuery.toLowerCase()));
+        (log.phase !== undefined && String(log.phase).toLowerCase().includes(searchQuery.toLowerCase()));
 
       return matchesLevel && matchesSearch;
     });

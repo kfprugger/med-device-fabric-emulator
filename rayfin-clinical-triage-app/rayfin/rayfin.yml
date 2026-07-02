@@ -13,6 +13,8 @@ services:
       enabled: false
     allowedRedirectUris:
       - http://localhost:5173
+      - https://tough-bolt-f41e8d694c-westus2.webapp.fabricapps.net
+      - https://rich-heath-ac8cddda24-westus2.webapp.fabricapps.net
     fabric:
       enabled: true
   data:
@@ -23,3 +25,7 @@ services:
     folder: dist
     buildCommand: npm run build
     indexDocument: index.html
+  storage:
+    enabled: false
+  functions:
+    enabled: false

@@ -49,10 +49,177 @@ PROCEDURES = [
     {"code": "312850006", "display": "History taking", "system": "http://snomed.info/sct"}
 ]
 
+RACE_ETHNICITY_PROFILES = [
+    {
+        "race_code": "2106-3",
+        "race_display": "White",
+        "ethnicity_code": "2186-5",
+        "ethnicity_display": "Not Hispanic or Latino",
+    },
+    {
+        "race_code": "2054-5",
+        "race_display": "Black or African American",
+        "ethnicity_code": "2186-5",
+        "ethnicity_display": "Not Hispanic or Latino",
+    },
+    {
+        "race_code": "2028-9",
+        "race_display": "Asian",
+        "ethnicity_code": "2186-5",
+        "ethnicity_display": "Not Hispanic or Latino",
+    },
+    {
+        "race_code": "2076-8",
+        "race_display": "Native Hawaiian or Other Pacific Islander",
+        "ethnicity_code": "2186-5",
+        "ethnicity_display": "Not Hispanic or Latino",
+    },
+    {
+        "race_code": "2106-3",
+        "race_display": "White",
+        "ethnicity_code": "2135-2",
+        "ethnicity_display": "Hispanic or Latino",
+    },
+]
+
+def patient_demographic_extensions(idx):
+    profile = RACE_ETHNICITY_PROFILES[idx % len(RACE_ETHNICITY_PROFILES)]
+    return [
+        {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+                {
+                    "url": "ombCategory",
+                    "valueCoding": {
+                        "system": "urn:oid:2.16.840.1.113883.6.238",
+                        "code": profile["race_code"],
+                        "display": profile["race_display"],
+                    },
+                },
+                {"url": "text", "valueString": profile["race_display"]},
+            ],
+        },
+        {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+                {
+                    "url": "ombCategory",
+                    "valueCoding": {
+                        "system": "urn:oid:2.16.840.1.113883.6.238",
+                        "code": profile["ethnicity_code"],
+                        "display": profile["ethnicity_display"],
+                    },
+                },
+                {"url": "text", "valueString": profile["ethnicity_display"]},
+            ],
+        },
+    ]
+
+PAYER_PROFILES = [
+    {"id": "payer-medicare", "name": "Medicare", "type_code": "EHCPOL", "type_display": "extended healthcare"},
+    {"id": "payer-medicaid", "name": "Georgia Medicaid", "type_code": "MCPOL", "type_display": "managed care policy"},
+    {"id": "payer-commercial", "name": "BrakeKat Commercial Health", "type_code": "DENTPRG", "type_display": "dental program"},
+]
+
+CARE_GOAL_PROFILES = [
+    {"text": "Improve respiratory symptom control", "target": "Maintain oxygen saturation at or above 94 percent"},
+    {"text": "Reduce avoidable acute care utilization", "target": "Complete follow-up care plan activities within 30 days"},
+    {"text": "Improve medication adherence", "target": "Take prescribed respiratory or cardiac medication as directed"},
+]
+
+def payer_organization_resource(payer):
+    return {
+        "resourceType": "Organization",
+        "id": payer["id"],
+        "active": True,
+        "name": payer["name"],
+        "type": [{
+            "coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer",
+            }],
+            "text": "Payer",
+        }],
+    }
+
+def coverage_resource(coverage_uuid, patient_uuid, payer):
+    return {
+        "resourceType": "Coverage",
+        "id": coverage_uuid,
+        "status": "active",
+        "type": {
+            "coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                "code": payer["type_code"],
+                "display": payer["type_display"],
+            }],
+            "text": payer["name"],
+        },
+        "beneficiary": {"reference": f"urn:uuid:{patient_uuid}"},
+        "payor": [{"reference": f"Organization/{payer['id']}", "display": payer["name"]}],
+        "period": {
+            "start": (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d"),
+            "end": (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d"),
+        },
+    }
+
+def goal_resource(goal_uuid, patient_uuid, goal_profile):
+    return {
+        "resourceType": "Goal",
+        "id": goal_uuid,
+        "lifecycleStatus": "active",
+        "description": {"text": goal_profile["text"]},
+        "subject": {"reference": f"urn:uuid:{patient_uuid}"},
+        "startDate": datetime.now().strftime("%Y-%m-%d"),
+        "target": [{
+            "measure": {"text": goal_profile["target"]},
+            "dueDate": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d"),
+        }],
+    }
+
+def care_plan_resource(care_plan_uuid, patient_uuid, encounter_uuid, condition_uuid, goal_uuid, cond):
+    return {
+        "resourceType": "CarePlan",
+        "id": care_plan_uuid,
+        "status": "active",
+        "intent": "plan",
+        "category": [{
+            "coding": [{
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment",
+            }],
+            "text": "Assessment and Plan of Treatment",
+        }],
+        "title": f"Care management plan for {cond['display']}",
+        "description": f"Synthetic care plan for {cond['display']} cohort analytics.",
+        "subject": {"reference": f"urn:uuid:{patient_uuid}"},
+        "encounter": {"reference": f"urn:uuid:{encounter_uuid}"},
+        "period": {
+            "start": datetime.now().strftime("%Y-%m-%d"),
+            "end": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+        },
+        "addresses": [{"reference": f"urn:uuid:{condition_uuid}"}],
+        "goal": [{"reference": f"urn:uuid:{goal_uuid}"}],
+        "activity": [{
+            "detail": {
+                "kind": "ServiceRequest",
+                "code": {"text": "Care manager outreach"},
+                "status": "scheduled",
+            }
+        }],
+    }
+
+
+
 def generate_patient(idx):
     patient_uuid = str(uuid.uuid4())
     encounter_uuid = str(uuid.uuid4())
     condition_uuid = str(uuid.uuid4())
+    coverage_uuid = str(uuid.uuid4())
+    goal_uuid = str(uuid.uuid4())
+    care_plan_uuid = str(uuid.uuid4())
     practitioner_npi = f"99998{10000 + idx}"
     
     # Assign hospital
@@ -73,6 +240,13 @@ def generate_patient(idx):
     
     # Qualifying condition
     cond = random.choice(QUALIFYING_CONDITIONS)
+    payer = PAYER_PROFILES[idx % len(PAYER_PROFILES)]
+    payer_org = payer_organization_resource(payer)
+    goal_profile = CARE_GOAL_PROFILES[idx % len(CARE_GOAL_PROFILES)]
+    coverage = coverage_resource(coverage_uuid, patient_uuid, payer)
+    goal = goal_resource(goal_uuid, patient_uuid, goal_profile)
+    care_plan = care_plan_resource(care_plan_uuid, patient_uuid, encounter_uuid, condition_uuid, goal_uuid, cond)
+
     
     bundle = {
         "resourceType": "Bundle",
@@ -93,6 +267,7 @@ def generate_patient(idx):
                     ],
                     "gender": gender,
                     "birthDate": birth_date,
+                    "extension": patient_demographic_extensions(idx),
                     "address": [
                         {
                             "use": "home",
@@ -202,6 +377,24 @@ def generate_patient(idx):
                     },
                     "recordedDate": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
                 }
+            }
+            ,
+            {
+                "fullUrl": f"urn:uuid:{coverage_uuid}",
+                "resource": coverage
+            },
+            {
+                "fullUrl": f"urn:uuid:{goal_uuid}",
+                "resource": goal
+            },
+            {
+                "fullUrl": f"urn:uuid:{care_plan_uuid}",
+                "resource": care_plan
+            }
+            ,
+            {
+                "fullUrl": f"Organization/{payer['id']}",
+                "resource": payer_org
             }
         ]
     }

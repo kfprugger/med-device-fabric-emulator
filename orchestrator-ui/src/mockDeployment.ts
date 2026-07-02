@@ -76,12 +76,10 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "3. Multimodal Cohorting & Imaging: DICOM Service + Loader",
+    phase: "1. Data Fabric Foundation: DICOM Loader + ImagingStudy linkage",
     durationMs: 15000,
     logs: [
-      { delayPct: 0, level: "info", message: "Deploying dicom-infra.bicep…" },
-      { delayPct: 15, level: "success", message: "DICOM Service deployed" },
-      { delayPct: 20, level: "info", message: "Building dicom-loader:v1 in ACR…" },
+      { delayPct: 0, level: "info", message: "Building dicom-loader:v1 in ACR…" },
       { delayPct: 30, level: "info", message: "Running DICOM Loader (TCIA download + re-tag)…" },
       { delayPct: 40, level: "info", message: "[dicom-loader] Downloading TCGA-LUAD series from TCIA…" },
       { delayPct: 55, level: "info", message: "[dicom-loader] Downloaded 12 studies, re-tagging patient IDs…" },
@@ -111,7 +109,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "1. Data Fabric Foundation: HDS Detection",
+    phase: "3. HDS Bridge + Row Gates: HDS Deployment Detection",
     durationMs: 3000,
     isManualGate: false,
     logs: [
@@ -142,7 +140,7 @@ const MOCK_PHASES: MockPhase[] = [
     ],
   },
   {
-    phase: "3. Multimodal Cohorting & Imaging: DICOM Shortcut + HDS Pipelines",
+    phase: "3. HDS Bridge + Row Gates: DICOM Shortcut + HDS Pipelines",
     durationMs: 5000,
     logs: [
       { delayPct: 0, level: "info", message: "Creating DICOM shortcut → ADLS Gen2 dicom-output/…" },
@@ -154,21 +152,9 @@ const MOCK_PHASES: MockPhase[] = [
       { delayPct: 95, level: "success", message: "All HDS pipelines triggered" },
     ],
   },
-  {
-    phase: "4. Connected Semantic Intelligence: Conversational Data Agents",
-    durationMs: 6000,
-    logs: [
-      { delayPct: 0, level: "info", message: "Building datasource config (2 KQL tables, 11 Lakehouse tables)…" },
-      { delayPct: 15, level: "info", message: "Creating Patient 360 Data Agent…" },
-      { delayPct: 35, level: "success", message: "Patient 360 agent created: agent-p360-abc" },
-      { delayPct: 50, level: "info", message: "Creating Clinical Triage Data Agent…" },
-      { delayPct: 75, level: "success", message: "Clinical Triage agent created: agent-triage-def" },
-      { delayPct: 95, level: "success", message: "Data Agents deployed (2/2)" },
-    ],
-  },
   // ── Phase 3 ──
   {
-    phase: "3. Multimodal Cohorting & Imaging: Custom SWA Viewer & Direct Lake",
+    phase: "4. Semantic Intelligence & UX: Custom SWA Viewer & Direct Lake",
     durationMs: 8000,
     logs: [
       { delayPct: 0, level: "info", message: "Deploying FabricDicomCohortingToolkit…" },
@@ -184,7 +170,7 @@ const MOCK_PHASES: MockPhase[] = [
   },
   // ── Phase 4 ──
   {
-    phase: "4. Connected Semantic Intelligence: Clinical Device Ontology",
+    phase: "4. Semantic Intelligence & UX: Clinical Device Ontology",
     durationMs: 7000,
     logs: [
       { delayPct: 0, level: "info", message: "Verifying clinical pipeline completion…" },
@@ -199,6 +185,18 @@ const MOCK_PHASES: MockPhase[] = [
       { delayPct: 90, level: "success", message: "Ontology provisioned: ont-ghi789" },
       { delayPct: 93, level: "info", message: "Binding ontology to Patient 360 + Clinical Triage agents…" },
       { delayPct: 98, level: "success", message: "ClinicalDeviceOntology deployed + agents updated" },
+    ],
+  },
+  {
+    phase: "4. Semantic Intelligence & UX: Conversational Data Agents",
+    durationMs: 6000,
+    logs: [
+      { delayPct: 0, level: "info", message: "Building datasource config from KQL, Silver Lakehouse, and ClinicalDeviceOntology…" },
+      { delayPct: 15, level: "info", message: "Creating Patient 360 Data Agent with ontology grounding…" },
+      { delayPct: 35, level: "success", message: "Patient 360 agent created: agent-p360-abc" },
+      { delayPct: 50, level: "info", message: "Creating Clinical Triage Data Agent with ontology grounding…" },
+      { delayPct: 75, level: "success", message: "Clinical Triage agent created: agent-triage-def" },
+      { delayPct: 95, level: "success", message: "Ontology-aware Data Agents deployed (2/2)" },
     ],
   },
   {
@@ -249,6 +247,23 @@ const MOCK_PHASES: MockPhase[] = [
       { delayPct: 98, level: "success", message: "Phase 5: Population Health & Quality complete (23 Gold tables)" },
     ],
   },
+  // ── Phase 7 ──
+  {
+    phase: "7. Payer RTI & Ops: Claim stream, scoring, and agents",
+    durationMs: 9000,
+    logs: [
+      { delayPct: 0, level: "info", message: "Ensuring Event Hub claim-stream exists…" },
+      { delayPct: 15, level: "success", message: "claim-stream ready" },
+      { delayPct: 25, level: "info", message: "Deploying payer KQL schema: claims_events, fraud_scores, highcost_alerts, care_gap_alerts…" },
+      { delayPct: 40, level: "success", message: "KQL functions deployed: fn_FraudRisk, fn_HighCostTrajectory, fn_CareGapOnAlert, fn_PayerOpsWorklist" },
+      { delayPct: 52, level: "info", message: "Extending MasimoTelemetryStream with claim-stream → claims_events…" },
+      { delayPct: 65, level: "success", message: "Eventstream updated; fallback ClaimsRTIStream not required" },
+      { delayPct: 72, level: "info", message: "Building and deploying claim-emulator-grp…" },
+      { delayPct: 82, level: "success", message: "claim-emulator-grp running at 60 claim events/min" },
+      { delayPct: 88, level: "info", message: "Deploying PayerOpsActivator, HealthcareOpsAgent, Payer Ops Triage, and Healthcare Graph Agent…" },
+      { delayPct: 98, level: "success", message: "Phase 7: Payer RTI & Ops complete" },
+    ],
+  },
 ];
 
 
@@ -284,10 +299,11 @@ export function startMockDeployment(config: DeploymentConfig): string {
 
   // Build phase list respecting skip flags
   const activePhases = MOCK_PHASES.filter((p) => {
-    if (config.skip_base_infra && p.phase.includes("Phase 1:")) return false;
-    if (config.skip_fhir && p.phase.includes("Phase 2:")) return false;
-    if (config.skip_dicom && p.phase.includes("Phase 2b")) return false;
-    if (config.skip_fabric && p.phase.includes("Phase 3")) return false;
+    if (config.skip_base_infra && p.phase.includes("Data Fabric Foundation")) return false;
+    if (config.skip_fhir && p.phase.includes("FHIR Service")) return false;
+    if (config.skip_dicom && p.phase.includes("DICOM Loader")) return false;
+    if (config.skip_fabric && p.phase.includes("Fabric RTI Ingest")) return false;
+    if (config.skip_phase7 && p.phase.includes("Payer RTI & Ops")) return false;
     return true;
   });
 
@@ -392,9 +408,6 @@ function addMockResources(inst: NonNullable<ReturnType<typeof mockInstances.get>
       break;
     case phase.includes("Step 2:"):
       inst.resources.fhir_service_url = "https://fhir-xyz.fhir.azurehealthcareapis.com";
-      break;
-    case phase.includes("Step 2b"):
-      inst.resources.dicom_service_url = "https://dicom-xyz.dicom.azurehealthcareapis.com";
       break;
     case phase.includes("Step 3"):
       inst.resources.eventhouse_id = "eh-abc123";
@@ -807,7 +820,7 @@ const FABRIC_TEARDOWN_STEPS = [
 const AZURE_TEARDOWN_STEPS = [
   { name: "Container Instances", delay: 2000, logs: ["Deleting masimo-emulator ACI…", "Deleting synthea-generator-job…", "Deleting fhir-loader-job…", "Deleting dicom-loader-job…", "✓ 4 container instances deleted"] },
   { name: "FHIR Service", delay: 3000, logs: ["Deleting FHIR service fhir-xyz…", "Deleting FHIR workspace hdws-xyz…", "✓ FHIR resources deleted"] },
-  { name: "DICOM Service", delay: 2000, logs: ["Deleting DICOM service…", "✓ DICOM resources deleted"] },
+  { name: "DICOM Loader Data", delay: 1000, logs: ["Deleting DICOM loader job metadata…", "DICOM .dcm files removed with storage account / resource group", "✓ DICOM loader data cleanup covered"] },
   { name: "Container Registry", delay: 1500, logs: ["Deleting ACR masimoxyzacr…", "✓ ACR deleted"] },
   { name: "Storage Accounts", delay: 2000, logs: ["Deleting stfhirxyz (hot)…", "Deleting stfhircoolxyz (cool)…", "✓ 2 storage accounts deleted"] },
   { name: "Key Vault", delay: 1000, logs: ["Deleting kv-masimoxyz…", "✓ Key Vault deleted"] },

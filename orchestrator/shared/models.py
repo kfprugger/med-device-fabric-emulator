@@ -44,6 +44,15 @@ class DeploymentConfig(BaseModel):
     phase3_only: bool = False
     rebuild_containers: bool = False
 
+    require_bronze_clinical_fhir: bool = False
+    require_bronze_imaging_dicom: bool = False
+    skip_phase7: bool = False
+    skip_payer_rti: bool = False
+    skip_payer_activator: bool = False
+    skip_ops_agent: bool = False
+    skip_graph_agent: bool = False
+    payer_ops_email: str = ""
+    claim_event_rate_per_minute: int = 60
     # Phase 3 / 4
     dicom_toolkit_path: str = ""
     alert_email: str = ""

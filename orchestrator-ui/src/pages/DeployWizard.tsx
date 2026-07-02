@@ -26,7 +26,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { RocketRegular, BeakerRegular, AddRegular, DismissRegular, ArrowSyncRegular, PlayRegular, ChevronDownRegular, ChevronUpRegular, CheckmarkCircleRegular, CircleRegular, SettingsRegular, ClipboardRegular, FlashRegular } from "@fluentui/react-icons";
-import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, listAhdsRegions, listSubscriptions, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
+import { startDeployment, listCapacities, checkExistingDeployment, resumeCapacity, pauseCapacity, listFhirRegions, listSubscriptions, type DeploymentConfig, type FabricCapacity, type ExistingDeploymentInfo } from "../api";
 import { startMockDeployment, getMockSubscriptions, getMockCapacities } from "../mockDeployment";
 import { useAppState } from "../AppState";
 import { MockDataBanner } from "../components/MockDataBanner";
@@ -198,6 +198,43 @@ function getRectIntersection(rx: number, ry: number, rw: number, rh: number, tx:
   };
 }
 
+const AZURE_REGION_LABELS: Record<string, string> = {
+  australiaeast: "Australia East",
+  canadacentral: "Canada Central",
+  centralindia: "Central India",
+  eastus: "East US",
+  eastus2: "East US 2",
+  francecentral: "France Central",
+  germanywestcentral: "Germany West Central",
+  japaneast: "Japan East",
+  koreacentral: "Korea Central",
+  northcentralus: "North Central US",
+  northeurope: "North Europe",
+  qatarcentral: "Qatar Central",
+  southcentralus: "South Central US",
+  southeastasia: "Southeast Asia",
+  swedencentral: "Sweden Central",
+  switzerlandnorth: "Switzerland North",
+  uksouth: "UK South",
+  westcentralus: "West Central US",
+  westeurope: "West Europe",
+  westus2: "West US 2",
+  westus3: "West US 3",
+};
+
+function normalizeAzureLocation(location: string): string {
+  return location.replace(/\s/g, "").toLowerCase();
+}
+
+function formatAzureLocationLabel(location: string): string {
+  const normalized = normalizeAzureLocation(location);
+  return AZURE_REGION_LABELS[normalized] ?? location;
+}
+
+function normalizeFhirRegionList(regions: string[]): string[] {
+  return Array.from(new Set(regions.map(normalizeAzureLocation).filter(Boolean))).sort();
+}
+
 export function DeployWizard() {
   const styles = useStyles();
   const reducedMotion = useReducedMotion();
@@ -231,10 +268,11 @@ export function DeployWizard() {
     baseY: number;
   } | null>(null);
   const [deepCheckingExisting, setDeepCheckingExisting] = useState(false);
-  const [ahdsRegions, setAhdsRegions] = useState<string[] | null>(null); // null = not loaded yet
+  const [fhirRegions, setFhirRegions] = useState<string[] | null>(null); // null = not loaded yet
   const [skipGroup1Collapsed, setSkipGroup1Collapsed] = useState(false);
   const [skipGroup2Collapsed, setSkipGroup2Collapsed] = useState(false);
   const [skipGroup3Collapsed, setSkipGroup3Collapsed] = useState(false);
+  const [skipGroup4Collapsed, setSkipGroup4Collapsed] = useState(false);
 
   const [autoExportXlsx, setAutoExportXlsx] = useState(() => localStorage.getItem("autoExportXlsx") === "true");
   const [autoExportCsv, setAutoExportCsv] = useState(() => localStorage.getItem("autoExportCsv") === "true");
@@ -358,6 +396,16 @@ export function DeployWizard() {
     return "";
   };
 
+  const isTrialCapacity = (capacity: FabricCapacity) => (capacity.sku ?? "").toUpperCase().startsWith("FT");
+
+  const isUsableCapacity = (capacity: FabricCapacity) => {
+    const sku = (capacity.sku ?? "").toUpperCase();
+    return sku.startsWith("F") && !sku.startsWith("FT") && sku !== "PP3";
+  };
+
+  const usableCapacities = capacities.filter(isUsableCapacity);
+  const onlyTrialCapacitiesDetected = capacities.length > 0 && capacities.every(isTrialCapacity);
+
   const formatCapacityMenuLabel = (capacity: FabricCapacity) => {
     const subscriptionLabel = formatSubscriptionReference(capacity.subscriptionName, capacity.subscription);
     const suffix = subscriptionLabel ? ` • ${subscriptionLabel}` : "";
@@ -413,6 +461,9 @@ export function DeployWizard() {
         if (allCaps.length === 0) {
           setError("Unable to load Fabric capacities right now.");
           setLoadWarning("Unable to load Fabric capacities right now.");
+        } else if (allCaps.every(isTrialCapacity)) {
+          setError("Only Fabric trial capacities (FT*) were detected. Healthcare Data Solutions requires a paid Fabric F-SKU capacity.");
+          setLoadWarning("Only Fabric trial capacities (FT*) were detected. Select or create a paid Fabric F-SKU capacity before deploying.");
         } else {
           setError("");
           setLoadWarning("");
@@ -477,6 +528,8 @@ export function DeployWizard() {
         setCapacities(allCaps);
         if (allCaps.length === 0) {
           setLoadWarning("Unable to load Fabric capacities right now.");
+        } else if (allCaps.every(isTrialCapacity)) {
+          setLoadWarning("Only Fabric trial capacities (FT*) were detected. Healthcare Data Solutions requires a paid Fabric F-SKU capacity.");
         } else {
           setLoadWarning("");
         }
@@ -491,19 +544,30 @@ export function DeployWizard() {
       });
   }, [subscriptions, usingMock]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch AHDS-supported regions once on mount (independent of mock mode).
-  // Falls back to a known-good list when the backend is unreachable so that
-  // validation still works in mock / offline mode.
-  const AHDS_FALLBACK_REGIONS = [
-    "australiaeast", "canadacentral", "eastus", "eastus2",
-    "northcentralus", "northeurope", "southcentralus",
-    "southeastasia", "uksouth", "westeurope", "westus2", "westus3",
+  // Fetch AHDS FHIR-supported regions once on mount (independent of mock mode).
+  // Falls back to the currently published FHIR service region list when the
+  // backend is unreachable so validation still works in mock / offline mode.
+  const FHIR_FALLBACK_REGIONS = [
+    "australiaeast", "canadacentral", "centralindia", "eastus", "eastus2",
+    "francecentral", "germanywestcentral", "japaneast", "koreacentral",
+    "northcentralus", "northeurope", "qatarcentral", "southcentralus",
+    "southeastasia", "swedencentral", "switzerlandnorth", "uksouth",
+    "westcentralus", "westeurope", "westus2", "westus3",
   ];
   useEffect(() => {
-    listAhdsRegions().then((regions) => {
-      setAhdsRegions(regions.length > 0 ? regions : AHDS_FALLBACK_REGIONS);
+    listFhirRegions().then((regions) => {
+      setFhirRegions(normalizeFhirRegionList(regions.length > 0 ? regions : FHIR_FALLBACK_REGIONS));
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const supportedFhirRegionIds = useMemo(
+    () => new Set((fhirRegions ?? []).map(normalizeAzureLocation)),
+    [fhirRegions]
+  );
+  const fhirRegionLabels = useMemo(
+    () => (fhirRegions ?? []).map(formatAzureLocationLabel),
+    [fhirRegions]
+  );
 
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [config, setConfig] = useState<DeploymentConfig>({
@@ -512,7 +576,7 @@ export function DeployWizard() {
     admin_security_group: "",
     fabric_workspace_name: "",
     patient_count: 100,
-    tags: {},
+    tags: { SecurityControl: "Ignore" },
     skip_base_infra: false,
     skip_fhir: false,
     skip_dicom: false,
@@ -535,12 +599,21 @@ export function DeployWizard() {
     skip_ontology: false,
     skip_activator: false,
     skip_quality_measures: false,
+    require_bronze_clinical_fhir: false,
+    require_bronze_imaging_dicom: false,
+    skip_phase7: false,
+    skip_payer_rti: false,
+    skip_payer_activator: false,
+    skip_ops_agent: false,
+    skip_graph_agent: false,
+    payer_ops_email: "",
+    claim_event_rate_per_minute: 60,
   });
 
   const [useNamingConvention, setUseNamingConvention] = useState(true);
-  const [useTags, setUseTags] = useState(false);
+  const [useTags, setUseTags] = useState(true);
   const [tagRows, setTagRows] = useState<Array<{ name: string; value: string }>>([
-    { name: "", value: "" },
+    { name: "SecurityControl", value: "Ignore" },
   ]);
   const [namingPrefix, setNamingPrefix] = useState("");
   const [existingDeploy, setExistingDeploy] = useState<ExistingDeploymentInfo | null>(null);
@@ -571,6 +644,9 @@ export function DeployWizard() {
         if (!config.skip_activator) {
           requiredDataFields.push(config.alert_email?.trim() || null);
         }
+        if (!config.skip_phase7 && !config.skip_payer_activator) {
+          requiredDataFields.push(config.payer_ops_email?.trim() || config.alert_email?.trim() || null);
+        }
         return { complete: requiredDataFields.filter(Boolean).length, total: requiredDataFields.length };
       default:
         return { complete: 0, total: 0 };
@@ -586,6 +662,8 @@ export function DeployWizard() {
     if (!config.skip_hds_pipelines) minutes += 10;
     if (!config.skip_data_agents) minutes += 5;
     if (!config.skip_imaging) minutes += 5;
+    if (!config.skip_phase7) minutes += 8;
+    if (!config.skip_phase7 && !config.skip_payer_rti) minutes += 5;
     return minutes;
   };
 
@@ -614,9 +692,16 @@ export function DeployWizard() {
         skip_ontology: false,
         skip_activator: !prev.alert_email,
         skip_quality_measures: false,
+        skip_phase7: false,
+        skip_payer_rti: false,
+        skip_payer_activator: !prev.alert_email && !prev.payer_ops_email,
+        skip_ops_agent: false,
+        skip_graph_agent: false,
+        payer_ops_email: prev.payer_ops_email || "",
+        claim_event_rate_per_minute: prev.claim_event_rate_per_minute || 60,
       };
       if (preset === "demo") {
-        return { ...base, skip_imaging: true, skip_quality_measures: true };
+        return { ...base, skip_imaging: true, skip_quality_measures: true, skip_payer_activator: !prev.alert_email && !prev.payer_ops_email };
       }
       if (preset === "infra") {
         return {
@@ -634,13 +719,18 @@ export function DeployWizard() {
           skip_ontology: true,
           skip_activator: true,
           skip_quality_measures: true,
+          skip_phase7: true,
+          skip_payer_rti: true,
+          skip_payer_activator: true,
+          skip_ops_agent: true,
+          skip_graph_agent: true,
         };
       }
       if (preset === "repair") {
-        return { ...base, reuse_patients: true, skip_synthea: true, skip_device_assoc: true };
+        return { ...base, reuse_patients: true, skip_synthea: true, skip_device_assoc: true, skip_phase7: true, skip_payer_rti: true, skip_payer_activator: true, skip_ops_agent: true, skip_graph_agent: true };
       }
       if (preset === "data") {
-        return { ...base, skip_base_infra: true, skip_fhir: true, skip_dicom: true, skip_synthea: true, skip_device_assoc: true };
+        return { ...base, skip_base_infra: true, skip_fhir: true, skip_dicom: true, skip_synthea: true, skip_device_assoc: true, skip_phase7: true, skip_payer_rti: true, skip_payer_activator: true, skip_ops_agent: true, skip_graph_agent: true };
       }
       return base;
     });
@@ -658,6 +748,10 @@ export function DeployWizard() {
     [!config.skip_ontology, "Ontology"],
     [!config.skip_activator && !!config.alert_email, "Alerts"],
     [!config.skip_quality_measures, "Quality"],
+    [!config.skip_phase7 && !config.skip_payer_rti, "Payer RTI"],
+    [!config.skip_phase7 && !config.skip_payer_activator, "Payer Activator"],
+    [!config.skip_phase7 && !config.skip_ops_agent, "Ops Agents"],
+    [!config.skip_phase7 && !config.skip_graph_agent, "Graph Agent"],
   ].filter(([enabled]) => enabled).map(([, label]) => label as string);
 
   const uniqueSuffix = selectedSubscription && config.resource_group_name
@@ -666,13 +760,14 @@ export function DeployWizard() {
   const appName = `masimo${uniqueSuffix}`;
   const hdsWorkspaceName = `hdws${uniqueSuffix}`;
   const fhirServiceName = `fhir${uniqueSuffix}`;
-  const dicomServiceName = `dicom${uniqueSuffix}`;
   const storageAccountName = `stfhir${uniqueSuffix}`;
 
   const prospectiveAzureAssets = [
     { enabled: true, type: "Resource group", name: config.resource_group_name || "rg-<deployment>" },
     { enabled: !config.skip_base_infra, type: "Event Hubs namespace", name: `${appName}-eh-ns` },
     { enabled: !config.skip_base_infra, type: "Event Hub", name: "telemetry-stream" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti && !config.skip_base_infra, type: "Event Hub", name: "claim-stream" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti && !config.skip_base_infra, type: "ACI container group", name: "claim-emulator-grp" },
     { enabled: !config.skip_base_infra, type: "Authorization rule", name: "emulator-access" },
     { enabled: !config.skip_base_infra, type: "Container Registry", name: `${appName}acr` },
     { enabled: !config.skip_base_infra, type: "Key Vault", name: `${appName}-kv` },
@@ -686,7 +781,6 @@ export function DeployWizard() {
     { enabled: !config.skip_fhir, type: "User-assigned managed identity", name: "id-aci-fhir-jobs" },
     { enabled: !config.skip_synthea, type: "ACI job", name: "synthea-generator-job" },
     { enabled: !config.skip_fhir && !config.skip_synthea, type: "ACI job", name: "fhir-loader-job" },
-    { enabled: !config.skip_dicom, type: "DICOM service", name: dicomServiceName },
     { enabled: !config.skip_dicom, type: "ACI job", name: "dicom-loader-job" },
     { enabled: !config.skip_imaging, type: "Container App", name: "hds-dicom-proxy" },
     { enabled: !config.skip_imaging, type: "Static Web App", name: "OHIF DICOM viewer" },
@@ -699,6 +793,14 @@ export function DeployWizard() {
     { enabled: !config.skip_fabric, type: "KQL Database", name: "MasimoKQLDB" },
     { enabled: !config.skip_fabric, type: "KQL table", name: "TelemetryRaw" },
     { enabled: !config.skip_fabric, type: "KQL table", name: "AlertHistory" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti, type: "KQL table", name: "claims_events" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti, type: "KQL table", name: "fraud_scores" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti, type: "KQL table", name: "highcost_alerts" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_rti, type: "KQL table", name: "care_gap_alerts" },
+    { enabled: !config.skip_phase7 && !config.skip_payer_activator, type: "Reflex", name: "PayerOpsActivator" },
+    { enabled: !config.skip_phase7 && !config.skip_ops_agent, type: "Operations Agent", name: "HealthcareOpsAgent" },
+    { enabled: !config.skip_phase7 && !config.skip_ops_agent, type: "Data Agent", name: "Payer Ops Triage" },
+    { enabled: !config.skip_phase7 && !config.skip_graph_agent, type: "Data Agent", name: "Healthcare Graph Agent" },
     { enabled: !config.skip_fabric, type: "Eventstream", name: "MasimoTelemetryStream" },
     { enabled: !config.skip_fhir_export, type: "OneLake shortcut", name: `FHIR export → ${storageAccountName}/fhir-export` },
     { enabled: !config.skip_hds_pipelines, type: "Lakehouse", name: "Healthcare Bronze Lakehouse (HDS)" },
@@ -721,9 +823,11 @@ export function DeployWizard() {
     { id: "tcia", label: "TCIA\nDICOM studies", group: "External", x: 30, y: 210, enabled: !config.skip_dicom },
     { id: "emulator", label: "Masimo Emulator\nACI", group: "Azure", x: 30, y: 520, enabled: !config.skip_base_infra },
     { id: "fhir", label: `FHIR Service\n${fhirServiceName}`, group: "Azure", x: 320, y: 60, enabled: !config.skip_fhir },
-    { id: "dicom", label: `DICOM Service\n${dicomServiceName}`, group: "Azure", x: 320, y: 210, enabled: !config.skip_dicom },
+    { id: "dicom-loader", label: "DICOM Loader\nTCIA → ADLS", group: "Azure", x: 320, y: 210, enabled: !config.skip_dicom },
     { id: "eventhub", label: "Event Hub\ntelemetry-stream", group: "Azure", x: 320, y: 520, enabled: !config.skip_base_infra },
     { id: "adls", label: `ADLS Gen2\n${storageAccountName}`, group: "Azure", x: 610, y: 210, enabled: !config.skip_fhir || !config.skip_dicom },
+    { id: "claimemulator", label: "Claim Emulator\nACI", group: "Azure", x: 30, y: 650, enabled: !config.skip_phase7 && !config.skip_payer_rti && !config.skip_base_infra },
+    { id: "claimhub", label: "Event Hub\nclaim-stream", group: "Azure", x: 320, y: 650, enabled: !config.skip_phase7 && !config.skip_payer_rti && !config.skip_base_infra },
     { id: "eventstream", label: "Eventstream\nMasimoTelemetryStream", group: "Fabric", x: 610, y: 520, enabled: !config.skip_fabric },
     { id: "bronze", label: "Bronze Lakehouse\nHDS", group: "Fabric", x: 900, y: 60, enabled: !config.skip_hds_pipelines },
     { id: "eventhouse", label: "Eventhouse / KQL\nMasimoKQLDB", group: "Fabric", x: 900, y: 365, enabled: !config.skip_fabric },
@@ -734,6 +838,9 @@ export function DeployWizard() {
     { id: "quality", label: "Population Health\n& Quality", group: "Fabric", x: 1770, y: 60, enabled: !config.skip_quality_measures },
     { id: "ontology", label: "ClinicalDeviceOntology", group: "Fabric", x: 1770, y: 365, enabled: !config.skip_ontology },
     { id: "activator", label: "Data Activator\nClinicalAlertActivator", group: "Fabric", x: 1770, y: 520, enabled: !config.skip_activator && !!config.alert_email },
+    { id: "payerkql", label: "Payer RTI KQL\nclaims + scores", group: "Fabric", x: 1190, y: 650, enabled: !config.skip_phase7 && !config.skip_payer_rti },
+    { id: "payerops", label: "Payer Ops\nAgents + Activator", group: "Fabric", x: 1480, y: 650, enabled: !config.skip_phase7 && (!config.skip_ops_agent || !config.skip_payer_activator) },
+    { id: "graphagent", label: "Healthcare Graph Agent", group: "Fabric", x: 1770, y: 650, enabled: !config.skip_phase7 && !config.skip_graph_agent },
   ].filter((node) => node.enabled);
 
   const positionedGraphNodes = graphNodes.map((node) => {
@@ -744,11 +851,15 @@ export function DeployWizard() {
   const graphEdges = [
     { id: "synthea-fhir", from: "synthea", to: "fhir", label: "FHIR bundles", lx: 0, ly: -36 },
     { id: "fhir-adls", from: "fhir", to: "adls", label: "$export NDJSON", lx: -15, ly: -30 },
-    { id: "tcia-dicom", from: "tcia", to: "dicom", label: "re-tag/upload", lx: 0, ly: -36 },
-    { id: "dicom-adls", from: "dicom", to: "adls", label: "dicom-output", lx: 0, ly: -36 },
+    { id: "tcia-adls", from: "tcia", to: "adls", label: "re-tag + upload", lx: 0, ly: -36 },
     { id: "emulator-eventhub", from: "emulator", to: "eventhub", label: "telemetry", lx: 0, ly: -36 },
     { id: "eventhub-eventstream", from: "eventhub", to: "eventstream", label: "source", lx: 0, ly: -36 },
     { id: "eventstream-eventhouse", from: "eventstream", to: "eventhouse", label: "TelemetryRaw", lx: -18, ly: -35 },
+    { id: "claimemulator-claimhub", from: "claimemulator", to: "claimhub", label: "claims", lx: 0, ly: -36 },
+    { id: "claimhub-eventstream", from: "claimhub", to: "eventstream", label: "claim source", lx: 0, ly: -36 },
+    { id: "eventstream-payerkql", from: "eventstream", to: "payerkql", label: "claims_events", lx: 0, ly: -36 },
+    { id: "payerkql-payerops", from: "payerkql", to: "payerops", label: "worklist", lx: 0, ly: -36 },
+    { id: "ontology-graphagent", from: "ontology", to: "graphagent", label: "manual attach", lx: 0, ly: -36 },
     { id: "adls-bronze", from: "adls", to: "bronze", label: "OneLake shortcut", lx: -18, ly: -35 },
     { id: "bronze-silver", from: "bronze", to: "silver", label: "HDS pipelines", lx: 0, ly: -36 },
     { id: "silver-gold", from: "silver", to: "gold", label: "OMOP", lx: 0, ly: -36 },
@@ -766,7 +877,7 @@ export function DeployWizard() {
 
   const graphNodeById = new Map(positionedGraphNodes.map((node) => [node.id, node]));
   const GRAPH_WIDTH = 1960;
-  const GRAPH_HEIGHT = 670;
+  const GRAPH_HEIGHT = 780;
   const NODE_WIDTH = 165;
   const NODE_HEIGHT = 74;
 
@@ -908,6 +1019,12 @@ export function DeployWizard() {
       if (field === "skip_synthea" && value) {
         next.skip_device_assoc = true;
       }
+      if (field === "skip_phase7" && value) {
+        next.skip_payer_rti = true;
+        next.skip_payer_activator = true;
+        next.skip_ops_agent = true;
+        next.skip_graph_agent = true;
+      }
       // skip_dicom → forces skip_hds_pipelines, skip_imaging
       if (field === "skip_dicom" && value) {
         next.skip_hds_pipelines = true;
@@ -918,6 +1035,11 @@ export function DeployWizard() {
         next.skip_fhir_export = true;
         next.skip_rti_phase2 = true;
         next.skip_activator = true;
+        next.skip_phase7 = true;
+        next.skip_payer_rti = true;
+        next.skip_payer_activator = true;
+        next.skip_ops_agent = true;
+        next.skip_graph_agent = true;
       }
       // skip_base_infra → forces skip_synthea, skip_fhir, skip_dicom, skip_device_assoc
       if (field === "skip_base_infra" && value) {
@@ -956,6 +1078,12 @@ export function DeployWizard() {
         next.skip_fhir_export = false;
         next.skip_hds_pipelines = false;
         next.skip_imaging = false;
+      }
+      if (field === "skip_phase7" && !value) {
+        next.skip_payer_rti = false;
+        next.skip_payer_activator = !next.alert_email && !next.payer_ops_email;
+        next.skip_ops_agent = false;
+        next.skip_graph_agent = false;
       }
 
       return next;
@@ -1092,6 +1220,7 @@ export function DeployWizard() {
       const fallbackCapacity = getCapacityFallbackParts(selectedCapacity);
       const deployConfig: DeploymentConfig = {
         ...config,
+        location: normalizeAzureLocation(config.location),
         capacity_name: cap?.name ?? fallbackCapacity?.capacityName ?? selectedCapacity,
         capacity_resource_group: cap?.resourceGroup ?? config.capacity_resource_group ?? "",
         capacity_subscription_id: cap?.subscription ?? fallbackCapacity?.subscriptionId ?? selectedSubscription,
@@ -1129,31 +1258,37 @@ export function DeployWizard() {
     // For mock mode, auto-fill workspace name if empty
     const mockConfig = {
       ...config,
+      location: normalizeAzureLocation(config.location),
       fabric_workspace_name: config.fabric_workspace_name || "med-device-rti-hds-demo",
     };
     const instanceId = startMockDeployment(mockConfig);
     navigate(`/monitor/${instanceId}`);
   };
 
-  const locationUnsupported = ahdsRegions !== null &&
+  const locationUnsupported = fhirRegions !== null &&
     !config.skip_fhir &&
-    !ahdsRegions.includes(config.location.replace(/\s/g, "").toLowerCase());
+    !supportedFhirRegionIds.has(normalizeAzureLocation(config.location));
 
   const validationErrors = useMemo(() => {
     const issues: string[] = [];
     if (!selectedSubscription) issues.push("Select an Azure subscription.");
     if (!selectedCapacity) issues.push("Select a Fabric capacity.");
+    if (onlyTrialCapacitiesDetected) issues.push("Only Fabric trial capacities (FT*) were detected. Healthcare Data Solutions requires a paid Fabric F-SKU capacity.");
+    const selectedCap = findCapacity(selectedCapacity);
+    if (selectedCap && !isUsableCapacity(selectedCap)) issues.push(`Selected Fabric capacity ${selectedCap.name} uses unsupported SKU ${selectedCap.sku || "unknown"}. Select a paid Fabric F-SKU capacity.`);
     if (!config.admin_security_group?.trim()) issues.push("Admin Security Group is required.");
     if (useNamingConvention && !namingPrefix.trim()) issues.push("Deployment Name is required when naming convention is enabled.");
     if (!useNamingConvention && !config.resource_group_name?.trim()) issues.push("Resource Group Name is required.");
     if (!config.fabric_workspace_name?.trim()) issues.push("Fabric workspace name is required.");
     if (!config.skip_activator && !config.alert_email?.trim()) issues.push("Alert email is required.");
     if (!config.patient_count || config.patient_count < 1) issues.push("Patient count must be at least 1.");
-    if (locationUnsupported) issues.push(`Not an acceptable region. Please select a supported AHDS region.`);
+    if (locationUnsupported) issues.push(`Not an acceptable region. Please select a supported AHDS FHIR region.`);
     return issues;
   }, [
     selectedSubscription,
     selectedCapacity,
+    capacities,
+    onlyTrialCapacitiesDetected,
     config.admin_security_group,
     config.resource_group_name,
     config.fabric_workspace_name,
@@ -1525,13 +1660,13 @@ export function DeployWizard() {
                               })()
                               : capacityRefreshing
                                 ? "Refreshing capacity status..."
-                                : capacities.length === 0 ? "No capacities found" : "Select…"
+                                : capacities.length === 0 ? "No capacities found" : onlyTrialCapacitiesDetected ? "Only trial capacities detected" : "Select…"
                           }
                           selectedOptions={selectedCapacity ? [selectedCapacity] : []}
                           onOptionSelect={(_, data) => setSelectedCapacity(data.optionValue as string)}
-                          disabled={capacities.length === 0 && capacityRefreshing}
+                          disabled={(usableCapacities.length === 0 && capacityRefreshing) || onlyTrialCapacitiesDetected}
                         >
-                          {capacities.map((c) => (
+                          {usableCapacities.map((c) => (
                             <Option key={getCapacitySelectionValue(c)} value={getCapacitySelectionValue(c)} text={formatCapacityMenuLabel(c)}>
                               {formatCapacityMenuLabel(c)}
                             </Option>
@@ -1626,6 +1761,26 @@ export function DeployWizard() {
                                   </Button>
                                 </Tooltip>
                               )}
+                              {isActive && showAdvanced && (
+                                <Tooltip content={`Pause capacity "${cap.name}" now. Confirm because this can interrupt Fabric workloads.`} relationship="label">
+                                  <Button
+                                    appearance="secondary"
+                                    size="small"
+                                    onClick={async () => {
+                                      if (!window.confirm(`Pause Fabric capacity ${cap.name}? This may interrupt active Fabric workloads.`)) return;
+                                      setError("");
+                                      try {
+                                        await pauseCapacity(cap.subscription, cap.resourceGroup, cap.name);
+                                        await refreshCapacities();
+                                      } catch (e) {
+                                        setError(e instanceof Error ? e.message : "Failed to pause capacity");
+                                      }
+                                    }}
+                                  >
+                                    Pause now
+                                  </Button>
+                                </Tooltip>
+                              )}
                             </>
                           );
                         })()}
@@ -1662,7 +1817,7 @@ export function DeployWizard() {
                       }
                       validationState={locationUnsupported ? "error" : undefined}
                       validationMessage={locationUnsupported
-                        ? `Not an acceptable region. Please select from the following: ${ahdsRegions?.join(", ")}`
+                        ? `Not an acceptable region. Please select from the following: ${fhirRegionLabels.join(", ")}`
                         : undefined}
                     >
                       <HistoryInput
@@ -1670,8 +1825,8 @@ export function DeployWizard() {
                         value={config.location}
                         onChange={(v) => update("location", v)}
                         disabled={!!existingDeploy?.priorConfig && !overridePriorSettings}
-                        suggestions={ahdsRegions ?? undefined}
-                        suggestionsLabel="Supported AHDS regions"
+                        suggestions={fhirRegionLabels}
+                        suggestionsLabel="Supported AHDS FHIR regions"
                       />
                     </Field>
                     <Field
@@ -2095,7 +2250,7 @@ export function DeployWizard() {
                           />
                         </Tooltip>
                       </div>
-                      <Tooltip content="Skip DICOM service, TCIA download, and imaging study upload" relationship="description" positioning="after">
+                      <Tooltip content="Skip TCIA DICOM download, re-tagging, ADLS upload, and FHIR ImagingStudy creation" relationship="description" positioning="after">
                         <Checkbox
                           label="DICOM Download + Upload"
                           checked={!config.skip_dicom}
@@ -2103,26 +2258,9 @@ export function DeployWizard() {
                           disabled={config.skip_base_infra}
                         />
                       </Tooltip>
-                      <Tooltip content="Skip Eventhouse, KQL Database, Eventstream, and alert functions" relationship="description" positioning="after">
-                        <Checkbox
-                          label="Fabric RTI (Eventhouse + Eventstream)"
-                          checked={!config.skip_fabric}
-                          onChange={(_, d) => update("skip_fabric", !d.checked)}
-                        />
-                      </Tooltip>
-                      <div style={{ paddingLeft: 24 }}>
-                        <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
-                          <Checkbox
-                            label="FHIR $export to ADLS"
-                            checked={!config.skip_fhir_export}
-                            onChange={(_, d) => update("skip_fhir_export", !d.checked)}
-                            disabled={config.skip_fabric || config.skip_fhir}
-                          />
-                        </Tooltip>
-                      </div>
                     </div>
 
-                    {/* ── Group 2: Enrichment & Clinical Triage (Phase 2) ── */}
+                    {/* ── Group 2: Active Patient Telemetry (Phase 2) ── */}
                     <div
                       onClick={() => setSkipGroup2Collapsed(!skipGroup2Collapsed)}
                       style={{
@@ -2144,6 +2282,23 @@ export function DeployWizard() {
                       {skipGroup2Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
                     </div>
                     <div className={`deploy-collapsible-content ${skipGroup2Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip Masimo Eventhouse, KQL database/functions, Eventstream topology, core dashboard, and FHIR $export" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Fabric RTI ingest (Eventhouse + Eventstream)"
+                          checked={!config.skip_fabric}
+                          onChange={(_, d) => update("skip_fabric", !d.checked)}
+                        />
+                      </Tooltip>
+                      <div style={{ paddingLeft: 24 }}>
+                        <Tooltip content="Skip FHIR $export to ADLS Gen2 — HDS pipelines need this data" relationship="description" positioning="after">
+                          <Checkbox
+                            label="FHIR $export to ADLS"
+                            checked={!config.skip_fhir_export}
+                            onChange={(_, d) => update("skip_fhir_export", !d.checked)}
+                            disabled={config.skip_fabric || config.skip_fhir}
+                          />
+                        </Tooltip>
+                      </div>
                       <Tooltip content="Skip RTI Phase 2 — KQL→Silver shortcuts and enriched alert functions" relationship="description" positioning="after">
                         <Checkbox
                           label="RTI Phase 2 (Shortcuts + Enrichment)"
@@ -2152,24 +2307,9 @@ export function DeployWizard() {
                           disabled={config.skip_fabric}
                         />
                       </Tooltip>
-                      <Tooltip content="Skip DICOM shortcut creation and HDS pipeline triggers (clinical, imaging, OMOP)" relationship="description" positioning="after">
-                        <Checkbox
-                          label="DICOM Shortcut + HDS Pipelines"
-                          checked={!config.skip_hds_pipelines}
-                          onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
-                          disabled={config.skip_dicom}
-                        />
-                      </Tooltip>
-                      <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents" relationship="description" positioning="after">
-                        <Checkbox
-                          label="Data Agents (Patient 360 + Clinical Triage)"
-                          checked={!config.skip_data_agents}
-                          onChange={(_, d) => update("skip_data_agents", !d.checked)}
-                        />
-                      </Tooltip>
                     </div>
 
-                    {/* ── Group 3: Downstream Analytics & Intelligence (Phases 3, 4, 5) ── */}
+                    {/* ── Group 3: HDS Bridge, Semantic UX, and Analytics (Phases 3-6) ── */}
                     <div
                       onClick={() => setSkipGroup3Collapsed(!skipGroup3Collapsed)}
                       style={{
@@ -2186,11 +2326,19 @@ export function DeployWizard() {
                       }}
                     >
                       <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
-                        3. Advanced Imaging &amp; Value-Based Analytics (Phases 3-6)
+                        3. HDS Bridge, Semantic UX &amp; Analytics (Phases 3-6)
                       </Text>
                       {skipGroup3Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
                     </div>
                     <div className={`deploy-collapsible-content ${skipGroup3Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip DICOM shortcut creation, HDS clinical/imaging/OMOP pipeline triggers, and row-count gates" relationship="description" positioning="after">
+                        <Checkbox
+                          label="HDS Bridge + Row Gates"
+                          checked={!config.skip_hds_pipelines}
+                          onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
+                          disabled={config.skip_dicom}
+                        />
+                      </Tooltip>
                       <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">
                         <Checkbox
                           label="Imaging Toolkit (Cohorting, Viewer, Report)"
@@ -2204,6 +2352,13 @@ export function DeployWizard() {
                           label="Ontology + Agent Binding"
                           checked={!config.skip_ontology}
                           onChange={(_, d) => update("skip_ontology", !d.checked)}
+                        />
+                      </Tooltip>
+                      <Tooltip content="Skip Patient 360 + Clinical Triage Data Agents deployed after ontology" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Ontology-aware Data Agents"
+                          checked={!config.skip_data_agents}
+                          onChange={(_, d) => update("skip_data_agents", !d.checked)}
                         />
                       </Tooltip>
                       <Tooltip content={`Skip Data Activator Reflex + email rule${!config.alert_email ? " (no alert email set)" : ""}`} relationship="description" positioning="after">
@@ -2221,6 +2376,93 @@ export function DeployWizard() {
                           onChange={(_, d) => update("skip_quality_measures", !d.checked)}
                         />
                       </Tooltip>
+                    </div>
+
+                    {/* ── Group 4: Payer RTI & Ops (Phase 7) ── */}
+                    <div
+                      onClick={() => setSkipGroup4Collapsed(!skipGroup4Collapsed)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        backgroundColor: tokens.colorNeutralBackground3,
+                        borderRadius: tokens.borderRadiusMedium,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        marginTop: tokens.spacingVerticalS,
+                        borderLeft: `4px solid ${tokens.colorPaletteBerryBorderActive}`
+                      }}
+                    >
+                      <Text weight="semibold" size={300} style={{ color: tokens.colorBrandForeground1 }}>
+                        4. Payer RTI &amp; Ops (Phase 7)
+                      </Text>
+                      {skipGroup4Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
+                    </div>
+                    <div className={`deploy-collapsible-content ${skipGroup4Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
+                      <Tooltip content="Skip Phase 7 entirely" relationship="description" positioning="after">
+                        <Checkbox
+                          label="Payer RTI & Ops (Phase 7)"
+                          checked={!config.skip_phase7}
+                          onChange={(_, d) => update("skip_phase7", !d.checked)}
+                          disabled={config.skip_fabric}
+                        />
+                      </Tooltip>
+                      <div style={{ paddingLeft: 24, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS }}>
+                        <Tooltip content="Deploy claim-stream, payer KQL scoring, claim emulator, and Eventstream extension" relationship="description" positioning="after">
+                          <Checkbox
+                            label="Payer RTI scoring + claim stream"
+                            checked={!config.skip_payer_rti}
+                            onChange={(_, d) => update("skip_payer_rti", !d.checked)}
+                            disabled={config.skip_phase7}
+                          />
+                        </Tooltip>
+                        <Tooltip content="Deploy PayerOpsActivator Reflex email alerts" relationship="description" positioning="after">
+                          <Checkbox
+                            label="Payer Ops Activator"
+                            checked={!config.skip_payer_activator}
+                            onChange={(_, d) => update("skip_payer_activator", !d.checked)}
+                            disabled={config.skip_phase7 || (!config.alert_email && !config.payer_ops_email)}
+                          />
+                        </Tooltip>
+                        <Tooltip content="Deploy HealthcareOpsAgent and Payer Ops Triage" relationship="description" positioning="after">
+                          <Checkbox
+                            label="HealthcareOpsAgent + Payer Ops Triage"
+                            checked={!config.skip_ops_agent}
+                            onChange={(_, d) => update("skip_ops_agent", !d.checked)}
+                            disabled={config.skip_phase7}
+                          />
+                        </Tooltip>
+                        <Tooltip content="Deploy Healthcare Graph Agent shell and manual ontology attach instructions" relationship="description" positioning="after">
+                          <Checkbox
+                            label="Healthcare Graph Agent shell"
+                            checked={!config.skip_graph_agent}
+                            onChange={(_, d) => update("skip_graph_agent", !d.checked)}
+                            disabled={config.skip_phase7}
+                          />
+                        </Tooltip>
+                        <Field label="Payer Ops Email">
+                          <HistoryInput
+                            field="payer-ops-email"
+                            type="email"
+                            value={config.payer_ops_email}
+                            onChange={(value) => update("payer_ops_email", value)}
+                            placeholder={config.alert_email || "ops@example.com"}
+                            disabled={config.skip_phase7 || config.skip_payer_activator}
+                            suggestions={config.alert_email ? [config.alert_email] : []}
+                            suggestionsLabel="Alert email"
+                          />
+                        </Field>
+                        <Field label="Claim event rate/min">
+                          <SpinButton
+                            min={1}
+                            max={1000}
+                            value={config.claim_event_rate_per_minute}
+                            onChange={(_, d) => update("claim_event_rate_per_minute", Number(d.value ?? d.displayValue ?? 60))}
+                            disabled={config.skip_phase7 || config.skip_payer_rti}
+                          />
+                        </Field>
+                      </div>
                     </div>
                   </div>
                 </Card>
@@ -2386,7 +2628,7 @@ export function DeployWizard() {
                   ) : (
                     <Badge color="warning">{validationErrors.length} required field(s) missing</Badge>
                   )}
-                  {locationUnsupported && <Badge color="danger">Unsupported AHDS region</Badge>}
+                  {locationUnsupported && <Badge color="danger">Unsupported AHDS FHIR region</Badge>}
                   {config.patient_count > 500 && <Badge color="warning">Large patient load</Badge>}
                   {existingDeploy && !overridePriorSettings && <Badge color="informative">Existing deployment detected</Badge>}
                   {pauseAfterDeploy && <Badge color="informative">Capacity pause after deploy</Badge>}
@@ -2397,7 +2639,7 @@ export function DeployWizard() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {!config.skip_base_infra && <Text size={100}>✓ Infrastructure</Text>}
                   {!config.skip_fhir && <Text size={100}>✓ FHIR Service</Text>}
-                  {!config.skip_dicom && <Text size={100}>✓ DICOM Service</Text>}
+                  {!config.skip_dicom && <Text size={100}>✓ DICOM Loader</Text>}
                   {!config.skip_fabric && <Text size={100}>✓ Fabric RTI</Text>}
                   {!config.skip_hds_pipelines && <Text size={100}>✓ HDS Pipelines</Text>}
                   {!config.skip_data_agents && <Text size={100}>✓ Data Agents</Text>}

@@ -43,12 +43,49 @@ $FabricApiBase = "https://api.fabric.microsoft.com/v1"
 $kqlDeployed = $false
 $fhirExportDone = $false
 $dashboardDeployed = $false
+$eventstreamConfigured = $false
+$eventstreamRunning = $false
+$rtiFailures = @()
 $exportStorageAccountName = ""
 $exportContainerName = "fhir-export"
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+function Add-RtiFailure {
+    param([Parameter(Mandatory)][string]$Message)
+    if ($Message -and $script:rtiFailures -notcontains $Message) {
+        $script:rtiFailures += $Message
+    }
+}
+
+function Complete-RtiPhase {
+    param(
+        [switch]$RequireEventstream,
+        [switch]$RequireKql,
+        [switch]$RequireDashboard
+    )
+
+    if ($RequireEventstream -and -not $script:eventstreamConfigured) {
+        Add-RtiFailure "Eventstream source/destination was not configured"
+    }
+    if ($RequireKql -and -not $script:kqlDeployed) {
+        Add-RtiFailure "KQL tables/functions did not fully deploy"
+    }
+    if ($RequireDashboard -and -not $script:dashboardDeployed) {
+        Add-RtiFailure "Real-Time dashboard definition did not deploy"
+    }
+
+    if ($script:rtiFailures.Count -gt 0) {
+        Write-Host "" -ForegroundColor Red
+        Write-Host "ERROR: Masimo RTI deployment incomplete:" -ForegroundColor Red
+        foreach ($failure in $script:rtiFailures) {
+            Write-Host "  - $failure" -ForegroundColor Red
+        }
+        exit 1
+    }
+}
 
 $script:AccessTokenCache = @{}
 function Get-AccessTokenForResource {
@@ -102,7 +139,7 @@ function Invoke-FabricApi {
         [string]$Method = "GET",
         [string]$Endpoint,
         [object]$Body = $null,
-        [int]$MaxRetries = 3
+        [int]$MaxRetries = 8
     )
 
     $token = Get-FabricAccessToken
@@ -131,14 +168,16 @@ function Invoke-FabricApi {
         catch {
             $statusCode = $null
             try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+            $errorBody = ""
+            try { $errorBody = $_.ErrorDetails.Message } catch {}
 
-            if ($statusCode -eq 429 -and $attempt -lt $MaxRetries) {
-                # Rate limited - back off
-                $retryAfter = 30
-                try {
-                    $retryAfter = [int]$_.Exception.Response.Headers["Retry-After"]
-                } catch {}
-                Write-Host "  Rate limited. Waiting ${retryAfter}s... (attempt $attempt/$MaxRetries)" -ForegroundColor Yellow
+            if (($statusCode -eq 429 -or $statusCode -ge 500 -or ($statusCode -eq 403 -and $errorBody -match "RequestDeniedByInboundPolicy")) -and $attempt -lt $MaxRetries) {
+                $retryAfter = [Math]::Min(120, 10 * [Math]::Pow(2, $attempt - 1))
+                if ($statusCode -eq 429) {
+                    try { $retryAfter = [int]$_.Exception.Response.Headers["Retry-After"] } catch {}
+                }
+                $reason = if ($statusCode -eq 403) { "Fabric inbound policy denied request" } elseif ($statusCode -eq 429) { "Rate limited" } else { "Fabric transient HTTP $statusCode" }
+                Write-Host "  $reason. Waiting ${retryAfter}s before retry $($attempt + 1)/$MaxRetries..." -ForegroundColor Yellow
                 Start-Sleep -Seconds $retryAfter
                 continue
             }
@@ -266,13 +305,26 @@ if ($Phase2) {
         $wsIdentityResult = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/provisionIdentity"
         $verifiedSPId = $wsIdentityResult.servicePrincipalId
         $verifiedAppId = $wsIdentityResult.applicationId
+        if (-not $verifiedSPId) {
+            $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
+            $identity = $null
+            if ($wsDetail.workspaceIdentity) { $identity = $wsDetail.workspaceIdentity }
+            elseif ($wsDetail.identity) { $identity = $wsDetail.identity }
+            if ($identity) {
+                $verifiedSPId = $identity.servicePrincipalId
+                $verifiedAppId = $identity.applicationId
+            }
+        }
     } catch {
         # Identity already exists — get from workspace details
         try {
             $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
-            if ($wsDetail.identity) {
-                $verifiedSPId = $wsDetail.identity.servicePrincipalId
-                $verifiedAppId = $wsDetail.identity.applicationId
+            $identity = $null
+            if ($wsDetail.workspaceIdentity) { $identity = $wsDetail.workspaceIdentity }
+            elseif ($wsDetail.identity) { $identity = $wsDetail.identity }
+            if ($identity) {
+                $verifiedSPId = $identity.servicePrincipalId
+                $verifiedAppId = $identity.applicationId
             }
         } catch {}
     }
@@ -1014,6 +1066,12 @@ dependencies:
     $cmd = '.create-or-alter function with (docstring = "Clinical alerts enriched with location data from Silver Lakehouse — joins alerts with most recent Encounter location for map visualization", folder = "ClinicalAlerts") fn_AlertLocationMap(windowMinutes: int = 60) { let alerts = fn_ClinicalAlerts(windowMinutes); let patient_encounters = external_table(''SilverEncounter'') | mv-expand loc = location | extend loc_id = tostring(loc.location.id) | where isnotempty(loc_id) | summarize arg_max(todatetime(period.start), loc_id) by patient_orig_id = tostring(subject.msftSourceReference) | project patient_orig_id, location_id = loc_id; let location_info = external_table(''SilverLocation'') | where isnotempty(position) | project location_id = id, location_name = name, latitude = todouble(position.latitude), longitude = todouble(position.longitude), city = tostring(address.city), state = tostring(address.state); alerts | join kind=leftouter patient_encounters on $left.patient_id == $right.patient_orig_id | join kind=leftouter location_info on location_id | project alert_time, device_id, patient_id, patient_name, alert_tier, alert_type, spo2, pr, location_name = coalesce(location_name, "Unknown (Atlanta)"), city = coalesce(city, "Atlanta"), state = coalesce(state, "GA"), latitude = coalesce(latitude, 33.749), longitude = coalesce(longitude, -84.388), qualifying_conditions, escalated, message | order by alert_tier asc, alert_time desc }'
     if (Invoke-KustoMgmt -Command $cmd -Label "fn_AlertLocationMap" @kqlParams) { $p2Success++ } else { $p2Fail++ }
 
+    # Cache the expensive HDS/FHIR location join for dashboard refreshes. The
+    # dashboard reads this real HDS-derived snapshot so map/card/bar tiles stay
+    # responsive while locations remain semantically faithful.
+    $cmd = '.set-or-replace AlertLocationDashboard <| fn_AlertLocationMap(60)'
+    if (Invoke-KustoMgmt -Command $cmd -Label "AlertLocationDashboard snapshot" @kqlParams) { $p2Success++ } else { $p2Fail++ }
+
     # ================================================================
     # PHASE 2c: CLINICAL ALERTS MAP DASHBOARD
     # ================================================================
@@ -1038,7 +1096,7 @@ dependencies:
         Write-Host "  Creating KQL Dashboard '$mapDashboardName'..." -ForegroundColor White
         try {
             $dashResp = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/items" `
-                -Body @{ displayName = $mapDashboardName; type = "KQLDashboard" }
+                -Body @{ displayName = $mapDashboardName; type = "KQLDashboard"; description = "Location-aware clinical alert dashboard showing HDS-enriched patient/device alerts across facilities." }
             $mapDashId = $dashResp.id
             Write-Host "  ✓ Map dashboard created: $mapDashId" -ForegroundColor Green
         } catch {
@@ -1050,8 +1108,13 @@ dependencies:
     if ($mapDashId) {
         Write-Host "  Applying map dashboard definition (4 tiles)..." -ForegroundColor White
 
-        $mapDsUuid   = [guid]::NewGuid().ToString()
-        $mapPageUuid = [guid]::NewGuid().ToString()
+        # Keep the Clinical Alerts Map page ID stable. Fabric page URLs include
+        # this ID; regenerating it on every Phase 2 run breaks bookmarked/open
+        # portal URLs with "Error loading dashboard" even when updateDefinition
+        # succeeds.
+        $mapDsUuid   = "fd24750d-7a27-58a5-a74d-3eca90252091"
+        $mapPageUuid = "2dfd9f6e-7dcb-4eee-a2f4-4045a36ab0a4"
+        $alertLocationBaseKql = "AlertLocationDashboard"
 
         $mapDashDef = @{
             '$schema' = "https://dataexplorer.azure.com/static/d/schema/20/dashboard.json"
@@ -1071,26 +1134,26 @@ dependencies:
             parameters = @()
             tiles = @(
                 @{
-                    id            = [guid]::NewGuid().ToString()
+                    id            = "123b3323-56db-54a9-b53e-2fafd8a01a27"
                     title         = "Alert Locations"
-                    query         = "fn_AlertLocationMap(60) | summarize alert_count = count(), critical = countif(alert_tier == 'CRITICAL'), urgent = countif(alert_tier == 'URGENT'), warning = countif(alert_tier == 'WARNING'), patients = dcount(patient_name), devices = dcount(device_id) by location_name, latitude, longitude, city, state | extend tooltip = strcat(location_name, '\n', alert_count, ' alerts (', critical, ' critical)\n', devices, ' devices, ', patients, ' patients') | project longitude, latitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices, tooltip | render scatterchart with (kind=map, xcolumn=longitude, ycolumns=latitude, series=alert_count, title='Alert Locations Map')"
-                    layout        = @{ x = 0; y = 0; width = 16; height = 12 }
+                    query         = "$alertLocationBaseKql | summarize alert_count = count(), critical = countif(alert_tier == 'CRITICAL'), urgent = countif(alert_tier == 'URGENT'), warning = countif(alert_tier == 'WARNING'), patients = dcount(patient_name), devices = dcount(device_id) by location_name, latitude, longitude, city, state | project latitude, longitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices | order by alert_count desc"
+                    layout        = @{ x = 0; y = 0; width = 24; height = 11 }
                     pageId        = $mapPageUuid
                     visualType    = "map"
                     dataSourceId  = $mapDsUuid
                     visualOptions = @{
-                        map = @{
-                            size  = "alert_count"
-                            label = "location_name"
-                        }
+                        map__latitudeColumn = @{ type = "specified"; value = "latitude" }
+                        map__longitudeColumn = @{ type = "specified"; value = "longitude" }
+                        map__bubbleFormat = "bubble"
+                        map__minBubbleSizeColumn = @{ type = "specified"; value = "alert_count" }
                     }
                     usedParamVariables = @()
                 },
                 @{
-                    id            = [guid]::NewGuid().ToString()
+                    id            = "2275c861-de0f-5529-b235-83df54fe0f43"
                     title         = "Alerts by Hospital"
-                    query         = "fn_AlertLocationMap(60) | summarize total = count(), critical = countif(alert_tier == 'CRITICAL'), urgent = countif(alert_tier == 'URGENT'), warning = countif(alert_tier == 'WARNING') by location_name | order by total desc"
-                    layout        = @{ x = 16; y = 0; width = 8; height = 6 }
+                    query         = "$alertLocationBaseKql | summarize total = count(), critical = countif(alert_tier == 'CRITICAL'), urgent = countif(alert_tier == 'URGENT'), warning = countif(alert_tier == 'WARNING') by location_name | order by total desc"
+                    layout        = @{ x = 0; y = 11; width = 12; height = 6 }
                     pageId        = $mapPageUuid
                     visualType    = "bar"
                     dataSourceId  = $mapDsUuid
@@ -1101,10 +1164,10 @@ dependencies:
                     usedParamVariables = @()
                 },
                 @{
-                    id            = [guid]::NewGuid().ToString()
+                    id            = "ce8de71c-5c84-589c-a8e9-a0eac9333e28"
                     title         = "Total Active Alerts"
-                    query         = "fn_AlertLocationMap(60) | count"
-                    layout        = @{ x = 16; y = 6; width = 4; height = 3 }
+                    query         = "$alertLocationBaseKql | count"
+                    layout        = @{ x = 12; y = 11; width = 6; height = 3 }
                     pageId        = $mapPageUuid
                     visualType    = "card"
                     dataSourceId  = $mapDsUuid
@@ -1112,14 +1175,40 @@ dependencies:
                     usedParamVariables = @()
                 },
                 @{
-                    id            = [guid]::NewGuid().ToString()
+                    id            = "bba77793-813f-5fc1-bd7b-10feda1b490e"
                     title         = "Alert Detail"
-                    query         = "fn_AlertLocationMap(60) | project alert_time, device_id, patient_name, alert_tier, alert_type, spo2, pr, location_name, city | order by alert_tier asc, alert_time desc | take 100"
-                    layout        = @{ x = 0; y = 12; width = 24; height = 8 }
+                    query         = "$alertLocationBaseKql | project alert_time, device_id, patient_name, alert_tier, alert_type, spo2, pr, location_name, city | order by alert_tier asc, alert_time desc | take 100"
+                    layout        = @{ x = 0; y = 17; width = 24; height = 8 }
                     pageId        = $mapPageUuid
                     visualType    = "table"
                     dataSourceId  = $mapDsUuid
-                    visualOptions = @{}
+                    visualOptions = @{
+                        colorRules = @(
+                            @{
+                                id         = "11ca95ec-ac6e-5116-93d1-6c7072ee8805"
+                                column     = @{ type = "specified"; value = "alert_tier" }
+                                conditions = @( @{ operator = "=="; value = "CRITICAL" } )
+                                color      = "red"
+                                indicator  = @{ kind = "icon"; icon = "critical"; label = @{ type = "specified"; value = "Critical" } }
+                            },
+                            @{
+                                id         = "dabb2ef8-aa9a-5920-b92f-4e7c821f482b"
+                                column     = @{ type = "specified"; value = "alert_tier" }
+                                conditions = @( @{ operator = "=="; value = "URGENT" } )
+                                color      = "yellow"
+                                indicator  = @{ kind = "icon"; icon = "warning"; label = @{ type = "specified"; value = "Urgent" } }
+                            },
+                            @{
+                                id         = "b0302b0b-5f7d-52d6-b3bb-b8efae2322d3"
+                                column     = @{ type = "specified"; value = "alert_tier" }
+                                conditions = @( @{ operator = "=="; value = "WARNING" } )
+                                color      = "blue"
+                                indicator  = @{ kind = "icon"; icon = "circle"; label = @{ type = "specified"; value = "Warning" } }
+                            }
+                        )
+                        colorRulesDisabled = $false
+                        colorStyle         = "bold"
+                    }
                     usedParamVariables = @()
                 }
             )
@@ -1137,7 +1226,7 @@ dependencies:
             Write-Host "    • Total Active Alerts (card)" -ForegroundColor Gray
             Write-Host "    • Alert Detail (table with location)" -ForegroundColor Gray
             Write-Host "  Auto-refresh: 30 seconds" -ForegroundColor Cyan
-            Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$mapDashId" -ForegroundColor DarkGray
+            Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$mapDashId?page=$mapPageUuid" -ForegroundColor DarkGray
             $p2Success++
         } catch {
             Write-Host "  ⚠ Failed to apply map dashboard definition: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1175,6 +1264,11 @@ dependencies:
     Write-Host "║    fn_AlertLocationMap(60)                                    ║" -ForegroundColor Gray
     Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host ""
+
+    if ($p2Fail -gt 0) {
+        Write-Host "ERROR: Phase 2 RTI incomplete ($p2Fail failed component(s))." -ForegroundColor Red
+        exit 1
+    }
 
     exit 0
 }
@@ -1318,7 +1412,7 @@ try {
         Write-Host "  Creating workspace '$FabricWorkspaceName'..." -ForegroundColor White
         $newWs = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces" -Body @{
             displayName = $FabricWorkspaceName
-            description = "Masimo Clinical Alert System — Real-Time Intelligence workspace for medical device telemetry monitoring and clinical alerting."
+            description = "Healthcare intelligence workspace for connected clinical devices, FHIR/HDS clinical foundations, DICOM imaging cohorts, Fabric IQ ontologies, CMS quality, claims analytics, payer operations, and real-time telemetry."
         }
         $workspaceId = $newWs.id
         Write-Host "  ✓ Workspace created: $FabricWorkspaceName (ID: $workspaceId)" -ForegroundColor Green
@@ -1326,6 +1420,11 @@ try {
 
     # Ensure workspace has a Fabric capacity assigned
     $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
+    for ($capacityWait = 1; (-not $wsDetail.capacityId) -and $capacityWait -le 12; $capacityWait++) {
+        Write-Host "  Waiting for capacity assignment to become visible ($capacityWait/12)..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds 10
+        $wsDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId"
+    }
     if (-not $wsDetail.capacityId) {
         Write-Host "  Workspace has no capacity — searching for an active Fabric capacity..." -ForegroundColor Yellow
         $capacities = Invoke-FabricApi -Endpoint "/capacities"
@@ -1376,13 +1475,26 @@ try {
         }
     }
 } catch {
+    $fabricError = $_
+    $fabricErrorBody = ""
+    try { $fabricErrorBody = $fabricError.ErrorDetails.Message } catch {}
+
     Write-Host "ERROR: Failed to access Fabric API." -ForegroundColor Red
-    Write-Host "  $_" -ForegroundColor Red
+    if ($fabricErrorBody) {
+        Write-Host $fabricErrorBody -ForegroundColor Red
+    } else {
+        Write-Host "  $fabricError" -ForegroundColor Red
+    }
     Write-Host ""
     Write-Host "  Possible causes:" -ForegroundColor Yellow
-    Write-Host "    1. You don't have a paid Fabric capacity. Provision an F-SKU (F2+) at https://portal.azure.com" -ForegroundColor Yellow
-    Write-Host "    2. Your account doesn't have permission to create workspaces." -ForegroundColor Yellow
-    Write-Host "    3. The Az PowerShell token can't reach api.fabric.microsoft.com." -ForegroundColor Yellow
+    if ($fabricErrorBody -match "RequestDeniedByInboundPolicy" -or "$fabricError" -match "RequestDeniedByInboundPolicy") {
+        Write-Host "    1. Fabric inbound communication policy blocks this network. Connect from an allowed network/VPN or relax the workspace policy, then re-run." -ForegroundColor Yellow
+        Write-Host "    2. If the workspace was just assigned to capacity, wait for assignment to finish and re-run." -ForegroundColor Yellow
+    } else {
+        Write-Host "    1. You don't have a paid Fabric capacity. Provision an F-SKU (F2+) at https://portal.azure.com" -ForegroundColor Yellow
+        Write-Host "    2. Your account doesn't have permission to create workspaces." -ForegroundColor Yellow
+        Write-Host "    3. The Az PowerShell token can't reach api.fabric.microsoft.com." -ForegroundColor Yellow
+    }
     exit 1
 }
 
@@ -1431,7 +1543,7 @@ if ($eventhouse) {
     try {
         $ehResult = Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/eventhouses" -Body @{
             displayName = $eventhouseName
-            description = "Stores real-time Masimo pulse oximeter telemetry and clinical alert history."
+            description = "Eventhouse for connected-device telemetry, clinical alert history, payer RTI streams, claim events, care-gap/fraud/high-cost scoring, and cross-domain operational KQL functions."
         }
         Write-Host "  ✓ Eventhouse created: $eventhouseName" -ForegroundColor Green
     } catch {
@@ -1476,7 +1588,7 @@ if ($kqlDb) {
     try {
         $kqlDbPayload = @{
             displayName     = $kqlDbName
-            description     = "KQL database for Masimo telemetry and clinical alerts."
+            description     = "KQL database for Masimo telemetry, clinical alerts, HDS enrichment shortcuts, payer RTI claims streams, and operations scoring functions."
             creationPayload = @{
                 databaseType           = "ReadWrite"
                 parentEventhouseItemId = $eventhouseId
@@ -1529,7 +1641,7 @@ if ($eventstream) {
     try {
         Invoke-FabricApi -Method "POST" -Endpoint "/workspaces/$workspaceId/eventstreams" -Body @{
             displayName = $eventstreamName
-            description = "Ingests real-time telemetry from Masimo Radius-7 pulse oximeters via Azure Event Hub."
+            description = "Ingests Masimo Radius-7 telemetry into Fabric for device monitoring, clinical alerting, HDS-enriched analytics, and cross-domain operations."
         }
         Write-Host "  ✓ Eventstream created: $eventstreamName" -ForegroundColor Green
     } catch {
@@ -1843,17 +1955,34 @@ if (-not $ehConnStr) {
             $updateUri = "$FabricApiBase/workspaces/$workspaceId/eventstreams/$eventstreamId/updateDefinition?updateMetadata=True"
             $updateJsonBody = $updateBody | ConvertTo-Json -Depth 15
 
-            $updateResponse = Invoke-WebRequest `
-                -Method POST `
-                -Uri $updateUri `
-                -Headers $updateHeaders `
-                -Body $updateJsonBody `
-                -UseBasicParsing
+            $updateResponse = $null
+            $updateAttempt = 0
+            $updateMaxAttempts = 13
+            while (-not $updateResponse -and $updateAttempt -lt $updateMaxAttempts) {
+                $updateAttempt++
+                try {
+                    $updateResponse = Invoke-WebRequest `
+                        -Method POST `
+                        -Uri $updateUri `
+                        -Headers $updateHeaders `
+                        -Body $updateJsonBody `
+                        -UseBasicParsing
+                } catch {
+                    $attemptErr = $_.ToString()
+                    if ($attemptErr -match "ArtifactOperationConflict|previous operation is completed" -and $updateAttempt -lt $updateMaxAttempts) {
+                        Write-Host "  ⚠ Eventstream update is busy; retrying in 10s ($updateAttempt/$updateMaxAttempts)" -ForegroundColor Yellow
+                        Start-Sleep -Seconds 10
+                    } else {
+                        throw
+                    }
+                }
+            }
 
             $updateStatus = $updateResponse.StatusCode
 
             if ($updateStatus -eq 200 -or $updateStatus -eq 202) {
                 Write-Host "  ✓ Eventstream definition updated successfully!" -ForegroundColor Green
+                if ($updateStatus -eq 200) { $eventstreamConfigured = $true }
 
                 if ($updateStatus -eq 202) {
                     # Long-running operation — poll for completion
@@ -1879,9 +2008,11 @@ if (-not $ehConnStr) {
                                 $opResult = Invoke-FabricApi -Endpoint "/operations/$operationId"
                                 if ($opResult.status -eq "Succeeded") {
                                     Write-Host "  ✓ Eventstream configuration applied!" -ForegroundColor Green
+                                    $eventstreamConfigured = $true
                                     break
                                 } elseif ($opResult.status -eq "Failed") {
                                     Write-Host "  ⚠ Eventstream configuration failed: $($opResult | ConvertTo-Json -Depth 5)" -ForegroundColor Yellow
+                                    Add-RtiFailure "Eventstream definition operation failed"
                                     break
                                 }
                                 Write-Host "    Status: $($opResult.status) (${opElapsed}s)" -ForegroundColor Gray
@@ -1890,6 +2021,7 @@ if (-not $ehConnStr) {
                             }
                         }
                     }
+                    if (-not $operationId) { $eventstreamConfigured = $true }
                 }
 
                 Write-Host ""
@@ -1904,12 +2036,15 @@ if (-not $ehConnStr) {
         } catch {
             $errMsg = $_.ToString()
             $errCode = $null
-            try { $errCode = [int]$_.Exception.Response.StatusCode } catch {}
-
             if ($errCode -eq 202) {
                 Write-Host "  ✓ Eventstream definition update accepted (202 — provisioning)." -ForegroundColor Green
+                $eventstreamConfigured = $true
+            } elseif ($errMsg -match "DataSourcesValidationError|Creating.+state") {
+                Write-Host "  ⚠ Eventstream topology update is already in progress; treating configuration as pending." -ForegroundColor Yellow
+                $eventstreamConfigured = $true
             } else {
                 Write-Host "  ⚠ Failed to update Eventstream definition: $errMsg" -ForegroundColor Yellow
+                Add-RtiFailure "Eventstream definition update failed"
 
                 # Try to read the response body for more details
                 try {
@@ -1938,6 +2073,7 @@ if (-not $ehConnStr) {
         Write-Host "    3. Add Destination → Eventhouse:" -ForegroundColor Gray
         Write-Host "       • Eventhouse: $eventhouseName | Table: TelemetryRaw" -ForegroundColor Gray
         Write-Host "    4. Publish the Eventstream" -ForegroundColor Gray
+        Add-RtiFailure "Eventstream topology skipped because no Fabric cloud connection was available"
     }
 }
 
@@ -1962,21 +2098,10 @@ if ($eventstreamId) {
 
         if ($esStatus -and $esStatus -in @('Active', 'Running')) {
             Write-Host "  ✓ Eventstream is running" -ForegroundColor Green
+            $eventstreamRunning = $true
         } else {
-            Write-Host "  Starting Eventstream..." -ForegroundColor White
-            try {
-                Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/eventstreams/$eventstreamId/start"
-                Write-Host "  ✓ Eventstream start command accepted" -ForegroundColor Green
-            } catch {
-                $esErrCode = $null
-                try { $esErrCode = [int]$_.Exception.Response.StatusCode } catch {}
-                if ($esErrCode -eq 409) {
-                    Write-Host "  ✓ Eventstream already running (409)" -ForegroundColor Green
-                } else {
-                    Write-Host "  ⚠ Could not start Eventstream: $($_.Exception.Message)" -ForegroundColor Yellow
-                    Write-Host "    Start it manually in the Fabric portal." -ForegroundColor Yellow
-                }
-            }
+            Write-Host "  Eventstream activation is managed by Fabric after updateDefinition; no public REST start endpoint is available." -ForegroundColor DarkGray
+            Write-Host "  KQL ingestion is verified after schema deployment." -ForegroundColor DarkGray
         }
     } catch {
         Write-Host "  ⚠ Could not check Eventstream status: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -2211,6 +2336,7 @@ if (-not $kqlDbObj) {
         Write-Host "  ╚════════════════════════════════════════════════════╝" -ForegroundColor $(if ($kqlFail -eq 0) { "Green" } else { "Yellow" })
         if ($kqlFail -gt 0) {
             Write-Host "  ⚠ Some KQL commands failed. Retry with: .\utilities\run-kql-scripts.ps1" -ForegroundColor Yellow
+            Add-RtiFailure "KQL schema/function deployment failed ($kqlFail of $kqlTotal commands)"
         }
         # Track for final summary
         $kqlDeployed = ($kqlFail -eq 0)
@@ -2551,7 +2677,7 @@ if ($existingDash) {
     Write-Host "  Creating KQL Dashboard '$dashboardName'..." -ForegroundColor White
     try {
         $dashResp = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/items" `
-            -Body @{ displayName = $dashboardName; type = "KQLDashboard" }
+            -Body @{ displayName = $dashboardName; type = "KQLDashboard"; description = "Command center for Masimo patient monitoring: live device telemetry, clinical alerts, device detail, operations, and facility map." }
         $dashId = $dashResp.id
         Write-Host "  ✓ Dashboard created: $dashId" -ForegroundColor Green
     } catch {
@@ -2559,165 +2685,71 @@ if ($existingDash) {
         Write-Host "    Create manually: New item → Real-Time Dashboard → '$dashboardName'" -ForegroundColor Yellow
         Write-Host "    Add KQL Database '$kqlDbName' as data source" -ForegroundColor Yellow
         Write-Host "    Create tiles using queries from fabric-rti/kql/05-dashboard-queries.kql" -ForegroundColor Yellow
+        Add-RtiFailure "Masimo Patient Monitoring dashboard was not created"
         $dashId = $null
     }
 }
 
 # 7b-ii. Apply dashboard definition (tiles, data source, auto-refresh)
 if ($dashId) {
-    Write-Host "  Applying dashboard definition (7 tiles, 30s auto-refresh)..." -ForegroundColor White
+    Write-Host "  Applying enhanced dashboard definition (5 pages, clinical triage + operations)" -ForegroundColor White
 
-    # kusto-trident data source requires UUID IDs and database GUID (not name)
-    $dsUuid   = [guid]::NewGuid().ToString()
-    $pageUuid = [guid]::NewGuid().ToString()
-    $paramId  = [guid]::NewGuid().ToString()
+    # kusto-trident data source requires UUID IDs and database GUID (not name).
+    # The JSON template keeps stable page/tile IDs while this runtime data source
+    # block is injected for the target workspace/database.
+    $dsUuid = [guid]::NewGuid().ToString()
+    $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    $dashboardTemplatePath = Join-Path $scriptRoot "fabric-rti/dashboard/masimo-clinical-dashboard.json"
 
-    $dashDef = @{
-        '$schema' = "https://dataexplorer.azure.com/static/d/schema/20/dashboard.json"
-        schema_version = "20"
-        title = $dashboardName
-        autoRefresh = @{ enabled = $true; defaultInterval = "30s"; minInterval = "30s" }
-        pages = @( @{ name = "Overview"; id = $pageUuid } )
-        dataSources = @( @{
-            id         = $dsUuid
-            name       = $kqlDbName
-            scopeId    = "kusto-trident"
-            kind       = "kusto-trident"
-            clusterUri = $kustoUri
-            database   = $kqlDbId
-            workspace  = $workspaceId
-        } )
-        parameters = @(
-            @{
-                id            = $paramId
-                kind          = "string"
-                displayName   = "Device"
-                variableName  = "_selectedDevices"
-                selectionType = "single-all"
-                defaultValue  = @{ kind = "all" }
-                showOnPages   = @{ kind = "all" }
-                dataSource    = @{
-                    kind              = "query"
-                    consumedVariables = @()
-                    query             = "TelemetryRaw | distinct device_id | order by device_id asc"
-                    dataSourceId      = $dsUuid
-                    columns           = @{ value = "device_id"; label = "device_id" }
-                }
+    if (-not (Test-Path $dashboardTemplatePath)) {
+        Write-Host "  ⚠ Dashboard template not found: $dashboardTemplatePath" -ForegroundColor Yellow
+        Add-RtiFailure "Masimo Patient Monitoring dashboard template was not found"
+    } else {
+        $dashJson = Get-Content -Path $dashboardTemplatePath -Raw
+        $replacements = @{
+            "__DASHBOARD_TITLE__" = $dashboardName
+            "__DATA_SOURCE_ID__"  = $dsUuid
+            "__KQL_DB_NAME__"     = $kqlDbName
+            "__KUSTO_URI__"       = $kustoUri
+            "__KQL_DB_ID__"       = $kqlDbId
+            "__WORKSPACE_ID__"    = $workspaceId
+        }
+        foreach ($key in $replacements.Keys) {
+            $dashJson = $dashJson.Replace($key, [string]$replacements[$key])
+        }
+
+        $dashJsonValid = $true
+        $templateDash = $null
+        try {
+            $templateDash = $dashJson | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            $dashJsonValid = $false
+            Write-Host "  ⚠ Dashboard template JSON is invalid: $($_.Exception.Message)" -ForegroundColor Yellow
+            Add-RtiFailure "Masimo Patient Monitoring dashboard template JSON was invalid"
+        }
+
+        if ($dashJsonValid) {
+            $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($dashJson))
+            try {
+                $null = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/items/$dashId/updateDefinition" `
+                    -Body @{ definition = @{ parts = @( @{ path = "RealTimeDashboard.json"; payload = $b64; payloadType = "InlineBase64" } ) } }
+                Write-Host "  ✓ Dashboard definition applied ($($templateDash.pages.Count) pages, $($templateDash.tiles.Count) tiles)" -ForegroundColor Green
+                Write-Host "    • Command Center: severity KPIs, alert feed, data freshness, SpO2 thresholds" -ForegroundColor Gray
+                Write-Host "    • Clinical Alerts: triage table, explainability, noisy devices, clinical load" -ForegroundColor Gray
+                Write-Host "    • Device Detail: selected-device vitals, alerts, risk context, signal trend" -ForegroundColor Gray
+                Write-Host "    • Operations: ingestion health, connectivity, signal-quality separation" -ForegroundColor Gray
+                Write-Host "    • Facility Map: alert locations, hospital breakdown, location detail" -ForegroundColor Gray
+                Write-Host "  Device filter: single-select with 'All' option" -ForegroundColor Cyan
+                Write-Host "  Auto-refresh: 30 seconds" -ForegroundColor Cyan
+                Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$dashId" -ForegroundColor DarkGray
+                $dashboardDeployed = $true
+            } catch {
+                Write-Host "  ⚠ Failed to apply dashboard definition: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    The dashboard was created but needs manual tile configuration." -ForegroundColor Yellow
+                Write-Host "    See: fabric-rti/kql/05-dashboard-queries.kql" -ForegroundColor Yellow
+                Add-RtiFailure "Masimo Patient Monitoring dashboard definition was not applied"
             }
-        )
-        tiles = @(
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Active Devices"
-                query         = "fn_DeviceStatus() | where status == 'ONLINE' | count"
-                layout        = @{ x = 0; y = 0; width = 4; height = 4 }
-                pageId        = $pageUuid
-                visualType    = "card"
-                dataSourceId  = $dsUuid
-                visualOptions = @{}
-                usedParamVariables = @()
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Active Alerts"
-                query         = "fn_ClinicalAlerts(60) | count"
-                layout        = @{ x = 4; y = 0; width = 4; height = 4 }
-                pageId        = $pageUuid
-                visualType    = "card"
-                dataSourceId  = $dsUuid
-                visualOptions = @{}
-                usedParamVariables = @()
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Clinical Alerts"
-                query         = "fn_ClinicalAlerts(60) | project alert_time, device_id, patient_name, alert_type, alert_tier, message | order by alert_time desc | take 50"
-                layout        = @{ x = 8; y = 0; width = 16; height = 8 }
-                pageId        = $pageUuid
-                visualType    = "table"
-                dataSourceId  = $dsUuid
-                visualOptions = @{}
-                usedParamVariables = @()
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "SpO2 Trend"
-                query         = "TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1) by device_id, bin(todatetime(timestamp), 30s) | render timechart"
-                layout        = @{ x = 0; y = 4; width = 12; height = 8 }
-                pageId        = $pageUuid
-                visualType    = "line"
-                dataSourceId  = $dsUuid
-                visualOptions = @{
-                    xColumn = @{ type = "infer" }
-                    yColumns = @{ type = "infer" }
-                    yAxisMinimumValue = @{ type = "infer" }
-                    yAxisMaximumValue = @{ type = "infer" }
-                }
-                usedParamVariables = @("_selectedDevices")
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Pulse Rate Trend"
-                query         = "TelemetryRaw | where todatetime(timestamp) > ago(60m) | where device_id in (_selectedDevices) | summarize avg_pr = round(avg(todouble(telemetry.pr)), 0) by device_id, bin(todatetime(timestamp), 30s) | render timechart"
-                layout        = @{ x = 12; y = 8; width = 12; height = 8 }
-                pageId        = $pageUuid
-                visualType    = "line"
-                dataSourceId  = $dsUuid
-                visualOptions = @{
-                    xColumn = @{ type = "infer" }
-                    yColumns = @{ type = "infer" }
-                    yAxisMinimumValue = @{ type = "infer" }
-                    yAxisMaximumValue = @{ type = "infer" }
-                }
-                usedParamVariables = @("_selectedDevices")
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Device Status"
-                query         = "fn_DeviceStatus() | project device_id, status, last_seen, seconds_ago"
-                layout        = @{ x = 0; y = 12; width = 12; height = 6 }
-                pageId        = $pageUuid
-                visualType    = "table"
-                dataSourceId  = $dsUuid
-                visualOptions = @{}
-                usedParamVariables = @()
-            },
-            @{
-                id            = [guid]::NewGuid().ToString()
-                title         = "Latest Readings"
-                query         = "fn_LatestReadings() | project device_id, timestamp, spo2, pr, pi, pvi, sphb, signal_iq"
-                layout        = @{ x = 12; y = 16; width = 12; height = 6 }
-                pageId        = $pageUuid
-                visualType    = "table"
-                dataSourceId  = $dsUuid
-                visualOptions = @{}
-                usedParamVariables = @()
-            }
-        )
-    }
-
-    $dashJson = $dashDef | ConvertTo-Json -Depth 10 -Compress
-    $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($dashJson))
-
-    try {
-        $null = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/items/$dashId/updateDefinition" `
-            -Body @{ definition = @{ parts = @( @{ path = "RealTimeDashboard.json"; payload = $b64; payloadType = "InlineBase64" } ) } }
-        Write-Host "  ✓ Dashboard definition applied (7 tiles)" -ForegroundColor Green
-        Write-Host "    • Active Devices (card)" -ForegroundColor Gray
-        Write-Host "    • Active Alerts (card)" -ForegroundColor Gray
-        Write-Host "    • Clinical Alerts (table)" -ForegroundColor Gray
-        Write-Host "    • SpO2 Trend — 60 min (line chart, filterable)" -ForegroundColor Gray
-        Write-Host "    • Pulse Rate Trend — 60 min (line chart, filterable)" -ForegroundColor Gray
-        Write-Host "    • Device Status (table)" -ForegroundColor Gray
-        Write-Host "    • Latest Readings (table)" -ForegroundColor Gray
-        Write-Host "  Device filter: single-select with 'All' option" -ForegroundColor Cyan
-        Write-Host "  Auto-refresh: 30 seconds" -ForegroundColor Cyan
-        Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$dashId" -ForegroundColor DarkGray
-        $dashboardDeployed = $true
-    } catch {
-        Write-Host "  ⚠ Failed to apply dashboard definition: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "    The dashboard was created but needs manual tile configuration." -ForegroundColor Yellow
-        Write-Host "    See: fabric-rti/kql/05-dashboard-queries.kql" -ForegroundColor Yellow
+        }
     }
 }
 Write-Host ""
@@ -2792,6 +2824,8 @@ Write-Host "║   → Create Real-Time Dashboard                               �
 }
 Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
+
+Complete-RtiPhase -RequireEventstream -RequireKql -RequireDashboard
 
 # Output workspace ID for downstream use
 Write-Host "Workspace ID (for scripting): $workspaceId" -ForegroundColor DarkGray

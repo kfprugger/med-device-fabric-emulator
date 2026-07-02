@@ -128,10 +128,12 @@ Creates 6 KQL external tables via OneLake shortcuts, connecting the Eventhouse t
 
 Creates the DICOM OneLake shortcut and triggers HDS pipelines:
 1. **DICOM shortcut** — ADLS Gen2 `dicom-output` → Bronze Lakehouse `/Files/Ingest/Imaging/DICOM/DICOM-HDS/`
-2. **Clinical pipeline** (includes imaging ingestion) — flows FHIR clinical data + DICOM metadata into Silver tables
-3. **OMOP pipeline** — populates Gold OMOP CDM v5.4 tables from Silver data
+2. **Clinical pipeline** — flows FHIR clinical data into Silver tables
+3. **Imaging pipeline** — flows DICOM metadata into Silver imaging tables after clinical completes
+4. **OMOP pipeline** — populates Gold OMOP CDM v5.4 tables from Silver data
+5. **CMA pipeline** — if Care Management Analytics was included in the HDS deployment, invokes `healthcare1_msft_cma` as a non-blocking follow-up after OMOP completes
 
-> **Pipeline order matters:** Imaging (includes clinical) runs first → then OMOP (sequential, not parallel).
+> **Pipeline order matters:** Clinical → Imaging → OMOP run sequentially. Optional CMA starts only after OMOP completes and does not block the deployment result.
 
 ```powershell
 # Standalone Phase 2

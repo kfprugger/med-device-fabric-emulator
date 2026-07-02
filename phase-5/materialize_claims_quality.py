@@ -38,12 +38,35 @@ import json
 # since programmatic API triggers run in a catalogless (no default context) session.
 # ============================================================================
 
-WORKSPACE_ID = "8732edc9-7e43-4412-a311-4c30981c775f"
-SILVER_ID = "3b6f3bd7-e892-4542-8780-23e3b39c9de0"
-GOLD_ID = "763985f5-8ec1-40ac-b54c-2ad521f6f407"
+import notebookutils
+
+try:
+    WORKSPACE_ID = notebookutils.fabric.resolve_workspace_id()
+except AttributeError:
+    WORKSPACE_ID = notebookutils.runtime.context.get(
+        "currentWorkspaceId",
+        notebookutils.runtime.context.get("workspaceId"),
+    )
+
+def resolve_lakehouse_id(name):
+    token = notebookutils.credentials.getToken("https://api.fabric.microsoft.com")
+    import requests
+    resp = requests.get(
+        f"https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE_ID}/lakehouses",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp.raise_for_status()
+    for lakehouse in resp.json().get("value", []):
+        if lakehouse.get("displayName") == name:
+            return lakehouse["id"]
+    raise ValueError(f"Lakehouse '{name}' not found in workspace {WORKSPACE_ID}")
+
+SILVER_ID = resolve_lakehouse_id("healthcare1_msft_silver")
+GOLD_ID = resolve_lakehouse_id("healthcare1_reporting_gold")
 
 SILVER_BASE = f"abfss://{WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/{SILVER_ID}/Tables"
 GOLD_BASE = f"abfss://{WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/{GOLD_ID}/Tables"
+print(f"Resolved lakehouses: silver={SILVER_ID}, reporting_gold={GOLD_ID}")
 
 def patched_read_table(table_name):
     # Strip database/catalog prefixes if any
@@ -98,12 +121,40 @@ print(f"Gold:   {GOLD_LAKEHOUSE}")
 print(f"Measurement period: {MEASUREMENT_YEAR_START} to {MEASUREMENT_YEAR_END}")
 
 # ============================================================================
-# HELPER: Read Silver table
+# HELPERS: Silver table reads and FHIR reference normalization
 # ============================================================================
 
 def read_silver(table_name):
     """Read a Silver Lakehouse FHIR table."""
     return patched_read_table(f"{SILVER_LAKEHOUSE}.{table_name}")
+
+
+def fhir_reference(column_name, resource_type, path="$"):
+    """Return a typed FHIR reference from HDS Silver JSON reference columns.
+
+    HDS Silver normalizes FHIR Reference objects by clearing ``reference`` and
+    preserving the source value in ``msftSourceReference``/``idOrig``/``identifier``.
+    ``path`` supports nested references such as ``$[0].coverage``.
+    """
+    def ref_path(field_name):
+        return f"{path}.{field_name}" if path != "$" else f"$.{field_name}"
+
+    reference = F.get_json_object(F.col(column_name), ref_path("reference"))
+    source_reference = F.get_json_object(F.col(column_name), ref_path("msftSourceReference"))
+    source_id = F.get_json_object(F.col(column_name), ref_path("idOrig"))
+    identifier_value = F.get_json_object(F.col(column_name), ref_path("identifier.value"))
+    simple_reference_type = F.when(
+        F.get_json_object(F.col(column_name), ref_path("type")).rlike(r"^[A-Za-z][A-Za-z0-9]+$"),
+        F.get_json_object(F.col(column_name), ref_path("type")),
+    ).otherwise(F.lit(resource_type))
+    return F.coalesce(
+        F.when(reference.isNotNull() & (reference != ""), reference),
+        F.when(source_reference.startswith("#"), source_reference)
+         .when(source_reference.contains("/"), source_reference)
+         .when(source_reference.isNotNull() & (source_reference != ""), F.concat(simple_reference_type, F.lit("/"), source_reference)),
+        F.when(source_id.isNotNull() & (source_id != ""), F.concat(simple_reference_type, F.lit("/"), source_id)),
+        F.when(identifier_value.isNotNull() & (identifier_value != ""), F.concat(simple_reference_type, F.lit("/"), identifier_value)),
+    )
 
 
 # ============================================================================
@@ -132,7 +183,7 @@ try:
         ).otherwise("Commercial").alias("payer_type"),
         F.get_json_object(F.col("period_string"), "$.start").cast("date").alias("coverage_start"),
         F.get_json_object(F.col("period_string"), "$.end").cast("date").alias("coverage_end"),
-        F.get_json_object(F.col("beneficiary_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("beneficiary_string", "Patient").alias("patient_ref"),
         F.lit(1).alias("is_active"),
         F.current_timestamp().alias("load_timestamp")
     ).dropDuplicates(["payer_id"])
@@ -248,13 +299,13 @@ try:
         F.monotonically_increasing_id().alias("claim_key"),
         F.col("idOrig").alias("claim_id"),
         # Patient reference
-        F.get_json_object(F.col("patient_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("patient_string", "Patient").alias("patient_ref"),
         # Provider reference
-        F.get_json_object(F.col("provider_string"), "$.reference").alias("provider_ref"),
+        fhir_reference("provider_string", "Practitioner").alias("provider_ref"),
         # Facility reference
-        F.get_json_object(F.col("facility_string"), "$.reference").alias("facility_ref"),
+        fhir_reference("facility_string", "Location").alias("facility_ref"),
         # Insurance/payer reference
-        F.get_json_object(F.col("insurance_string"), "$[0].coverage.reference").alias("coverage_ref"),
+        fhir_reference("insurance_string", "Coverage", "$[0].coverage").alias("coverage_ref"),
         # Claim type
         F.coalesce(
             F.get_json_object(F.col("type_string"), "$.coding[0].display"),
@@ -341,9 +392,9 @@ try:
         F.monotonically_increasing_id().alias("fact_diagnosis_key"),
         F.col("idOrig").alias("diagnosis_id"),
         # Patient
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         # Encounter
-        F.get_json_object(F.col("encounter_string"), "$.reference").alias("encounter_ref"),
+        fhir_reference("encounter_string", "Encounter").alias("encounter_ref"),
         # Diagnosis code
         F.coalesce(
             F.get_json_object(F.col("code_string"), "$.coding[0].code"),
@@ -393,7 +444,7 @@ try:
     
     # Parse conditions per patient (SNOMED codes)
     patient_conditions = condition_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("condition_code"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("condition_display"),
         F.get_json_object(F.col("clinicalStatus_string"), "$.coding[0].code").alias("clinical_status")
@@ -401,7 +452,7 @@ try:
     
     # Parse observations (LOINC codes for labs/vitals)
     patient_obs = observation_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("loinc_code"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("obs_name"),
         F.get_json_object(F.col("valueQuantity_string"), "$.value").cast("double").alias("value"),
@@ -411,7 +462,7 @@ try:
     
     # Parse immunizations
     patient_imm = immunization_df.select(
-        F.get_json_object(F.col("patient_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("patient_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("vaccineCode_string"), "$.coding[0].code").alias("vaccine_code"),
         F.get_json_object(F.col("vaccineCode_string"), "$.coding[0].display").alias("vaccine_name"),
         F.col("occurrenceDateTime").cast("date").alias("imm_date")
@@ -578,7 +629,7 @@ try:
     
     # ACE/ARB medications (check for common drug names in medication text)
     acei_arb_patients = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name")
     ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)).filter(
         F.lower(F.col("med_name")).rlike("lisinopril|enalapril|ramipril|losartan|valsartan|irbesartan|olmesartan|candesartan|benazepril|captopril|fosinopril|quinapril|trandolapril|perindopril|eprosartan|telmisartan|azilsartan")
@@ -612,7 +663,7 @@ try:
     ).select("patient_id")
     
     bb_patients = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name")
     ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)).filter(
         F.lower(F.col("med_name")).rlike("metoprolol|carvedilol|bisoprolol|atenolol|propranolol|nebivolol|nadolol|labetalol")
@@ -697,7 +748,7 @@ try:
     
     # Parse medications with dates
     med_parsed = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].display").alias("med_name"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].code").alias("med_code"),
         F.col("authoredOn").cast("date").alias("authored_date"),
@@ -1016,7 +1067,7 @@ try:
     mapping_df = spark.createDataFrame(mapping_data, mapping_schema)
 
     patient_conds = condition_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("condition_code"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("condition_display"),
         F.get_json_object(F.col("clinicalStatus_string"), "$.coding[0].code").alias("clinical_status")
@@ -1158,7 +1209,7 @@ try:
     # Parse encounters
     encounters = encounter_df.select(
         F.col("idOrig").alias("encounter_id"),
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("type_string"), "$.coding[0].display").alias("encounter_type_display"),
         F.get_json_object(F.col("class_string"), "$.code").alias("encounter_class"),
         F.get_json_object(F.col("period_string"), "$.start").cast("timestamp").alias("admit_date"),
@@ -1198,14 +1249,14 @@ try:
 
     # Features: comorbidity count
     comorbidity = condition_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("code")
     ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
     ).groupBy("patient_id").agg(F.countDistinct("code").alias("comorbidity_count"))
 
     # Features: medication count
     med_count = medication_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("medicationCodeableConcept_string"), "$.coding[0].code").alias("med_code")
     ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
     ).groupBy("patient_id").agg(F.countDistinct("med_code").alias("medication_count"))
@@ -1222,7 +1273,7 @@ try:
     # Features: chronic disease flags
     def _disease_flag(codes, col_name):
         return condition_df.select(
-            F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+            fhir_reference("subject_string", "Patient").alias("patient_ref"),
             F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("code")
         ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
         ).filter(F.col("code").isin(codes)).select("patient_id").distinct().withColumn(col_name, F.lit(1))
@@ -1276,21 +1327,8 @@ try:
         *feature_cols, "readmitted_30d"
     ).toPandas()
 
-    # Handle empty encounters dataframe gracefully by injecting a schema-conforming mock row
     if len(pdf) == 0:
-        print("  ⚠ No encounters available. Generating schema-conforming mock data.")
-        import pandas as pd
-        pdf = pd.DataFrame([{
-            "encounter_id": "mock_enc",
-            "patient_id": "mock_pat",
-            "admit_date": pd.Timestamp.now(),
-            "discharge_date": pd.Timestamp.now(),
-            "readmitted_30d": 0,
-            "age": 65, "sex_male": 0, "los_days": 1, "comorbidity_count": 0,
-            "medication_count": 0, "prior_admits_12mo": 0, "prior_ed_visits_6mo": 0,
-            "has_diabetes": 0, "has_chf": 0, "has_copd": 0,
-            "payer_is_medicare": 0, "payer_is_medicaid": 0
-        }])
+        raise RuntimeError("No encounters available for readmission risk model; refusing to generate mock risk rows")
 
     X = pdf[feature_cols].values
     y = pdf["readmitted_30d"].values
@@ -1433,7 +1471,7 @@ try:
 
     # Member months from Coverage periods
     member_months_df = coverage_df.select(
-        F.get_json_object(F.col("beneficiary_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("beneficiary_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("period_string"), "$.start").cast("date").alias("cov_start"),
         F.coalesce(F.get_json_object(F.col("period_string"), "$.end").cast("date"), F.current_date()).alias("cov_end")
     ).withColumn(
@@ -1450,7 +1488,7 @@ try:
     # Classify encounters
     enc_classified = encounter_df.select(
         F.col("idOrig").alias("encounter_id"),
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("class_string"), "$.code").alias("encounter_class"),
         F.get_json_object(F.col("period_string"), "$.start").cast("date").alias("admit_date"),
         F.get_json_object(F.col("period_string"), "$.end").cast("date").alias("discharge_date")
@@ -1561,7 +1599,7 @@ try:
     ).withColumn("is_stop_loss", F.when(F.col("total_paid") >= threshold * 2, True).otherwise(False))
 
     patient_top_cond = condition_df.select(
-        F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+        fhir_reference("subject_string", "Patient").alias("patient_ref"),
         F.get_json_object(F.col("code_string"), "$.coding[0].display").alias("condition")
     ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
     ).groupBy("patient_id").agg(F.concat_ws(", ", F.collect_set("condition")).alias("conditions_list"))
@@ -1582,7 +1620,7 @@ try:
     cond_pmpm_rows = []
     for cond_name, codes in chronic_conditions.items():
         cond_patients = condition_df.select(
-            F.get_json_object(F.col("subject_string"), "$.reference").alias("patient_ref"),
+            fhir_reference("subject_string", "Patient").alias("patient_ref"),
             F.get_json_object(F.col("code_string"), "$.coding[0].code").alias("code")
         ).withColumn("patient_id", F.regexp_extract(F.col("patient_ref"), r"Patient/(.*)", 1)
         ).filter(F.col("code").isin(codes)).select("patient_id").distinct()
@@ -1614,7 +1652,7 @@ except Exception as e:
 # ============================================================================
 
 print("\n" + "=" * 60)
-print("=== Population Health & Quality Materialization Complete ===")
+print("=== Population Health & Quality Materialization Validation ===")
 print("=" * 60)
 
 tables = [
@@ -1628,12 +1666,95 @@ tables = [
     "agg_high_cost_claimants", "agg_condition_pmpm"
 ]
 
+# These tables must exist, but can legitimately be empty for small/sparse demo cohorts
+# when the source data has no payer coverage, medication fills, HCC-mapped diagnoses,
+# coding gaps, or chronic condition cost cohorts.
+allow_empty_tables = {
+    "dim_payer",
+    "agg_medication_adherence",
+    "fact_patient_hcc",
+    "revenue_opportunity",
+    "agg_condition_pmpm",
+}
+
+# Direct Lake semantic models require the backing Delta tables to exist even when
+# a demo cohort lacks optional FHIR/claims sources. Create empty placeholders with
+# the semantic-model schema so deployment succeeds and visuals show blanks instead
+# of failing the whole Masimo/RTI deployment.
+EXPECTED_TABLE_SCHEMAS = {
+    "agg_condition_pmpm": [("condition_name", "string"), ("patient_count", "int64"), ("total_cost", "double"), ("condition_pmpm", "double"), ("overall_pmpm", "double"), ("load_timestamp", "dateTime")],
+    "agg_cost_by_category": [("service_category", "string"), ("payer_category", "string"), ("claim_count", "int64"), ("total_billed", "double"), ("total_paid", "double"), ("avg_claim_amount", "double"), ("denied_claims", "int64"), ("load_timestamp", "dateTime")],
+    "agg_high_cost_claimants": [("patient_id", "string"), ("payer_category", "string"), ("total_paid", "double"), ("total_billed", "double"), ("claim_count", "int64"), ("denied_claims", "int64"), ("percentile_rank", "double"), ("is_stop_loss", "boolean"), ("conditions_list", "string"), ("load_timestamp", "dateTime")],
+    "agg_medication_adherence": [("patient_id", "string"), ("medication_class", "string"), ("pdc_score", "double"), ("adherence_category", "string"), ("gap_days", "int64"), ("total_fills", "int64")],
+    "agg_quality_measures": [("patient_id", "string"), ("measure_id", "string"), ("measure_name", "string"), ("in_initial_population", "boolean"), ("in_denominator", "boolean"), ("in_numerator", "boolean"), ("in_exclusion", "boolean"), ("quality_met", "boolean"), ("measurement_year", "int64"), ("payer_category", "string")],
+    "agg_quality_summary": [("measure_id", "string"), ("measure_name", "string"), ("measurement_year", "int64"), ("payer_category", "string"), ("denominator_count", "int64"), ("numerator_count", "int64"), ("exclusion_count", "int64"), ("quality_met_count", "int64"), ("quality_rate", "double"), ("benchmark_rate", "double")],
+    "agg_risk_scores": [("patient_id", "string"), ("gender", "string"), ("age", "int64"), ("demographic_score", "double"), ("hcc_score", "double"), ("hcc_count", "int64"), ("hcc_list", "string"), ("raf_score", "double"), ("risk_tier", "string"), ("annual_revenue", "double"), ("payer_category", "string"), ("load_timestamp", "dateTime")],
+    "agg_risk_summary": [("payer_category", "string"), ("risk_tier", "string"), ("member_count", "int64"), ("avg_raf", "double"), ("avg_hcc_count", "double"), ("total_annual_revenue", "double"), ("load_timestamp", "dateTime")],
+    "agg_utilization_by_payer": [("payer_category", "string"), ("member_count", "int64"), ("inpatient_admits", "int64"), ("ed_visits", "int64"), ("outpatient_visits", "int64"), ("total_bed_days", "int64"), ("avg_los", "double"), ("load_timestamp", "dateTime")],
+    "agg_utilization_summary": [("service_month", "string"), ("unique_members", "int64"), ("inpatient_admits", "int64"), ("ed_visits", "int64"), ("outpatient_visits", "int64"), ("bed_days", "int64"), ("avg_los", "double"), ("pmpm", "double"), ("ip_per_1k", "double"), ("ed_per_1k", "double"), ("bed_days_per_1k", "double"), ("benchmark_pmpm", "double"), ("benchmark_ip_per_1k", "double"), ("benchmark_ed_per_1k", "double"), ("benchmark_alos", "double"), ("load_timestamp", "dateTime")],
+    "care_gaps": [("patient_id", "string"), ("measure_id", "string"), ("gap_type", "string"), ("gap_status", "string"), ("days_overdue", "int64"), ("recommended_action", "string")],
+    "dim_diagnosis": [("diagnosis_key", "int64"), ("icd_code", "string"), ("icd_description", "string"), ("code_system", "string"), ("is_chronic", "int64")],
+    "dim_hcc": [("hcc_code", "string"), ("hcc_name", "string"), ("coefficient", "double"), ("hierarchy_group", "string"), ("load_timestamp", "dateTime")],
+    "dim_payer": [("payer_key", "int64"), ("payer_id", "string"), ("payer_name", "string"), ("payer_type", "string"), ("payer_category", "string")],
+    "fact_claim": [("claim_key", "int64"), ("claim_id", "string"), ("patient_ref", "string"), ("provider_ref", "string"), ("coverage_ref", "string"), ("claim_type", "string"), ("claim_status", "string"), ("service_date", "dateTime"), ("billed_amount", "double"), ("paid_amount", "double"), ("allowed_amount", "double"), ("patient_responsibility", "double"), ("denial_flag", "int64"), ("payer_category", "string")],
+    "fact_diagnosis": [("fact_diagnosis_key", "int64"), ("diagnosis_id", "string"), ("patient_ref", "string"), ("encounter_ref", "string"), ("icd_code", "string"), ("diagnosis_description", "string"), ("diagnosis_type", "string"), ("diagnosis_date", "dateTime")],
+    "fact_patient_hcc": [("patient_id", "string"), ("condition_code", "string"), ("condition_display", "string"), ("hcc_code", "string"), ("hcc_name", "string"), ("coefficient", "double"), ("hierarchy_group", "string"), ("hierarchy_rank", "int64"), ("hierarchy_applied", "boolean"), ("load_timestamp", "dateTime")],
+    "readmission_model_performance": [("name", "string"), ("type", "string"), ("value", "double"), ("load_timestamp", "dateTime")],
+    "readmission_risk_scores": [("encounter_id", "string"), ("patient_id", "string"), ("admit_date", "dateTime"), ("discharge_date", "dateTime"), ("risk_probability", "double"), ("risk_tier", "string"), ("readmitted_30d", "int64"), ("age", "int64"), ("sex_male", "int64"), ("los_days", "int64"), ("comorbidity_count", "int64"), ("medication_count", "int64"), ("prior_admits_12mo", "int64"), ("prior_ed_visits_6mo", "int64"), ("has_diabetes", "int64"), ("has_chf", "int64"), ("has_copd", "int64"), ("payer_is_medicare", "int64"), ("payer_is_medicaid", "int64"), ("payer_category", "string"), ("load_timestamp", "dateTime")],
+    "readmission_risk_summary": [("risk_tier", "string"), ("payer_category", "string"), ("encounter_count", "int64"), ("avg_risk_probability", "double"), ("actual_readmissions", "int64"), ("actual_readmission_rate", "double"), ("load_timestamp", "dateTime")],
+    "revenue_opportunity": [("patient_id", "string"), ("raf_score", "double"), ("hcc_count", "int64"), ("hcc_list", "string"), ("risk_tier", "string"), ("potential_additional_raf", "double"), ("potential_revenue_uplift", "double"), ("payer_category", "string"), ("load_timestamp", "dateTime")],
+    "star_rating_detail": [("measure_id", "string"), ("measure_name", "string"), ("total_met", "int64"), ("total_denom", "int64"), ("quality_rate", "double"), ("benchmark_rate", "double"), ("star_rating", "int64"), ("measure_weight", "int64"), ("weighted_score", "int64"), ("rate_to_next_star", "double"), ("overall_weighted_star", "double"), ("load_timestamp", "dateTime")],
+    "star_rating_simulation": [("measure_id", "string"), ("measure_name", "string"), ("gaps_to_close", "int64"), ("closeable_gaps", "int64"), ("current_rate", "double"), ("simulated_rate", "double"), ("current_star", "int64"), ("simulated_star", "int64"), ("measure_weight", "int64"), ("total_open_gaps", "int64"), ("load_timestamp", "dateTime")],
+}
+
+SPARK_TYPE_BY_MODEL_TYPE = {
+    "string": StringType(),
+    "double": DoubleType(),
+    "int64": LongType(),
+    "boolean": BooleanType(),
+    "dateTime": TimestampType(),
+}
+
+def create_empty_gold_table(table_name):
+    columns = EXPECTED_TABLE_SCHEMAS.get(table_name)
+    if not columns:
+        raise ValueError(f"No placeholder schema registered for {table_name}")
+    schema = StructType([
+        StructField(column_name, SPARK_TYPE_BY_MODEL_TYPE[column_type], True)
+        for column_name, column_type in columns
+    ])
+    spark.createDataFrame([], schema).write.format("delta").mode("overwrite").option("overwriteSchema", "true") \
+        .saveAsTable(f"{GOLD_LAKEHOUSE}.{table_name}")
+    return 0
+
+def count_or_create_gold_table(table_name):
+    try:
+        return spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.{table_name}").count(), False
+    except Exception as read_error:
+        print(f"  {table_name}: not created ({read_error})")
+        print(f"  {table_name}: creating empty Direct Lake placeholder")
+        return create_empty_gold_table(table_name), True
+
+
+validation_failures = []
 for t in tables:
     try:
-        count = spark.read.format("delta").table(f"{GOLD_LAKEHOUSE}.{t}").count()
-        print(f"  {t}: {count:,} rows")
-    except:
-        print(f"  {t}: not yet created (needs Synthea re-run with claims)")
+        count, created_placeholder = count_or_create_gold_table(t)
+        if created_placeholder:
+            print(f"  {t}: 0 rows (empty placeholder created)")
+        else:
+            print(f"  {t}: {count:,} rows")
+        if count <= 0:
+            print(f"    ⚠ Empty; dashboard visuals for this table will stay blank until source data is available")
+    except Exception as e:
+        validation_failures.append(f"{t} not created: {e}")
+        print(f"  {t}: placeholder creation failed ({e})")
+
+if validation_failures:
+    print("\nMaterialization failed validation:")
+    for failure in validation_failures:
+        print(f"  - {failure}")
+    raise RuntimeError("Population Health & Quality materialization incomplete")
 
 print("\nDone.")
 

@@ -42,7 +42,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     if config.get("skip_quality_measures"):
         logger.info("Phase 5 skipped (skip_quality_measures=True)")
         return {
-            "phase": "Phase 5: CMS Quality & Performance",
+            "phase": "Phase 6: CMS Quality & Claims",
             "duration_seconds": time.time() - start,
             "status": "skipped",
             "resources": {},
@@ -71,7 +71,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     logger.info("Phase 5: CMS Quality & Performance — complete")
 
     return {
-        "phase": "Phase 5: CMS Quality & Performance",
+        "phase": "Phase 6: CMS Quality & Claims",
         "duration_seconds": time.time() - start,
         "resources": {
             "quality_measures": "CMS122,CMS165,CMS69,CMS127,CMS147,CMS134,CMS144",

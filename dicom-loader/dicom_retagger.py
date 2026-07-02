@@ -22,7 +22,7 @@ def retag_dicom_file(
     output_path: str,
     study_uid: str | None = None,
     series_uid: str | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """
     Re-tag a single DICOM file with Synthea patient identifiers.
 
@@ -35,8 +35,7 @@ def retag_dicom_file(
         study_uid: Shared across all files in same study (generate once per patient).
         series_uid: Shared across all files in same series (generate once per series).
 
-    Returns:
-        (study_uid, series_uid) — the UIDs used (generated if not provided).
+        (study_uid, series_uid, metadata) — the UIDs used and selected DICOM tags after re-tagging.
     """
     ds = pydicom.dcmread(dcm_path)
 
@@ -63,10 +62,23 @@ def retag_dicom_file(
     # DO NOT modify: Modality, SOPClassUID, TransferSyntaxUID, PixelData,
     # Rows, Columns, BitsAllocated, WindowCenter, WindowWidth, etc.
 
+    metadata = {
+        "studyInstanceUid": str(ds.StudyInstanceUID),
+        "seriesInstanceUid": str(ds.SeriesInstanceUID),
+        "sopInstanceUid": str(ds.SOPInstanceUID),
+        "modality": str(getattr(ds, "Modality", "") or ""),
+        "bodyPartExamined": str(getattr(ds, "BodyPartExamined", "") or ""),
+        "studyDate": str(getattr(ds, "StudyDate", "") or ""),
+        "patientId": str(getattr(ds, "PatientID", "") or ""),
+        "patientName": str(getattr(ds, "PatientName", "") or ""),
+        "patientBirthDate": str(getattr(ds, "PatientBirthDate", "") or ""),
+        "patientSex": str(getattr(ds, "PatientSex", "") or ""),
+    }
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     ds.save_as(output_path)
 
-    return ds.StudyInstanceUID, ds.SeriesInstanceUID
+    return ds.StudyInstanceUID, ds.SeriesInstanceUID, metadata
 
 
 def retag_series(
@@ -76,20 +88,20 @@ def retag_series(
     hospital_name: str,
     body_part_examined: str,
     output_dir: str,
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, str, list[str], dict]:
     """
     Re-tag all DICOM files in a series for one patient.
 
-    Returns:
-        (study_uid, series_uid, list of output file paths)
+        (study_uid, series_uid, list of output file paths, metadata)
     """
     study_uid = generate_uid()
     series_uid = generate_uid()
     output_files = []
-
+    sop_instance_uids = []
+    series_metadata = {}
     for i, src in enumerate(dcm_files):
         dst = os.path.join(output_dir, f"instance_{i:04d}.dcm")
-        retag_dicom_file(
+        _, _, instance_metadata = retag_dicom_file(
             dcm_path=src,
             patient_info=patient_info,
             device_id=device_id,
@@ -99,8 +111,12 @@ def retag_series(
             study_uid=study_uid,
             series_uid=series_uid,
         )
+        if not series_metadata:
+            series_metadata = {k: v for k, v in instance_metadata.items() if k != "sopInstanceUid"}
+        sop_instance_uids.append(instance_metadata["sopInstanceUid"])
         output_files.append(dst)
 
+    series_metadata["sopInstanceUids"] = sop_instance_uids
     logger.info("Re-tagged %d instances for patient %s (study %s)",
                 len(output_files), patient_info["idOrig"], study_uid)
-    return study_uid, series_uid, output_files
+    return study_uid, series_uid, output_files, series_metadata

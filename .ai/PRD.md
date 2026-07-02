@@ -31,7 +31,7 @@ A fully deployable reference architecture that:
 9. **Generates** claims data (ExplanationOfBenefit, Coverage) and computes 7 CMS eCQM quality measures, 3 HEDIS PDC medication adherence scores, and care gap identification
 10. **Publishes** a CMS Quality Scorecard Power BI report (6 pages, Direct Lake) over Gold Lakehouse star schema
 
-The entire solution deploys with a single command (`Deploy-All.ps1`) and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
+The entire solution deploys with a single command (`Deploy-All.ps1`), automatically bootstraps the companion FabricDicomCohortingToolkit repo when imaging paths execute the Phase 3 toolkit block, and touches six Fabric workloads: Real-Time Intelligence, Data Engineering, Data Warehouse, Data Science, Data Agents, and Power BI.
 
 ---
 
@@ -203,7 +203,6 @@ The deployment is orchestrated by `Deploy-All.ps1` and follows this sequence:
 | `bicep/fhir-infra.bicep` | 204 | HDS workspace, FHIR service, storage, managed identity, RBAC |
 | `bicep/fhir-loader-job.bicep` | 75 | FHIR loader ACI job |
 | `bicep/synthea-job.bicep` | 71 | Synthea generator ACI job |
-| `bicep/dicom-infra.bicep` | 49 | DICOM service (unused — replaced by ADLS approach) |
 | `bicep/dicom-loader-job.bicep` | 90 | DICOM loader ACI job |
 
 ### 6.5 Configuration & Data

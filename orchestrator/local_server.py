@@ -10,12 +10,19 @@ Usage:
     python local_server.py
 """
 
+import atexit
+import faulthandler
+import os
+import signal
+import traceback
 import asyncio
 import json
 import logging
 import subprocess
 import sys
+import re
 import time
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +34,8 @@ import uvicorn
 
 # Add orchestrator to path so activity imports work
 sys.path.insert(0, str(Path(__file__).parent))
+from shared.policy_tags import normalize_policy_tags
+from shared.teardown_scan import live_fabric_workspaces_for_teardown
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +50,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger("local_server")
 
-# ── Global crash handler — log unhandled exceptions before process dies ──
+# ── Crash diagnostics — preserve evidence before process exit ──────────
+CRASH_DUMP_FILE = Path(__file__).parent / "backend-crash-dump.log"
+_CRASH_DUMP_HANDLE = None
+_PREVIOUS_SIGNAL_HANDLERS: dict[int, object] = {}
+
+
+def _log_thread_stacks(reason: str) -> None:
+    frames = sys._current_frames()
+    for thread in threading.enumerate():
+        frame = frames.get(thread.ident)
+        if frame is None:
+            logger.critical(
+                "STACK SNAPSHOT [%s] thread=%s ident=%s unavailable",
+                reason,
+                thread.name,
+                thread.ident,
+            )
+            continue
+        logger.critical(
+            "STACK SNAPSHOT [%s] thread=%s ident=%s\n%s",
+            reason,
+            thread.name,
+            thread.ident,
+            "".join(traceback.format_stack(frame)),
+        )
+
+
 def _unhandled_exception(exc_type, exc_value, exc_tb):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
@@ -50,8 +85,105 @@ def _unhandled_exception(exc_type, exc_value, exc_tb):
         "UNHANDLED EXCEPTION — server crashing",
         exc_info=(exc_type, exc_value, exc_tb),
     )
+    _log_thread_stacks("unhandled exception")
 
-sys.excepthook = _unhandled_exception
+
+def _unhandled_thread_exception(args: threading.ExceptHookArgs) -> None:
+    logger.critical(
+        "UNHANDLED THREAD EXCEPTION — thread=%s",
+        args.thread.name if args.thread else "unknown",
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+    _log_thread_stacks("unhandled thread exception")
+
+
+def _handle_process_signal(signum, frame):
+    try:
+        signal_name = signal.Signals(signum).name
+    except ValueError:
+        signal_name = f"signal {signum}"
+    logger.critical("BACKEND RECEIVED %s (%s); dumping stacks before exit", signal_name, signum)
+    _log_thread_stacks(signal_name)
+    logging.shutdown()
+
+    previous = _PREVIOUS_SIGNAL_HANDLERS.get(signum, signal.SIG_DFL)
+    if previous == signal.SIG_IGN:
+        return
+    if callable(previous):
+        previous(signum, frame)
+        return
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def _install_process_crash_diagnostics() -> None:
+    global _CRASH_DUMP_HANDLE
+    sys.excepthook = _unhandled_exception
+    threading.excepthook = _unhandled_thread_exception
+
+    if _CRASH_DUMP_HANDLE is None:
+        _CRASH_DUMP_HANDLE = CRASH_DUMP_FILE.open("a", encoding="utf-8", buffering=1)
+        _CRASH_DUMP_HANDLE.write(f"\n--- backend crash diagnostics armed pid={os.getpid()} ---\n")
+        faulthandler.enable(file=_CRASH_DUMP_HANDLE, all_threads=True)
+        sigusr1 = getattr(signal, "SIGUSR1", None)
+        if sigusr1 is not None:
+            faulthandler.register(sigusr1, file=_CRASH_DUMP_HANDLE, all_threads=True, chain=False)
+        atexit.register(_CRASH_DUMP_HANDLE.close)
+
+    handled_signals = tuple(
+        sig for sig in (
+            getattr(signal, "SIGTERM", None),
+            getattr(signal, "SIGINT", None),
+            getattr(signal, "SIGHUP", None),
+            getattr(signal, "SIGQUIT", None),
+        )
+        if sig is not None
+    )
+    for sig in handled_signals:
+        if sig not in _PREVIOUS_SIGNAL_HANDLERS:
+            _PREVIOUS_SIGNAL_HANDLERS[sig] = signal.getsignal(sig)
+            signal.signal(sig, _handle_process_signal)
+
+
+def _install_asyncio_crash_diagnostics() -> None:
+    loop = asyncio.get_running_loop()
+
+    def handle_asyncio_exception(active_loop, context):
+        message = context.get("message", "Unhandled asyncio exception")
+        exception = context.get("exception")
+        if exception is not None:
+            logger.critical(
+                "UNHANDLED ASYNCIO EXCEPTION — %s",
+                message,
+                exc_info=(type(exception), exception, exception.__traceback__),
+            )
+        else:
+            logger.critical("UNHANDLED ASYNCIO ERROR — %s; context=%r", message, context)
+        _log_thread_stacks("unhandled asyncio exception")
+
+    loop.set_exception_handler(handle_asyncio_exception)
+    logger.info("Crash diagnostics armed: faulthandler=%s asyncio_loop=%s", CRASH_DUMP_FILE, id(loop))
+
+
+
+def _create_logged_task(coro, *, name: str) -> asyncio.Task:
+    """Create a background task that logs exceptions immediately with stack context."""
+    task = asyncio.create_task(coro, name=name)
+
+    def log_task_result(completed: asyncio.Task) -> None:
+        if completed.cancelled():
+            logger.warning("BACKGROUND TASK CANCELLED — %s", completed.get_name())
+            return
+        try:
+            completed.result()
+        except BaseException:
+            logger.critical("BACKGROUND TASK FAILED — %s", completed.get_name(), exc_info=True)
+            _log_thread_stacks(f"background task failed: {completed.get_name()}")
+
+    task.add_done_callback(log_task_result)
+    return task
+
+_install_process_crash_diagnostics()
 
 STATE_FILE = Path(__file__).parent / ".orchestrator-state.json"
 
@@ -87,11 +219,13 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(Exception)
 async def _global_exception_handler(request: Request, exc: Exception):
-    logger.error(
-        "Unhandled exception on %s %s: %s",
-        request.method, request.url.path, exc,
-        exc_info=True,
+    logger.critical(
+        "UNHANDLED ROUTE EXCEPTION — %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
     )
+    _log_thread_stacks(f"route exception: {request.method} {request.url.path}")
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error. Check backend logs for details."},
@@ -122,6 +256,7 @@ _SCAN_CACHE_TTL = 120  # seconds
 
 # General short-lived backend cache for expensive CLI/tooling reads.
 _timed_cache: dict[str, dict] = {}  # key → {result, timestamp}
+_CACHE_LOCK = threading.RLock()
 
 
 def _load_persistent_cache():
@@ -141,13 +276,15 @@ def _load_persistent_cache():
 
 def _save_persistent_cache():
     try:
-        temp_file = CACHE_FILE.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump({
-                "scan_cache": _scan_cache,
-                "timed_cache": _timed_cache
-            }, f, indent=2)
-        temp_file.replace(CACHE_FILE)
+        with _CACHE_LOCK:
+            temp_file = CACHE_FILE.with_suffix(".tmp")
+            payload = {
+                "scan_cache": dict(_scan_cache),
+                "timed_cache": dict(_timed_cache),
+            }
+            with open(temp_file, "w") as f:
+                json.dump(payload, f, indent=2)
+            temp_file.replace(CACHE_FILE)
     except Exception as e:
         logger.warning("Failed to save persistent cache: %s", e)
 
@@ -159,6 +296,92 @@ deployments: dict[str, dict] = {}
 for dep in db_list_deployments():
     deployments[dep["instanceId"]] = dep
 logger.info("Loaded %d deployments from database", len(deployments))
+
+def _mark_teardown_phase(phases: list[dict], phase_name: str, status: str) -> None:
+    for phase in phases:
+        if phase.get("phase") == phase_name:
+            phase["status"] = status
+            return
+    phases.append({"phase": phase_name, "status": status})
+
+
+def _reconcile_teardown(dep: dict) -> bool:
+    """Refresh interrupted teardown state from live Azure/Fabric resources."""
+    cs = dep.get("customStatus") or {}
+    if cs.get("runType") != "teardown":
+        return False
+    if dep.get("runtimeStatus") not in {"Running", "Failed", "Terminated"}:
+        return False
+
+    rg_name = cs.get("resourceGroupName") or ""
+    ws_name = cs.get("workspaceName") or ""
+    output = dep.get("output") or {"status": "running", "phases": [], "resources": {}}
+    phases = output.setdefault("phases", [])
+    logs = cs.setdefault("logs", [])
+    changed = False
+
+    def add_log(level: str, message: str) -> None:
+        logs.append({"timestamp": datetime.now(timezone.utc).isoformat(), "level": level, "message": message})
+        cs["logs"] = logs[-200:]
+
+    if ws_name:
+        try:
+            from shared.fabric_client import FabricClient
+            fabric = FabricClient()
+            ws_exists = fabric.find_workspace(ws_name) is not None
+            if not ws_exists:
+                _mark_teardown_phase(phases, "Workspace Identity", "succeeded")
+                _mark_teardown_phase(phases, "Delete Workspace", "succeeded")
+                changed = True
+        except Exception as ex:
+            add_log("warn", f"Workspace reconciliation skipped: {ex}")
+            changed = True
+
+    if rg_name:
+        exists = _az_run(["az", "group", "exists", "--name", rg_name])
+        if exists.stdout.strip().lower() == "false":
+            _mark_teardown_phase(phases, "Azure Resource Group", "succeeded")
+            dep["runtimeStatus"] = "Completed"
+            cs["status"] = "succeeded"
+            cs["currentPhase"] = "Teardown Complete"
+            cs["cloudStatus"] = "deleted"
+            cs["detail"] = f"✓ Azure RG '{rg_name}' fully deleted"
+            output["status"] = "succeeded"
+            changed = True
+        else:
+            show = _az_run(["az", "group", "show", "--name", rg_name, "--query", "properties.provisioningState", "-o", "tsv"])
+            state = (show.stdout or "").strip() or "Unknown"
+            if state.lower() == "deleting":
+                _mark_teardown_phase(phases, "Azure Resource Group", "running")
+                dep["runtimeStatus"] = "Running"
+                cs["status"] = "deleting"
+                cs["cloudStatus"] = "deleting"
+                cs["currentPhase"] = "Azure Resource Group"
+                cs["detail"] = f"Azure RG '{rg_name}' is still deleting in Azure"
+                output["status"] = "running"
+                changed = True
+
+    completed = sum(1 for phase in phases if phase.get("status") in {"succeeded", "skipped"})
+    cs["completedPhases"] = completed
+    cs["totalPhases"] = max(cs.get("totalPhases") or 0, len(phases))
+    dep["output"] = output
+    dep["lastUpdatedTime"] = datetime.now(timezone.utc).isoformat()
+    if changed:
+        add_log("info", "Teardown state reconciled from live cloud resources")
+    return changed
+
+
+def reconcile_interrupted_teardowns() -> int:
+    count = 0
+    for dep in deployments.values():
+        if _reconcile_teardown(dep):
+            count += 1
+    if count:
+        save_state()
+        logger.info("Reconciled %d interrupted teardown(s)", count)
+    return count
+
+
 
 # Track active subprocess PIDs for cancellation
 active_processes: dict[str, int] = {}  # instance_id → PID
@@ -174,8 +397,14 @@ def _get_timed_cached(key: str, ttl_seconds: int):
     return None
 
 
+
+def _get_stale_timed_cached(key: str):
+    entry = _timed_cache.get(key)
+    return entry.get("result") if entry else None
+
 def _set_timed_cached(key: str, result):
-    _timed_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
+    with _CACHE_LOCK:
+        _timed_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
     _save_persistent_cache()
 
 
@@ -187,7 +416,8 @@ def _get_cached(key: str) -> dict | None:
 
 
 def _set_cached(key: str, result: dict):
-    _scan_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
+    with _CACHE_LOCK:
+        _scan_cache[key] = {"result": result, "timestamp": datetime.now(timezone.utc).timestamp()}
     _save_persistent_cache()
 
 
@@ -244,6 +474,19 @@ def save_state():
     """Persist current deployment to database."""
     for inst_id, dep in deployments.items():
         save_deployment(inst_id, dep)
+
+
+@app.on_event("startup")
+async def schedule_interrupted_teardown_reconciliation():
+    """Reconcile interrupted teardowns after Uvicorn is already accepting requests."""
+    _install_asyncio_crash_diagnostics()
+    async def run_reconciliation():
+        try:
+            await asyncio.to_thread(reconcile_interrupted_teardowns)
+        except Exception:
+            logger.exception("Interrupted teardown reconciliation failed")
+
+    _create_logged_task(run_reconciliation(), name="startup-interrupted-teardown-reconciliation")
 
 
 def _get_auth_context_sync() -> dict:
@@ -367,6 +610,16 @@ class TeardownRequest(BaseModel):
     delete_azure_rg: bool = True
 
 
+class TeardownBatchRequest(BaseModel):
+    jobs: list[TeardownRequest]
+
+
+class Phase7ContinuationRequest(BaseModel):
+    alert_email: str = ""
+    payer_ops_email: str = ""
+    claim_event_rate_per_minute: int = 60
+
+
 import re as _re
 
 def _validate_safe_name(v: str, field_name: str) -> str:
@@ -389,6 +642,7 @@ class DeployRequest(BaseModel):
     _v_ws = __import__('pydantic').field_validator('fabric_workspace_name', mode='after')(_check_name)
     _v_sg = __import__('pydantic').field_validator('admin_security_group', mode='after')(_check_name)
     _v_cap = __import__('pydantic').field_validator('capacity_name', mode='after')(_check_name)
+    _v_source_rg = __import__('pydantic').field_validator('source_resource_group', mode='after')(_check_name)
     patient_count: int = 100
     tags: dict[str, str] = {}
     skip_base_infra: bool = False
@@ -401,6 +655,8 @@ class DeployRequest(BaseModel):
     capacity_name: str = ""
     pause_capacity_after_deploy: bool = False
     reuse_patients: bool = False
+    source_resource_group: str = ""
+    use_cached_synthea: bool = False
     # Granular component toggles
     skip_synthea: bool = False
     skip_device_assoc: bool = False
@@ -412,10 +668,218 @@ class DeployRequest(BaseModel):
     skip_ontology: bool = False
     skip_activator: bool = False
     skip_quality_measures: bool = False
+    require_bronze_clinical_fhir: bool = False
+    require_bronze_imaging_dicom: bool = False
+    skip_phase7: bool = False
+    skip_payer_rti: bool = False
+    skip_payer_activator: bool = False
+    skip_ops_agent: bool = False
+    skip_graph_agent: bool = False
+    payer_ops_email: str = ""
+    claim_event_rate_per_minute: int = 60
+    dicom_toolkit_path: str = ""
+    phase7_only: bool = False
+    phase2_only: bool = False
+    phase3_only: bool = False
+    phase4_only: bool = False
+    continue_from_instance_id: str = ""
+
+
+def _ensure_deployment_policy_tags(req: DeployRequest) -> None:
+    """Mutate a deploy request so stored config and launched process carry required policy tags."""
+    req.tags = normalize_policy_tags(req.tags)
 
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+def _workspace_id_from_url(value: str) -> str:
+    if not value:
+        return ""
+    match = _re.search(r"app\.fabric\.microsoft\.com/groups/([0-9a-fA-F-]{36})", value)
+    return match.group(1) if match else ""
+
+
+def _persisted_workspace_id(ws_name: str) -> str:
+    """Recover a Fabric workspace id from persisted run links/logs when live Fabric API is blocked."""
+    if not ws_name:
+        return ""
+
+    workspace_id_pattern = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    def extract_workspace_id(value: object) -> str:
+        text = str(value or "")
+        from_url = _workspace_id_from_url(text)
+        if from_url:
+            return from_url
+        if ws_name not in text:
+            return ""
+        match = workspace_id_pattern.search(text)
+        return match.group(0) if match else ""
+
+    matching = []
+    for dep in deployments.values():
+        cs = dep.get("customStatus") or {}
+        if cs.get("workspaceName") == ws_name:
+            matching.append(dep)
+    matching.sort(key=lambda dep: dep.get("lastUpdatedTime") or dep.get("createdTime") or "", reverse=True)
+
+    for dep in matching:
+        cs = dep.get("customStatus") or {}
+        for source in (cs.get("links") or {}, cs.get("resources") or {}):
+            if not isinstance(source, dict):
+                continue
+            for value in source.values():
+                workspace_id = extract_workspace_id(value)
+                if workspace_id:
+                    return workspace_id
+        output = dep.get("output") or {}
+        resources = output.get("resources") if isinstance(output, dict) else None
+        if isinstance(resources, dict):
+            for value in resources.values():
+                workspace_id = extract_workspace_id(value)
+                if workspace_id:
+                    return workspace_id
+
+    log_dir = Path(__file__).parent / "logs"
+    for dep in matching:
+        instance_id = dep.get("instanceId") or dep.get("id") or ""
+        log_file = log_dir / f"{instance_id}.jsonl"
+        if not log_file.exists():
+            continue
+        try:
+            with log_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    workspace_id = extract_workspace_id(line)
+                    if workspace_id:
+                        return workspace_id
+        except Exception as ex:
+            logger.debug("Could not scan deployment log %s for workspace id: %s", log_file, ex)
+
+    return ""
+
+
+def _workspace_state_from_persisted_link(ws_name: str) -> dict | None:
+    workspace_id = _persisted_workspace_id(ws_name)
+    if not workspace_id:
+        return None
+    return {
+        "name": ws_name,
+        "exists": True,
+        "id": workspace_id,
+        "status": "exists_cached",
+        "url": f"https://app.fabric.microsoft.com/groups/{workspace_id}",
+        "warning": "Live Fabric workspace query blocked; using persisted deployment link.",
+    }
+
+def _cloud_state_sync(ws_name: str = "", rg_name: str = "") -> dict:
+    state = {
+        "workspace": {"name": ws_name, "exists": None, "id": "", "status": "unknown"},
+        "resourceGroup": {"name": rg_name, "exists": None, "provisioningState": "unknown", "status": "unknown"},
+        "checkedAt": now_iso(),
+    }
+    if ws_name:
+        try:
+            from shared.fabric_client import FabricClient
+            fabric = FabricClient()
+            ws = fabric.find_workspace(ws_name, max_retries=1)
+            state["workspace"].update({"exists": ws is not None, "id": ws.get("id", "") if ws else "", "status": "exists" if ws else "deleted"})
+        except Exception as ex:
+            persisted = _workspace_state_from_persisted_link(ws_name)
+            if persisted:
+                state["workspace"].update(persisted)
+                logger.info("Fabric workspace '%s' live query blocked; using persisted workspace id %s", ws_name, persisted["id"])
+            else:
+                state["workspace"].update({"status": "unreachable", "error": str(ex)[:300]})
+    if rg_name:
+        try:
+            exists_proc = _az_run(["az", "group", "exists", "--name", rg_name])
+            exists = exists_proc.stdout.strip().lower() == "true"
+            state["resourceGroup"]["exists"] = exists
+            if exists:
+                show = _az_run(["az", "group", "show", "--name", rg_name, "--query", "properties.provisioningState", "-o", "tsv"])
+                provisioning = (show.stdout or "").strip() or "Unknown"
+                state["resourceGroup"].update({"provisioningState": provisioning, "status": provisioning.lower()})
+            else:
+                state["resourceGroup"].update({"provisioningState": "Deleted", "status": "deleted"})
+        except Exception as ex:
+            state["resourceGroup"].update({"status": "unreachable", "error": str(ex)[:300]})
+    return state
+
+
+def _validation_from_resources(resources: dict, is_teardown: bool = False) -> dict:
+    azure_count = len(resources.get("azure") or [])
+    fabric_count = len(resources.get("fabric") or [])
+    workspace_exists = bool(resources.get("workspace"))
+    if is_teardown:
+        checks = [
+            {"name": "Fabric workspace deleted", "status": "pass" if not workspace_exists else "fail", "detail": "Workspace absent" if not workspace_exists else "Workspace still exists"},
+            {"name": "Azure resource group empty/deleted", "status": "pass" if azure_count == 0 else "fail", "detail": f"{azure_count} Azure resource(s) found"},
+        ]
+    else:
+        checks = [
+            {"name": "Fabric workspace exists", "status": "pass" if workspace_exists else "fail", "detail": "Workspace found" if workspace_exists else "Workspace missing"},
+            {"name": "Fabric items discovered", "status": "pass" if fabric_count > 0 else "warning", "detail": f"{fabric_count} Fabric item(s)"},
+            {"name": "Azure resources discovered", "status": "pass" if azure_count > 0 else "warning", "detail": f"{azure_count} Azure resource(s)"},
+        ]
+    return {"passed": all(c["status"] != "fail" for c in checks), "checks": checks, "resources": resources, "checkedAt": now_iso()}
+
+
+def _reconcile_deployment_completion_from_validation(instance_id: str, dep: dict, validation: dict) -> bool:
+    """Persist a completed run state when post-deployment validation has no required failures."""
+    if dep.get("runtimeStatus") not in {"Failed", "Terminated"}:
+        return False
+    cs = dep.get("customStatus") or {}
+    if cs.get("runType") == "teardown":
+        return False
+    if not validation.get("passed"):
+        return False
+
+    checks = validation.get("checks") or []
+    failed_checks = [check for check in checks if check.get("status") == "fail"]
+    if failed_checks:
+        return False
+
+    resources = validation.get("resources") or {}
+    azure_count = len(resources.get("azure") or [])
+    workspace = resources.get("workspace") or {}
+    if not workspace:
+        return False
+
+    checked_at = validation.get("checkedAt") or now_iso()
+    original_status = dep.get("runtimeStatus")
+    original_detail = cs.get("detail") or ""
+    if not cs.get("validationReconciled"):
+        cs["originalRuntimeStatus"] = original_status
+        cs["originalFailureDetail"] = original_detail
+    cs["validationReconciled"] = True
+    cs["validatedAt"] = checked_at
+    cs["status"] = "succeeded"
+    cs["currentPhase"] = "Deployment Complete"
+    cs["detail"] = "Post-deployment validation passed; the prior failed run state was reconciled. Resource discovery warnings remain non-fatal and are preserved in validation details."
+    cs["validationSummary"] = {
+        "azureResources": azure_count,
+        "fabricItems": len(resources.get("fabric") or []),
+        "workspaceStatus": workspace.get("status") or "exists",
+    }
+    total = cs.get("totalPhases") or 0
+    if total:
+        cs["completedPhases"] = total
+
+    output = dep.get("output") if isinstance(dep.get("output"), dict) else {}
+    output["status"] = "succeeded"
+    phases = output.get("phases") if isinstance(output.get("phases"), list) else []
+    for phase in phases:
+        if phase.get("status") == "failed":
+            phase["reconciledFrom"] = "failed"
+            phase["status"] = "warning"
+            if not phase.get("detail"):
+                phase["detail"] = original_detail or "Original run step failed before post-deployment validation reconciled the run."
+    dep["output"] = output
+    dep["runtimeStatus"] = "Completed"
+    dep["lastUpdatedTime"] = checked_at
+    logger.info("Deployment %s reconciled to Completed from post-deployment validation", instance_id)
+    return True
 
 
 def _normalize_url(raw: str) -> str:
@@ -472,6 +936,7 @@ async def start_teardown(req: TeardownRequest):
         "customStatus": {
             "currentPhase": "Starting Teardown",
             "status": "running",
+            "cloudStatus": "submitted",
             "detail": "",
             "completedPhases": 0,
             "totalPhases": 4,
@@ -489,11 +954,64 @@ async def start_teardown(req: TeardownRequest):
     save_state()
 
     # Run teardown in background
-    asyncio.create_task(_run_teardown(instance_id, req))
+    _create_logged_task(_run_teardown(instance_id, req), name=f"teardown:{instance_id}")
 
     logger.info("Teardown started: %s (workspace=%s, rg=%s)",
                 instance_id, req.fabric_workspace_name, req.resource_group_name)
     return {"instanceId": instance_id, "statusUrl": f"/api/deploy/{instance_id}/status"}
+
+
+@app.post("/api/teardown/batch/start")
+async def start_teardown_batch(req: TeardownBatchRequest):
+    batch_id = f"teardownBatch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    children = []
+    for job in req.jobs:
+        result = await start_teardown(job)
+        children.append(result["instanceId"])
+    display = f"{len(children)} teardown job(s)"
+    deployments[batch_id] = {
+        "instanceId": batch_id,
+        "name": "teardown_batch",
+        "runtimeStatus": "Running",
+        "createdTime": now_iso(),
+        "lastUpdatedTime": now_iso(),
+        "customStatus": {
+            "currentPhase": "Batch Teardown",
+            "status": "running",
+            "detail": display,
+            "completedPhases": 0,
+            "totalPhases": len(children),
+            "resources": {},
+            "runType": "teardownBatch",
+            "displayName": display,
+            "childInstanceIds": children,
+            "logs": [],
+        },
+        "output": {"status": "running", "phases": [], "resources": {}},
+    }
+    save_state()
+    return {"batchId": batch_id, "instanceIds": children, "statusUrl": f"/api/teardown/batch/{batch_id}"}
+
+
+@app.get("/api/teardown/batch/{batch_id}")
+async def get_teardown_batch(batch_id: str):
+    batch = deployments.get(batch_id)
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+    child_ids = (batch.get("customStatus") or {}).get("childInstanceIds") or []
+    children = [deployments[i] for i in child_ids if i in deployments]
+    completed = sum(1 for child in children if child.get("runtimeStatus") == "Completed")
+    failed = sum(1 for child in children if child.get("runtimeStatus") in {"Failed", "Terminated"})
+    running = len(children) - completed - failed
+    cs = batch["customStatus"]
+    cs["completedPhases"] = completed
+    cs["totalPhases"] = len(children)
+    if running == 0:
+        batch["runtimeStatus"] = "Completed" if failed == 0 else "Failed"
+        cs["status"] = "succeeded" if failed == 0 else "failed"
+    batch["lastUpdatedTime"] = now_iso()
+    save_state()
+    return {"batch": batch, "children": children, "summary": {"completed": completed, "failed": failed, "running": running, "total": len(children)}}
 
 
 async def _run_teardown(instance_id: str, req: TeardownRequest):
@@ -670,6 +1188,7 @@ async def _run_teardown(instance_id: str, req: TeardownRequest):
                 if proc.returncode != 0:
                     raise RuntimeError(proc.stderr.strip() or "az group delete failed")
                 log("info", f"Azure RG deletion initiated for '{req.resource_group_name}' (async)")
+                deployment["customStatus"]["cloudStatus"] = "deleting"
 
                 for poll_attempt in range(120):  # up to ~10 min
                     check = await loop.run_in_executor(
@@ -678,6 +1197,7 @@ async def _run_teardown(instance_id: str, req: TeardownRequest):
                     )
                     if check.stdout.strip().lower() == "false":
                         log("success", f"✓ Azure RG '{req.resource_group_name}' fully deleted")
+                        deployment["customStatus"]["cloudStatus"] = "deleted"
                         complete_phase("Azure Resource Group")
                         break
                     if poll_attempt % 6 == 0:
@@ -699,13 +1219,16 @@ async def _run_teardown(instance_id: str, req: TeardownRequest):
             log("warn", "No teardown targets were specified")
             deployment["runtimeStatus"] = "Completed"
             deployment["customStatus"]["status"] = "succeeded"
+            deployment["customStatus"]["cloudStatus"] = "none"
         elif had_error:
             deployment["runtimeStatus"] = "Failed"
             deployment["customStatus"]["status"] = "failed"
+            deployment["customStatus"]["cloudStatus"] = "needs_attention"
             deployment["customStatus"]["currentPhase"] = "Teardown Failed"
         else:
             deployment["runtimeStatus"] = "Completed"
             deployment["customStatus"]["status"] = "succeeded"
+            deployment["customStatus"]["cloudStatus"] = "deleted"
             deployment["customStatus"]["currentPhase"] = "Teardown Complete"
             deployment["customStatus"]["completedPhases"] = len(teardown_phases)
 
@@ -750,6 +1273,361 @@ def func_response(data, status_code=200):
     return JSONResponse(content=data, status_code=status_code)
 
 
+def _phase_has_blocking_logs(deployment: dict, phase_name: str) -> bool:
+    """Return True when a nominally-successful phase logged errors.
+
+    Some PowerShell sub-scripts print recoverable-looking summaries even after
+    native tools failed. Auto-resume must not skip those phases, or repair runs
+    can bypass incomplete Fabric RTI/Eventstream/KQL work.
+    """
+    if not phase_name:
+        return False
+
+    instance_id = deployment.get("instanceId", "")
+    log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
+    if not log_file.exists():
+        return False
+
+    target_phase = phase_name.upper()
+    blocking_markers = (
+        "FAILED TO CREATE CLOUD CONNECTION",
+        "SKIPPING EVENTSTREAM TOPOLOGY",
+        "ERROR: HEALTHCARE DATA SOLUTIONS NOT FOUND",
+        "IMAGE NOT FOUND IN ACR",
+    )
+
+    try:
+        with log_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(entry.get("phase", "")).upper() != target_phase:
+                    continue
+                message = str(entry.get("message", ""))
+                message_upper = message.upper()
+                transient_fabric_retry = (
+                    "REQUESTDENIEDBYINBOUNDPOLICY" in message_upper
+                    and "RETRY" in message_upper
+                )
+                if transient_fabric_retry:
+                    continue
+                if entry.get("level") == "error":
+                    return True
+                ratio = _re.search(r"(?:KQL Deployment|Phase 2 Results):\s*(\d+)\s*/\s*(\d+)\s+succeeded", message, flags=_re.IGNORECASE)
+                if ratio and int(ratio.group(1)) < int(ratio.group(2)):
+                    return True
+                if any(marker in message_upper for marker in blocking_markers):
+                    return True
+    except OSError as ex:
+        logger.warning("Could not inspect deployment log %s: %s", log_file, ex)
+    return False
+
+
+def _reset_continuation_skip_flags(req: DeployRequest) -> None:
+    """Clear prior auto-resume skips before re-deriving safe skips from live state."""
+    for field in (
+        "skip_base_infra",
+        "skip_fhir",
+        "skip_dicom",
+        "skip_fabric",
+        "reuse_patients",
+        "skip_synthea",
+        "skip_device_assoc",
+        "skip_fhir_export",
+        "skip_rti_phase2",
+        "skip_hds_pipelines",
+        "skip_data_agents",
+        "skip_imaging",
+        "skip_ontology",
+        "skip_activator",
+        "skip_quality_measures",
+    ):
+        setattr(req, field, False)
+
+
+def _live_resume_prerequisites(req: DeployRequest, cloud_state: dict) -> dict:
+    """Collect live evidence used to decide whether a prior phase can be skipped."""
+    evidence: dict = {
+        "cloud": cloud_state,
+        "azureTypes": set(),
+        "azureNames": set(),
+        "fabricItems": [],
+        "fhirCounts": {"patients": 0, "devices": 0, "exportedFiles": 0, "dicomStudies": 0},
+    }
+    try:
+        resources = _get_deployed_resources_sync(req.fabric_workspace_name, req.resource_group_name)
+        evidence["azureTypes"] = {str(r.get("fullType") or r.get("type") or "").lower() for r in resources.get("azure") or []}
+        evidence["azureNames"] = {str(r.get("name") or "").lower() for r in resources.get("azure") or []}
+        evidence["fabricItems"] = resources.get("fabric") or []
+    except Exception as ex:
+        logger.warning("Resume prerequisite resource query failed: %s", ex)
+    if req.resource_group_name and bool((cloud_state.get("resourceGroup") or {}).get("exists")):
+        evidence["fhirCounts"] = _query_fhir_counts(req.resource_group_name)
+    return evidence
+
+
+def _has_azure_type(evidence: dict, expected: str) -> bool:
+    expected = expected.lower()
+    return any(expected in resource_type for resource_type in evidence.get("azureTypes", set()))
+
+
+def _fabric_item_matches(evidence: dict, *needles: str) -> bool:
+    haystacks = []
+    for item in evidence.get("fabricItems") or []:
+        haystacks.append(f"{item.get('name', '')} {item.get('type', '')}".lower())
+    return any(any(needle.lower() in value for needle in needles) for value in haystacks)
+def _fabric_item_type_matches(evidence: dict, item_type: str, *name_needles: str) -> bool:
+    item_type = item_type.lower()
+    needles = tuple(needle.lower() for needle in name_needles)
+    for item in evidence.get("fabricItems") or []:
+        current_type = str(item.get("type") or "").lower()
+        current_name = str(item.get("name") or "").lower()
+        if current_type == item_type and (not needles or any(needle in current_name for needle in needles)):
+            return True
+    return False
+
+
+
+def _phase_live_prerequisites_ok(req: DeployRequest, phase_name: str, evidence: dict) -> tuple[bool, str]:
+    phase_name = phase_name.upper()
+    cloud = evidence.get("cloud") or {}
+    rg_exists = bool((cloud.get("resourceGroup") or {}).get("exists"))
+    workspace_exists = bool((cloud.get("workspace") or {}).get("exists")) or bool(evidence.get("fabricItems"))
+
+    if "FABRIC WORKSPACE" in phase_name:
+        return (workspace_exists, "Fabric workspace exists" if workspace_exists else "Fabric workspace not verified")
+
+    if "BASE AZURE INFRASTRUCTURE" in phase_name or "SHARED HDS INFRASTRUCTURE" in phase_name:
+        required = (
+            "microsoft.containerregistry/registries",
+            "microsoft.keyvault/vaults",
+            "microsoft.storage/storageaccounts",
+            "microsoft.healthcareapis/workspaces",
+        )
+        missing = [resource_type for resource_type in required if not _has_azure_type(evidence, resource_type)]
+        if missing:
+            return (False, f"Azure prerequisite resources missing: {', '.join(missing)}")
+        return (rg_exists, "Azure prerequisite resources exist" if rg_exists else "Resource group not verified")
+
+    if "FHIR SERVICE + SYNTHEA" in phase_name:
+        counts = evidence.get("fhirCounts") or {}
+        patients = int(counts.get("patients") or 0)
+        devices = int(counts.get("devices") or 0)
+        exported = int(counts.get("exportedFiles") or 0)
+        if patients <= 0 or devices <= 0 or exported <= 0:
+            return (False, f"FHIR prerequisites incomplete: patients={patients}, devices={devices}, exportedFiles={exported}")
+        return (True, f"FHIR data/export verified: patients={patients}, devices={devices}, exportedFiles={exported}")
+
+    if "DICOM LOADER" in phase_name or "DICOM SERVICE + LOADER" in phase_name:
+        dicom_studies = int((evidence.get("fhirCounts") or {}).get("dicomStudies") or 0)
+        if dicom_studies <= 0:
+            return (False, "DICOM output container has no studies")
+        return (True, f"DICOM output verified: studies={dicom_studies}")
+
+    if "FABRIC RTI" in phase_name:
+        if not workspace_exists:
+            return (False, "Fabric workspace not verified")
+        has_eventstream = _fabric_item_type_matches(evidence, "Eventstream", "masimo", "telemetry")
+        has_eventhouse = _fabric_item_type_matches(evidence, "Eventhouse", "masimo") or _fabric_item_type_matches(evidence, "KQLDatabase", "masimo")
+        has_dashboard = _fabric_item_type_matches(evidence, "Dashboard", "masimo", "telemetry", "clinical", "alerts") or _fabric_item_type_matches(evidence, "KQLDashboard", "masimo", "telemetry", "clinical", "alerts")
+        if has_eventstream and has_eventhouse and has_dashboard:
+            return (True, "Fabric RTI Eventstream, Eventhouse/KQL, and dashboard items verified")
+        missing = []
+        if not has_eventstream:
+            missing.append("Masimo Eventstream")
+        if not has_eventhouse:
+            missing.append("Masimo Eventhouse/KQL database")
+        if not has_dashboard:
+            missing.append("Masimo dashboard")
+        return (False, f"Fabric RTI incomplete: missing {', '.join(missing)}")
+
+    return (True, "No extra live prerequisite check required")
+
+
+
+def _apply_success_skips_from_deployment(req: DeployRequest, prior_deploy: dict, mode: str = "Auto-resume") -> bool:
+    """Skip only phases that safely succeeded in a specific failed deployment."""
+    cloud_state = _cloud_state_sync(req.fabric_workspace_name, req.resource_group_name)
+    workspace_exists = bool((cloud_state.get("workspace") or {}).get("exists"))
+    rg_exists = bool((cloud_state.get("resourceGroup") or {}).get("exists"))
+    if not workspace_exists and not rg_exists:
+        logger.info(
+            "%s disabled for workspace=%s rg=%s because neither target exists in live cloud state",
+            mode,
+            req.fabric_workspace_name,
+            req.resource_group_name,
+        )
+        return False
+
+    output = prior_deploy.get("output") or {}
+    phases = output.get("phases") or []
+    if not phases:
+        return False
+
+
+    live_evidence = _live_resume_prerequisites(req, cloud_state)
+
+    applied = False
+    # Check each successful phase and enable corresponding skip flags.
+    # A phase with error-level logs is not safe to skip: the PowerShell wrapper
+    # can otherwise mark a step succeeded after a native sub-command failed.
+    for p in phases:
+        if p.get("status") != "succeeded":
+            continue
+        if p.get("warnings") or _phase_has_blocking_logs(prior_deploy, p.get("phase", "")):
+            logger.info("%s not skipping phase '%s' from %s because it logged warnings/errors", mode, p.get("phase", ""), prior_deploy.get("instanceId"))
+            continue
+
+        phase_name = p.get("phase", "").upper()
+        prereq_ok, prereq_detail = _phase_live_prerequisites_ok(req, phase_name, live_evidence)
+        if not prereq_ok:
+            if "FHIR SERVICE + SYNTHEA" in phase_name:
+                counts = live_evidence.get("fhirCounts") or {}
+                patients = int(counts.get("patients") or 0)
+                devices = int(counts.get("devices") or 0)
+                exported = int(counts.get("exportedFiles") or 0)
+                if patients > 0 and devices > 0 and exported <= 0:
+                    req.reuse_patients = True
+                    req.skip_synthea = True
+                    req.skip_device_assoc = True
+                    req.skip_fhir_export = False
+                    applied = True
+                    logger.info(
+                        "%s preserving existing FHIR data from phase '%s' in %s but rerunning the catch-up FHIR export: patients=%s, devices=%s, exportedFiles=%s",
+                        mode,
+                        p.get("phase", ""),
+                        prior_deploy.get("instanceId"),
+                        patients,
+                        devices,
+                        exported,
+                    )
+                    continue
+            logger.info(
+                "%s not skipping phase '%s' from %s because live prerequisite validation failed: %s",
+                mode,
+                p.get("phase", ""),
+                prior_deploy.get("instanceId"),
+                prereq_detail,
+            )
+            continue
+        logger.info(
+            "%s skipping phase '%s' from %s after live prerequisite validation: %s",
+            mode,
+            p.get("phase", ""),
+            prior_deploy.get("instanceId"),
+            prereq_detail,
+        )
+
+
+        if "BASE AZURE INFRASTRUCTURE" in phase_name:
+            req.skip_base_infra = True
+        elif "FHIR SERVICE + SYNTHEA" in phase_name:
+            req.skip_fhir = True
+            req.skip_synthea = True
+            req.skip_device_assoc = True
+            req.reuse_patients = True
+            req.skip_fhir_export = True
+        elif "DICOM LOADER" in phase_name or "DICOM SERVICE + LOADER" in phase_name:
+            req.skip_dicom = True
+        elif "FABRIC RTI ENRICHMENT" in phase_name or "FABRIC RTI (AUTO)" in phase_name or "RTI PHASE 2" in phase_name:
+            req.skip_rti_phase2 = True
+        elif "FABRIC RTI" in phase_name:
+            req.skip_fabric = True
+        elif "HDS PIPELINES" in phase_name:
+            req.skip_hds_pipelines = True
+            req.skip_dicom = True
+        elif "DATA AGENTS" in phase_name:
+            req.skip_data_agents = True
+        elif "IMAGING & REPORTING" in phase_name:
+            req.skip_imaging = True
+        elif "ONTOLOGY" in phase_name:
+            req.skip_ontology = True
+        elif "DATA ACTIVATOR" in phase_name:
+            req.skip_activator = True
+        elif "CMS QUALITY" in phase_name:
+            req.skip_quality_measures = True
+        else:
+            continue
+        applied = True
+
+    logger.info("%s activated: loaded successful phases from %s. Applied skips: base_infra=%s, fhir=%s, dicom=%s, fabric=%s, rti2=%s, hds=%s, agents=%s, imaging=%s, ontology=%s, activator=%s, quality=%s",
+                mode, prior_deploy["instanceId"], req.skip_base_infra, req.skip_fhir, req.skip_dicom, req.skip_fabric, req.skip_rti_phase2, req.skip_hds_pipelines, req.skip_data_agents, req.skip_imaging, req.skip_ontology, req.skip_activator, req.skip_quality_measures)
+    return applied
+
+
+def _apply_live_continuation_skips(req: DeployRequest, prior_deploy: dict, mode: str = "Continue-from-failure") -> bool:
+    """Derive safe continuation skips from live cloud state when old run output is missing."""
+    cloud_state = _cloud_state_sync(req.fabric_workspace_name, req.resource_group_name)
+    workspace_exists = bool((cloud_state.get("workspace") or {}).get("exists"))
+    rg_exists = bool((cloud_state.get("resourceGroup") or {}).get("exists"))
+    if not workspace_exists and not rg_exists:
+        logger.info(
+            "%s live fallback disabled for %s because neither workspace nor resource group is verified",
+            mode,
+            prior_deploy.get("instanceId"),
+        )
+        return False
+
+    evidence = _live_resume_prerequisites(req, cloud_state)
+    applied = False
+    if rg_exists:
+        required_types = (
+            "microsoft.containerregistry/registries",
+            "microsoft.keyvault/vaults",
+            "microsoft.storage/storageaccounts",
+            "microsoft.healthcareapis/workspaces",
+        )
+        if all(_has_azure_type(evidence, resource_type) for resource_type in required_types):
+            req.skip_base_infra = True
+            applied = True
+
+    counts = evidence.get("fhirCounts") or {}
+    patients = int(counts.get("patients") or 0)
+    devices = int(counts.get("devices") or 0)
+    exported = int(counts.get("exportedFiles") or 0)
+    dicom_studies = int(counts.get("dicomStudies") or 0)
+
+    if patients > 0 and devices > 0:
+        req.reuse_patients = True
+        req.skip_synthea = True
+        req.skip_device_assoc = True
+        applied = True
+        if exported > 0:
+            req.skip_fhir = True
+            req.skip_fhir_export = True
+        else:
+            # Keep -SkipFhir false so Deploy-All runs its catch-up FHIR $export
+            # without regenerating Synthea or reloading existing patients.
+            req.skip_fhir = False
+            req.skip_fhir_export = False
+
+    if dicom_studies > 0:
+        req.skip_dicom = True
+        applied = True
+
+    logger.info(
+        "%s live fallback for %s applied=%s: base_infra=%s, reuse_patients=%s, skip_synthea=%s, skip_fhir=%s, skip_dicom=%s, patients=%s, devices=%s, exportedFiles=%s, dicomStudies=%s",
+        mode,
+        prior_deploy.get("instanceId"),
+        applied,
+        req.skip_base_infra,
+        req.reuse_patients,
+        req.skip_synthea,
+        req.skip_fhir,
+        req.skip_dicom,
+        patients,
+        devices,
+        exported,
+        dicom_studies,
+    )
+    return applied
+
+
+
 def _apply_prior_success_skips(req: DeployRequest):
     """Find the most recent failed deployment with the same workspace or RG,
     and automatically skip all phases that completed successfully in it.
@@ -764,52 +1642,34 @@ def _apply_prior_success_skips(req: DeployRequest):
             prior_deploy = dep
             break
 
-    if not prior_deploy:
-        return
-
-    output = prior_deploy.get("output") or {}
-    phases = output.get("phases") or []
-    
-    # Check each successful phase and enable corresponding skip flags
-    for p in phases:
-        if p.get("status") != "succeeded":
-            continue
-        phase_name = p.get("phase", "").upper()
-        
-        if "BASE AZURE INFRASTRUCTURE" in phase_name:
-            req.skip_base_infra = True
-        elif "FHIR SERVICE + SYNTHEA" in phase_name:
-            req.skip_fhir = True
-            req.skip_synthea = True
-            req.skip_device_assoc = True
-            req.reuse_patients = True
-        elif "DICOM SERVICE + LOADER" in phase_name:
-            req.skip_dicom = True
-        elif "FABRIC RTI" in phase_name and "PHASE 2" not in phase_name:
-            req.skip_fabric = True
-        elif "FABRIC RTI (AUTO)" in phase_name or "PHASE 2: FABRIC RTI" in phase_name:
-            req.skip_rti_phase2 = True
-        elif "HDS PIPELINES" in phase_name:
-            req.skip_hds_pipelines = True
-        elif "DATA AGENTS" in phase_name:
-            req.skip_data_agents = True
-        elif "IMAGING & REPORTING" in phase_name:
-            req.skip_imaging = True
-        elif "ONTOLOGY" in phase_name:
-            req.skip_ontology = True
-        elif "DATA ACTIVATOR" in phase_name:
-            req.skip_activator = True
-        elif "CMS QUALITY" in phase_name:
-            req.skip_quality_measures = True
-
-    logger.info("Auto-resume activated: loaded successful phases from %s. Applied skips: base_infra=%s, fhir=%s, dicom=%s, fabric=%s, rti2=%s, hds=%s, agents=%s, imaging=%s, ontology=%s, activator=%s, quality=%s",
-                prior_deploy["instanceId"], req.skip_base_infra, req.skip_fhir, req.skip_dicom, req.skip_fabric, req.skip_rti_phase2, req.skip_hds_pipelines, req.skip_data_agents, req.skip_imaging, req.skip_ontology, req.skip_activator, req.skip_quality_measures)
+    if prior_deploy:
+        _apply_success_skips_from_deployment(req, prior_deploy)
 
 
 @app.post("/api/deploy/start")
 async def start_deploy(req: DeployRequest):
-    # Auto-resume failed deployments by skipping successfully completed phases
-    _apply_prior_success_skips(req)
+    # Continue-from-failure uses the exact failed source run. Default starts keep
+    # the older auto-resume behavior: skip safe successes from the latest failed
+    # deployment with the same workspace or resource group.
+    if not req.phase7_only:
+        if req.continue_from_instance_id:
+            source_deploy = deployments.get(req.continue_from_instance_id)
+            if not source_deploy:
+                raise HTTPException(404, "Continuation source deployment not found")
+            if source_deploy.get("runtimeStatus") not in ["Failed", "Terminated"]:
+                raise HTTPException(409, "Continuation source deployment is not failed or terminated")
+            _reset_continuation_skip_flags(req)
+            _apply_success_skips_from_deployment(req, source_deploy, "Continue-from-failure")
+            _apply_live_continuation_skips(req, source_deploy, "Continue-from-failure")
+        else:
+            _apply_prior_success_skips(req)
+
+    _ensure_deployment_policy_tags(req)
+
+    selected_synth_clinical = not req.skip_hds_pipelines and not req.skip_fhir and not req.skip_synthea
+    selected_synth_imaging = not req.skip_hds_pipelines and not req.skip_dicom
+    req.require_bronze_clinical_fhir = selected_synth_clinical or req.require_bronze_clinical_fhir
+    req.require_bronze_imaging_dicom = selected_synth_imaging or req.require_bronze_imaging_dicom
 
     # Hard gate on local auth/tooling readiness before launch.
     auth_context = await asyncio.get_event_loop().run_in_executor(None, _get_auth_context_sync)
@@ -828,22 +1688,27 @@ async def start_deploy(req: DeployRequest):
     # Milestone numbers encode which progress-bar milestones are active:
     #   1 = Data Fabric Foundation, 2 = Active Patient Telemetry,
     #   3 = Multimodal Cohorting & Imaging, 4 = Connected Semantic Intelligence,
-    #   5 = Bedside Alerting & Action, 6 = CMS Quality & Performance
+    #   5 = Bedside Alerting & Action, 6 = CMS Quality & Performance, 7 = Payer RTI & Ops
     now_local = datetime.now()
     timestamp = now_local.strftime("%Y%m%d-%H%M%S")
 
     # Determine active milestones from config flags
-    milestones = [1]  # Milestone 1: Data Fabric Foundation (always active)
-    if not req.skip_fabric:
-        milestones.append(2)  # Milestone 2: Active Patient Telemetry
-    if not (req.skip_dicom and req.skip_imaging and req.skip_hds_pipelines):
-        milestones.append(3)  # Milestone 3: Multimodal Cohorting & Imaging
-    if not (req.skip_data_agents and req.skip_ontology):
-        milestones.append(4)  # Milestone 4: Connected Semantic Intelligence
-    if not req.skip_activator:
-        milestones.append(5)  # Milestone 5: Bedside Alerting & Action
-    if not req.skip_quality_measures:
-        milestones.append(6)  # Milestone 6: Population Health & Quality
+    if req.phase7_only:
+        milestones = [7]
+    else:
+        milestones = [1]  # Milestone 1: Data Fabric Foundation (always active)
+        if not req.skip_fabric:
+            milestones.append(2)  # Milestone 2: Active Patient Telemetry
+        if not (req.skip_dicom and req.skip_imaging and req.skip_hds_pipelines):
+            milestones.append(3)  # Milestone 3: Multimodal Cohorting & Imaging
+        if not (req.skip_data_agents and req.skip_ontology):
+            milestones.append(4)  # Milestone 4: Connected Semantic Intelligence
+        if not req.skip_activator:
+            milestones.append(5)  # Milestone 5: Bedside Alerting & Action
+        if not req.skip_quality_measures:
+            milestones.append(6)  # Milestone 6: Population Health & Quality
+        if not req.skip_phase7:
+            milestones.append(7)  # Milestone 7: Payer RTI & Ops
 
     phase_label = "P" + "".join(str(m) for m in milestones)
 
@@ -859,15 +1724,17 @@ async def start_deploy(req: DeployRequest):
             "status": "running",
             "detail": "",
             "completedPhases": 0,
-            "totalPhases": 13,
+            "totalPhases": 14,
             "resources": {},
             "logs": [],
+            "subStepsByPhase": {},
             "workspaceName": req.fabric_workspace_name,
             "resourceGroupName": req.resource_group_name,
             "capacityName": req.capacity_name,
             "capacityResourceGroup": req.capacity_resource_group,
             "capacitySubscriptionId": req.capacity_subscription_id,
             "pauseCapacityAfterDeploy": req.pause_capacity_after_deploy,
+            "continuedFrom": req.continue_from_instance_id,
             "links": {
                 "azurePortal": f"https://portal.azure.com/#@/resource/subscriptions//resourceGroups/{req.resource_group_name}" if req.resource_group_name else "",
                 "fabricWorkspace": f"https://app.fabric.microsoft.com/groups?experience=fabric-developer&name={req.fabric_workspace_name}" if req.fabric_workspace_name else "",
@@ -883,11 +1750,50 @@ async def start_deploy(req: DeployRequest):
     save_state()
 
     # Run deployment in background
-    asyncio.create_task(_run_deploy(instance_id, req))
+    _create_logged_task(_run_deploy(instance_id, req), name=f"deploy:{instance_id}")
 
     logger.info("Deployment started: %s (workspace=%s, rg=%s)",
                 instance_id, req.fabric_workspace_name, req.resource_group_name)
     return {"instanceId": instance_id, "statusUrl": f"/api/deploy/{instance_id}/status"}
+
+
+@app.post("/api/deploy/{instance_id}/continue-phase7")
+async def continue_phase7(instance_id: str, req: Phase7ContinuationRequest | None = None):
+    dep = deployments.get(instance_id)
+    if not dep:
+        raise HTTPException(404, "Instance not found")
+    prior_config = ((dep.get("customStatus") or {}).get("deployConfig") or {}).copy()
+    if not prior_config:
+        raise HTTPException(422, "No deployment configuration is stored for this run")
+    prior_config.update({
+        "phase7_only": True,
+        "skip_phase7": False,
+        "skip_payer_rti": False,
+        "skip_payer_activator": False,
+        "skip_ops_agent": False,
+        "skip_graph_agent": False,
+    })
+    if req:
+        if req.alert_email:
+            prior_config["alert_email"] = req.alert_email
+        if req.payer_ops_email:
+            prior_config["payer_ops_email"] = req.payer_ops_email
+        prior_config["claim_event_rate_per_minute"] = req.claim_event_rate_per_minute
+    return await start_deploy(DeployRequest(**prior_config))
+
+@app.post("/api/deploy/{instance_id}/continue-failed")
+async def continue_failed_deployment(instance_id: str):
+    dep = deployments.get(instance_id)
+    if not dep:
+        raise HTTPException(404, "Instance not found")
+    if dep.get("runtimeStatus") not in {"Failed", "Terminated"}:
+        raise HTTPException(409, "Only failed or terminated deployments can be continued from the last failed step")
+
+    prior_config = ((dep.get("customStatus") or {}).get("deployConfig") or {}).copy()
+    if not prior_config:
+        raise HTTPException(422, "No deployment configuration is stored for this run")
+    prior_config["continue_from_instance_id"] = instance_id
+    return await start_deploy(DeployRequest(**prior_config))
 
 
 @app.get("/api/auth/context")
@@ -907,6 +1813,22 @@ async def get_auth_context(force: bool = False):
     result = await loop.run_in_executor(None, _get_auth_context_sync)
     _set_timed_cached(cache_key, result)
     return result
+
+
+@app.get("/api/health")
+async def get_health():
+    auth = await asyncio.get_event_loop().run_in_executor(None, _get_auth_context_sync)
+    capacities = await list_capacities(force=True)
+    active_caps = [cap for cap in capacities if cap.get("state") == "Active"] if isinstance(capacities, list) else []
+    return {
+        "status": "ok" if auth.get("ready") else "warning",
+        "backend": "online",
+        "database": "ok",
+        "auth": auth,
+        "capacities": {"total": len(capacities) if isinstance(capacities, list) else 0, "active": len(active_caps), "items": capacities},
+        "deployments": len(deployments),
+        "checkedAt": now_iso(),
+    }
 
 
 async def _run_deploy(instance_id: str, req: DeployRequest):
@@ -939,6 +1861,8 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             deployment["customStatus"]["logs"] = deploy_logs[-100:]
             deployment["customStatus"]["detail"] = msg
             if "WAITING_FOR_HDS" in msg:
+                current_phase_name[0] = "Phase 3: HDS Deployment Detection"
+                deployment["customStatus"]["currentPhase"] = current_phase_name[0]
                 deployment["customStatus"]["status"] = "waiting_for_input"
                 save_state()
             parsed_links = _extract_deployment_links(msg)
@@ -970,6 +1894,86 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
 
     phases: list[dict] = []
 
+    def _substep_warning_message(name: str, substep_detail: str) -> str:
+        return f"{name}: {substep_detail}" if substep_detail else name
+
+    def _find_phase_for_substeps(phase_name: str) -> dict:
+        for phase in reversed(phases):
+            if phase.get("phase") == phase_name:
+                return phase
+        for phase in reversed(phases):
+            if phase.get("status") in {"running", "succeeded"}:
+                return phase
+        phase = {"phase": phase_name or "Deploy-All", "status": "running"}
+        phases.append(phase)
+        return phase
+
+    def _upsert_substep(step_name: str, detail: str, duration: str) -> None:
+        try:
+            payload = json.loads(detail) if detail else {}
+            if not isinstance(payload, dict):
+                payload = {"detail": detail}
+        except json.JSONDecodeError:
+            payload = {"detail": detail}
+
+        phase_name = current_phase_name[0] or deployment["customStatus"].get("currentPhase") or "Deploy-All"
+        status = str(payload.get("status") or "running")
+        substep_detail = str(payload.get("detail") or "")
+        substep = {
+            "name": step_name,
+            "status": status,
+            "detail": substep_detail,
+            "updatedAt": now_iso(),
+        }
+        if duration:
+            substep["duration"] = duration
+        if payload.get("runId"):
+            substep["runId"] = str(payload["runId"])
+        if payload.get("url"):
+            substep["url"] = str(payload["url"])
+
+        phase_map = deployment["customStatus"].setdefault("subStepsByPhase", {})
+        phase_substeps = phase_map.setdefault(phase_name, [])
+        existing = next((item for item in phase_substeps if item.get("name") == step_name), None)
+        if existing:
+            prior_status = existing.get("status")
+            is_terminal = prior_status in {"failed", "warning", "succeeded", "skipped"}
+            is_non_terminal_update = status in {"running", "pending"}
+            for key, value in substep.items():
+                if key == "status" and is_terminal and is_non_terminal_update:
+                    continue
+                if key == "detail" and prior_status in {"failed", "warning"} and is_non_terminal_update:
+                    continue
+                if key in {"status", "updatedAt"} or value:
+                    existing[key] = value
+        else:
+            phase_substeps.append(substep)
+            existing = substep
+
+        phase = _find_phase_for_substeps(phase_name)
+        phase["subSteps"] = phase_substeps
+
+        if existing.get("status") in {"failed", "warning"}:
+            warnings = phase.setdefault("warnings", [])
+            msg = _substep_warning_message(step_name, str(existing.get("detail") or ""))
+            if msg not in warnings:
+                warnings.append(msg)
+
+
+    def _complete_running_substeps_for_phase(phase_name: str, duration: str = "") -> None:
+        phase_map = deployment["customStatus"].setdefault("subStepsByPhase", {})
+        for substep in phase_map.get(phase_name, []):
+            if substep.get("status") == "running":
+                substep["status"] = "succeeded"
+                if duration and not substep.get("duration"):
+                    substep["duration"] = duration
+        for phase in phases:
+            if phase.get("phase") == phase_name and isinstance(phase.get("subSteps"), list):
+                for substep in phase["subSteps"]:
+                    if substep.get("status") == "running":
+                        substep["status"] = "succeeded"
+                        if duration and not substep.get("duration"):
+                            substep["duration"] = duration
     def step_callback(event: str, step_name: str, detail: str, duration: str):
         """Handle step events from PowerShell output parser."""
         if event == "step_start":
@@ -980,7 +1984,12 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             for p in phases:
                 if p["status"] == "running":
                     p["status"] = "succeeded"
-            phases.append({"phase": step_name, "status": "running"})
+                    _complete_running_substeps_for_phase(p["phase"])
+            phase = {"phase": step_name, "status": "running"}
+            existing_substeps = deployment["customStatus"].setdefault("subStepsByPhase", {}).get(step_name)
+            if existing_substeps:
+                phase["subSteps"] = existing_substeps
+            phases.append(phase)
             deployment["customStatus"]["currentPhase"] = step_name
             deployment["customStatus"]["status"] = "running"
         elif event == "step_succeeded":
@@ -989,6 +1998,7 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
                 if p["status"] == "running":
                     p["status"] = "succeeded"
                     p["duration"] = duration
+                    _complete_running_substeps_for_phase(p["phase"], duration)
                     break
         elif event == "step_failed":
             for p in reversed(phases):
@@ -997,6 +2007,8 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
                     p["detail"] = detail
                     p["duration"] = duration
                     break
+        elif event == "substep_update":
+            _upsert_substep(step_name, detail, duration)
         elif event == "step_warning":
             # HDS pipeline sub-step warnings: attach to current phase without failing it
             for p in reversed(phases):
@@ -1015,7 +2027,7 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
             "phases": phases,
             "resources": {"fabric_workspace_name": req.fabric_workspace_name, "resource_group_name": req.resource_group_name},
         }
-        # Keep totalPhases at 12 (fixed) — don't shrink to len(phases)
+        # Keep totalPhases fixed; do not shrink to len(phases)
         deployment["lastUpdatedTime"] = now_iso()
         save_state()
 
@@ -1041,6 +2053,10 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
 
         # Clean up PID tracking
         active_processes.pop(instance_id, None)
+
+        if deployment.get("runtimeStatus") == "Terminated" or deployment.get("customStatus", {}).get("status") == "cancelled":
+            logger.info("Deployment %s finished after cancellation; preserving terminated status", instance_id)
+            return
 
         deployment["runtimeStatus"] = "Completed"
         deployment["customStatus"]["status"] = "succeeded"
@@ -1115,6 +2131,10 @@ async def get_status(instance_id: str):
     if instance_id not in deployments:
         raise HTTPException(404, "Instance not found")
     _backfill_links_from_logs(instance_id, deployments[instance_id])
+    _backfill_successful_steps_from_state_tracking(instance_id, deployments[instance_id])
+    if _normalize_successful_deployment_progress(instance_id, deployments[instance_id]):
+        save_state()
+    _normalize_completed_phase_substeps(deployments[instance_id])
     return deployments[instance_id]
 
 
@@ -1123,7 +2143,7 @@ async def get_phase_logs(instance_id: str, phase: str = ""):
     """Return logs for a specific phase from the per-deployment log file.
 
     Query params:
-      phase — exact phase name to filter (e.g. "PHASE 1: FABRIC RTI")
+      phase — exact phase name to filter (e.g. "PHASE 2: FABRIC RTI")
               If empty, returns all logs.
     """
     log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
@@ -1146,6 +2166,43 @@ async def get_phase_logs(instance_id: str, phase: str = ""):
 
 
 from fastapi.responses import StreamingResponse
+
+
+@app.get("/api/deploy/{instance_id}/cloud-state")
+async def get_deploy_cloud_state(instance_id: str):
+    if instance_id not in deployments:
+        raise HTTPException(404, "Instance not found")
+    cs = deployments[instance_id].get("customStatus", {})
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _cloud_state_sync, cs.get("workspaceName", ""), cs.get("resourceGroupName", ""))
+
+
+@app.get("/api/teardown/{instance_id}/cloud-state")
+async def get_teardown_cloud_state(instance_id: str):
+    return await get_deploy_cloud_state(instance_id)
+
+
+@app.post("/api/deploy/{instance_id}/validate")
+async def validate_deployment(instance_id: str):
+    if instance_id not in deployments:
+        raise HTTPException(404, "Instance not found")
+    cs = deployments[instance_id].get("customStatus", {})
+    loop = asyncio.get_event_loop()
+    resources = await loop.run_in_executor(None, _get_deployed_resources_sync, cs.get("workspaceName", ""), cs.get("resourceGroupName", ""))
+    validation = _validation_from_resources(resources, is_teardown=False)
+    if _reconcile_deployment_completion_from_validation(instance_id, deployments[instance_id], validation):
+        save_state()
+    return validation
+
+
+@app.post("/api/teardown/{instance_id}/validate")
+async def validate_teardown(instance_id: str):
+    if instance_id not in deployments:
+        raise HTTPException(404, "Instance not found")
+    cs = deployments[instance_id].get("customStatus", {})
+    loop = asyncio.get_event_loop()
+    resources = await loop.run_in_executor(None, _get_deployed_resources_sync, cs.get("workspaceName", ""), cs.get("resourceGroupName", ""))
+    return _validation_from_resources(resources, is_teardown=True)
 
 
 @app.get("/api/deploy/{instance_id}/logs/stream")
@@ -1272,6 +2329,140 @@ def _backfill_links_from_logs(instance_id: str, deployment: dict) -> None:
     except Exception:
         # Non-fatal: status endpoint should still return deployment details.
         pass
+
+
+def _parse_state_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+
+def _normalize_successful_deployment_progress(instance_id: str, deployment: dict) -> bool:
+    """Show successful completed deployment plans as fully complete.
+
+    Deploy-All streams only steps that actually ran. Resumed/repair runs skip
+    already-completed components, so persisted completedPhases can be lower than
+    totalPhases even though the plan finished successfully. History uses these
+    counters directly; normalize successful deployment runs so skipped plan
+    components do not look like missed phases.
+    """
+    if instance_id.lower().startswith("teardown"):
+        return False
+    if deployment.get("runtimeStatus") != "Completed":
+        return False
+    custom_status = deployment.get("customStatus")
+    if not isinstance(custom_status, dict):
+        return False
+    output = deployment.get("output") if isinstance(deployment.get("output"), dict) else {}
+    if custom_status.get("status") != "succeeded" and output.get("status") != "succeeded":
+        return False
+    total = custom_status.get("totalPhases")
+    if not isinstance(total, int) or total <= 0:
+        return False
+    if custom_status.get("completedPhases") == total:
+        return False
+    custom_status["completedPhases"] = total
+    deployment["lastUpdatedTime"] = now_iso()
+    return True
+
+def _normalize_completed_phase_substeps(deployment: dict) -> None:
+    """Do not show stale running substeps under completed phases."""
+    output = deployment.get("output")
+    custom_status = deployment.get("customStatus", {})
+    if not isinstance(output, dict) or not isinstance(custom_status, dict):
+        return
+    phases = output.get("phases")
+    phase_map = custom_status.get("subStepsByPhase")
+    if not isinstance(phases, list) or not isinstance(phase_map, dict):
+        return
+    changed = False
+    completed_names = {phase.get("phase") for phase in phases if isinstance(phase, dict) and phase.get("status") in {"succeeded", "skipped"}}
+    for phase_name in completed_names:
+        substeps = phase_map.get(phase_name)
+        if isinstance(substeps, list):
+            for substep in substeps:
+                if isinstance(substep, dict) and substep.get("status") == "running":
+                    substep["status"] = "succeeded"
+                    changed = True
+    for phase in phases:
+        if not isinstance(phase, dict) or phase.get("status") not in {"succeeded", "skipped"}:
+            continue
+        substeps = phase.get("subSteps")
+        if isinstance(substeps, list):
+            for substep in substeps:
+                if isinstance(substep, dict) and substep.get("status") == "running":
+                    substep["status"] = "succeeded"
+                    changed = True
+    if changed:
+        deployment["lastUpdatedTime"] = now_iso()
+        save_state()
+
+
+def _backfill_successful_steps_from_state_tracking(instance_id: str, deployment: dict) -> None:
+    """Add successful state-tracking steps that belong to this workspace.
+
+    Deploy-All state tracking is the cross-run ledger for a workspace. A
+    resumed or repair run may intentionally skip work that succeeded in an
+    earlier attempt, and a targeted repair can run directly from PowerShell
+    after orchestration completes. The monitor should show those real completed
+    steps as succeeded instead of rendering selected milestones as skipped or
+    pending just because the final orchestrated process did not stream them.
+    """
+    custom_status = deployment.get("customStatus", {})
+    if not isinstance(custom_status, dict):
+        return
+    workspace_name = custom_status.get("workspaceName")
+    if not workspace_name:
+        return
+    output = deployment.get("output")
+    if not isinstance(output, dict):
+        return
+    phases = output.setdefault("phases", [])
+    if not isinstance(phases, list):
+        return
+
+    state_file = Path(__file__).resolve().parent.parent / "state-tracking" / f".deployment-state-{workspace_name}.json"
+    if not state_file.exists():
+        return
+
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    existing_names = {str(phase.get("phase", "")).casefold() for phase in phases if isinstance(phase, dict)}
+    added = False
+    for phase_entry in state.get("phases") or []:
+        if not isinstance(phase_entry, dict):
+            continue
+        resources = phase_entry.get("resources") if isinstance(phase_entry.get("resources"), dict) else {}
+        if resources.get("FabricWorkspaceName") and resources.get("FabricWorkspaceName") != workspace_name:
+            continue
+        for step in phase_entry.get("steps") or []:
+            if not isinstance(step, dict) or not step.get("success"):
+                continue
+            step_name = str(step.get("name") or "").strip()
+            if not step_name or step_name.casefold() in existing_names:
+                continue
+            phases.append({
+                "phase": step_name,
+                "status": "succeeded",
+                "duration": step.get("duration"),
+                "reconciledFrom": "state-tracking",
+                "reconciledAt": phase_entry.get("timestamp"),
+            })
+            existing_names.add(step_name.casefold())
+            added = True
+
+    if added:
+        completed = sum(1 for phase in phases if isinstance(phase, dict) and phase.get("status") in {"succeeded", "skipped"})
+        custom_status["completedPhases"] = completed
+        deployment["lastUpdatedTime"] = now_iso()
+        save_state()
 
 
 @app.get("/api/deploy/{instance_id}/deployed-resources")
@@ -1431,7 +2622,7 @@ def _get_deployed_resources_sync(ws_name: str, rg_name: str) -> dict:
             from shared.fabric_client import FabricClient
             fabric = FabricClient()
 
-            ws_result = fabric.call("GET", "/workspaces")
+            ws_result = fabric.call("GET", "/workspaces", max_retries=1)
             workspaces = ws_result.get("value", []) if ws_result else []
             ws_match = next((w for w in workspaces if w.get("displayName") == ws_name), None)
 
@@ -1442,7 +2633,7 @@ def _get_deployed_resources_sync(ws_name: str, rg_name: str) -> dict:
                     "id": ws_id,
                     "url": f"https://app.fabric.microsoft.com/groups/{ws_id}",
                 }
-                items = fabric.list_items(ws_id)
+                items = fabric.list_items(ws_id, max_retries=1)
                 for item in items:
                     result["fabric"].append({
                         "name": item.get("displayName", ""),
@@ -1451,7 +2642,18 @@ def _get_deployed_resources_sync(ws_name: str, rg_name: str) -> dict:
                     })
                 logger.info("Found %d Fabric items in workspace '%s'", len(items), ws_name)
         except Exception as e:
-            logger.warning("Failed to query Fabric workspace '%s': %s", ws_name, e)
+            persisted = _workspace_state_from_persisted_link(ws_name)
+            if persisted:
+                result["workspace"] = {
+                    "name": ws_name,
+                    "id": persisted["id"],
+                    "url": persisted["url"],
+                    "status": persisted["status"],
+                    "warning": persisted["warning"],
+                }
+                logger.info("Fabric resources for '%s' live query blocked; using persisted workspace id %s", ws_name, persisted["id"])
+            else:
+                logger.warning("Failed to query Fabric workspace '%s': %s", ws_name, e)
 
     return result
 
@@ -1511,7 +2713,23 @@ async def cancel(instance_id: str):
 
 @app.get("/api/deployments")
 async def list_deployments_api():
-    return list(deployments.values())
+    changed = False
+    for instance_id, deployment in deployments.items():
+        if _normalize_successful_deployment_progress(instance_id, deployment):
+            changed = True
+    if changed:
+        save_state()
+    return sorted(
+        deployments.values(),
+        key=lambda dep: dep.get("createdTime") or dep.get("lastUpdatedTime") or "",
+        reverse=True,
+    )
+
+
+@app.post("/api/teardown/reconcile")
+async def reconcile_teardowns_endpoint():
+    count = reconcile_interrupted_teardowns()
+    return {"reconciled": count}
 
 
 @app.delete("/api/deploy/{instance_id}")
@@ -1638,7 +2856,7 @@ async def start_scan_resources(subscription_id: str = ""):
         "completedAt": None,
         "error": "",
     }
-    asyncio.create_task(_run_scan_job(scan_id, subscription_id))
+    _create_logged_task(_run_scan_job(scan_id, subscription_id), name=f"resource-scan:{scan_id}")
     return {"scanId": scan_id}
 
 
@@ -1701,21 +2919,49 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
             from shared.fabric_client import FabricClient
             fabric = FabricClient()
 
-            ws_result = _get_timed_cached("fabric:workspaces", 120)
-            if ws_result is None:
-                ws_result = fabric.call("GET", "/workspaces")
+            live_workspace_query_blocked = False
+            stale_workspace_cache_used = False
+            try:
+                ws_result = fabric.call("GET", "/workspaces", max_retries=1)
                 _set_timed_cached("fabric:workspaces", ws_result)
-            workspaces = ws_result.get("value", []) if ws_result else []
+            except Exception as ex:
+                live_workspace_query_blocked = True
+                logger.warning(
+                    "Fabric workspace scan live query failed; not using deployment history or stale workspace cache as teardown candidates: %s",
+                    ex,
+                )
+                ws_result = {"value": []}
+
+            workspaces = live_fabric_workspaces_for_teardown(
+                ws_result.get("value", []) if ws_result else [],
+                previously_deployed_ws_names,
+            )
 
             def check_workspace(ws):
                 name = ws.get("displayName", "")
                 ws_id = ws.get("id", "")
+                persisted_only = bool(ws.get("_persistedOnly"))
                 try:
                     items_cache_key = f"fabric:items:{ws_id}"
                     items = _get_timed_cached(items_cache_key, 120)
+                    item_scan_blocked = False
+                    stale_items_used = False
                     if items is None:
-                        items = fabric.list_items(ws_id)
-                        _set_timed_cached(items_cache_key, items)
+                        try:
+                            if persisted_only or live_workspace_query_blocked:
+                                raise RuntimeError("live Fabric item query skipped because workspace enumeration is unavailable")
+                            items = fabric.list_items(ws_id, max_retries=1)
+                            _set_timed_cached(items_cache_key, items)
+                        except Exception as item_ex:
+                            items = _get_stale_timed_cached(items_cache_key)
+                            if items is not None:
+                                stale_items_used = True
+                                logger.warning("Fabric item scan for '%s' failed; using stale item cache: %s", name, item_ex)
+                            else:
+                                item_scan_blocked = True
+                                items = []
+                                logger.warning("Fabric item scan for '%s' unavailable: %s", name, item_ex)
+
                     item_count = len(items)
                     item_types: dict[str, int] = {}
                     for item in items:
@@ -1744,6 +2990,20 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                             matching_names = [i.get("displayName", "") for i in items if i.get("type") == t]
                             artifact_list.append(f"{t}: {', '.join(matching_names)}")
 
+                    scan_notes = []
+                    if live_workspace_query_blocked:
+                        scan_notes.append("live Fabric workspace API blocked")
+                    if stale_workspace_cache_used:
+                        scan_notes.append("workspace list from stale cache")
+                    if stale_items_used:
+                        scan_notes.append("item list from stale cache")
+                    if item_scan_blocked:
+                        scan_notes.append("item inventory unavailable")
+                    if persisted_only:
+                        scan_notes.append("workspace recovered from deployment history")
+                    if scan_notes:
+                        artifact_list.append(f"Scan note: {'; '.join(scan_notes)}")
+
                     has_fn_clinical_alerts = False
                     if has_eventhouse and eventhouse_item:
                         try:
@@ -1752,25 +3012,27 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                                 None,
                             )
                             if kql_db_item:
-                                db_detail = fabric.call(
-                                    "GET",
-                                    f"/workspaces/{ws_id}/kqlDatabases/{kql_db_item['id']}",
-                                )
-                                kusto_uri = ""
-                                if db_detail:
-                                    props = db_detail.get("properties", {})
-                                    kusto_uri = props.get("queryServiceUri", "") or props.get("kustoUri", "")
-                                if kusto_uri:
-                                    kql_cache_key = f"fabric:kqlfn:{ws_id}:{kql_db_item.get('id', '')}"
-                                    cached_fn_check = _get_timed_cached(kql_cache_key, 120)
-                                    if cached_fn_check is None:
+                                kql_cache_key = f"fabric:kqlfn:{ws_id}:{kql_db_item.get('id', '')}"
+                                cached_fn_check = _get_timed_cached(kql_cache_key, 120)
+                                if cached_fn_check is None:
+                                    cached_fn_check = _get_stale_timed_cached(kql_cache_key)
+                                if cached_fn_check is not None:
+                                    has_fn_clinical_alerts = bool(cached_fn_check)
+                                elif not live_workspace_query_blocked:
+                                    db_detail = fabric.call(
+                                        "GET",
+                                        f"/workspaces/{ws_id}/kqlDatabases/{kql_db_item['id']}",
+                                    )
+                                    kusto_uri = ""
+                                    if db_detail:
+                                        props = db_detail.get("properties", {})
+                                        kusto_uri = props.get("queryServiceUri", "") or props.get("kustoUri", "")
+                                    if kusto_uri:
                                         from shared.kusto_client import KustoClient
                                         kusto = KustoClient(kusto_uri, kql_db_item.get("displayName", "MasimoKQLDB"))
                                         rows = kusto.execute_query(".show functions | where Name == 'fn_ClinicalAlerts'")
                                         has_fn_clinical_alerts = len(rows) > 0
                                         _set_timed_cached(kql_cache_key, has_fn_clinical_alerts)
-                                    else:
-                                        has_fn_clinical_alerts = bool(cached_fn_check)
                         except Exception as kql_e:
                             logger.warning("Could not check fn_ClinicalAlerts in '%s': %s", name, kql_e)
 
@@ -1789,8 +3051,10 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
                         detail = f"Full deployment — {item_count} Fabric items"
                     elif is_previously_deployed and not detection_qualified:
                         detail = f"Previously deployed workspace — {item_count} Fabric items"
-                        if missing:
+                        if missing and not item_scan_blocked:
                             detail += f" (missing: {', '.join(missing)})"
+                        if item_scan_blocked:
+                            detail += " (live Fabric inventory unavailable)"
                     else:
                         detail = f"Partial deployment — missing: {', '.join(missing)}"
 
@@ -1886,26 +3150,47 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
     # ── Scan for SPNs matching workspace names ─────────────────────
     emit_status("spn", "Scanning Entra workspace identities...")
     fabric_names = {c["name"] for c in candidates if c["type"] == "fabric"}
+    spn_workspace_names = fabric_names | previously_deployed_ws_names
     seen_spn_ids = set()
 
     def check_spn(ws_name):
+        spn_cache_key = f"spn:{ws_name.lower()}"
+        cached = _get_timed_cached(spn_cache_key, 600)
+        if cached is not None:
+            return cached
+
         try:
-            spn_cache_key = f"spn:{ws_name.lower()}"
-            spns = _get_timed_cached(spn_cache_key, 600)
-            if spns is None:
-                result = _az_run(
-                    ["az", "ad", "sp", "list", "--display-name", ws_name,
-                     "--query", "[].{appId:appId, displayName:displayName, id:id}", "-o", "json"],
-                    check=True,
-                )
-                spns = json.loads(result.stdout)
-                _set_timed_cached(spn_cache_key, spns)
-            return spns
-        except Exception:
+            identities = []
+            app_result = _az_run(
+                ["az", "ad", "app", "list", "--display-name", ws_name,
+                 "--query", "[].{appId:appId, displayName:displayName, id:id}", "-o", "json"],
+                check=True,
+            )
+            for app in json.loads(app_result.stdout or "[]"):
+                app["objectType"] = "appRegistration"
+                identities.append(app)
+
+            sp_result = _az_run(
+                ["az", "ad", "sp", "list", "--display-name", ws_name,
+                 "--query", "[].{appId:appId, displayName:displayName, id:id}", "-o", "json"],
+                check=True,
+            )
+            for sp in json.loads(sp_result.stdout or "[]"):
+                sp["objectType"] = "servicePrincipal"
+                identities.append(sp)
+
+            _set_timed_cached(spn_cache_key, identities)
+            return identities
+        except Exception as ex:
+            stale = _get_stale_timed_cached(spn_cache_key)
+            if stale is not None:
+                logger.warning("Entra identity scan for '%s' failed; using stale identity cache: %s", ws_name, ex)
+                return stale
+            logger.warning("Entra identity scan for '%s' failed: %s", ws_name, ex)
             return []
 
     with ThreadPoolExecutor(max_workers=4) as spn_executor:
-        spn_map_results = list(spn_executor.map(check_spn, fabric_names))
+        spn_map_results = list(spn_executor.map(check_spn, sorted(spn_workspace_names)))
 
     for spns in spn_map_results:
         for spn in spns:
@@ -1919,11 +3204,11 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
 
             candidate = {
                 "type": "spn",
-                "name": spn.get("displayName", ws_name),
+                "name": spn.get("displayName", "Unknown"),
                 "id": spn_id,
                 "status": status,
-                "detail": f"Workspace identity SPN ({'workspace exists' if ws_exists else 'workspace deleted'}) — appId: {spn.get('appId', 'unknown')}",
-                "matchedArtifacts": [f"App Registration: {spn.get('displayName', '')} (appId: {spn.get('appId', '')})"],
+                "detail": f"Workspace identity {('app registration' if spn.get('objectType') == 'appRegistration' else 'service principal')} ({'workspace exists' if ws_exists else 'workspace deleted'}) — appId: {spn.get('appId', 'unknown')}",
+                "matchedArtifacts": [f"{('App Registration' if spn.get('objectType') == 'appRegistration' else 'Service Principal')}: {spn.get('displayName', '')} (appId: {spn.get('appId', '')})"],
             }
             emit_candidate(candidate, "spn", f"Discovered Entra identity: {candidate['name']}")
 
@@ -1931,35 +3216,61 @@ def _scan_resources_sync(subscription_id: str, progress_callback=None, status_ca
     return candidates
 
 
-# ── Azure Health Data Services region validation ───────────────────────
+# ── Azure Health Data Services FHIR region validation ──────────────────
 
+FHIR_REGION_CACHE_KEY = "fhir_regions"
+FHIR_REGION_PROVIDER_QUERY = "resourceTypes[?resourceType=='workspaces/fhirservices'].locations[]"
+FHIR_FALLBACK_REGIONS = [
+    "australiaeast", "canadacentral", "centralindia", "eastus", "eastus2",
+    "francecentral", "germanywestcentral", "japaneast", "koreacentral",
+    "northcentralus", "northeurope", "qatarcentral", "southcentralus",
+    "southeastasia", "swedencentral", "switzerlandnorth", "uksouth",
+    "westcentralus", "westeurope", "westus2", "westus3",
+]
+
+
+def _normalize_azure_location(location: str) -> str:
+    """Convert an Azure display location ("East US") to ARM form ("eastus")."""
+    return re.sub(r"\s+", "", location).lower()
+
+
+@app.get("/api/scan/fhir-regions")
 @app.get("/api/scan/ahds-regions")
-async def list_ahds_regions():
-    """Return Azure regions where AHDS workspaces are available."""
+async def list_fhir_regions(force: bool = False):
+    """Return Azure regions where AHDS FHIR services are deployable."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _list_ahds_regions_sync)
+    return await loop.run_in_executor(None, _list_fhir_regions_sync, force)
 
 
-def _list_ahds_regions_sync() -> list[str]:
-    """Query ARM for AHDS workspace locations."""
-    cached = _get_timed_cached("ahds_regions", 86400)
-    if cached is not None:
-        return cached
+def _list_fhir_regions_sync(force: bool = False) -> list[str]:
+    """Query ARM for AHDS FHIR service locations, with stale/offline fallback."""
+    if not force:
+        cached = _get_timed_cached(FHIR_REGION_CACHE_KEY, 86400)
+        if cached is not None:
+            return cached
+
     try:
         proc = _az_run(
-            ["az", "provider", "show", "--namespace", "Microsoft.HealthcareApis",
-             "--query", "resourceTypes[?resourceType=='workspaces'].locations[]",
-             "-o", "json"],
+            [
+                "az", "provider", "show", "--namespace", "Microsoft.HealthcareApis",
+                "--query", FHIR_REGION_PROVIDER_QUERY,
+                "-o", "json",
+            ],
             check=True,
         )
-        regions = json.loads(proc.stdout)
-        # Normalise display names ("East US") → ARM names ("eastus")
-        result = sorted(set(r.replace(" ", "").lower() for r in regions))
-        _set_timed_cached("ahds_regions", result)
+        regions = json.loads(proc.stdout or "[]")
+        result = sorted({_normalize_azure_location(region) for region in regions if region})
+        if not result:
+            raise ValueError("Azure provider returned no AHDS FHIR regions")
+        _set_timed_cached(FHIR_REGION_CACHE_KEY, result)
         return result
     except Exception as e:
-        logger.warning("Failed to query AHDS regions: %s", e)
-        return []
+        stale = _get_stale_timed_cached(FHIR_REGION_CACHE_KEY)
+        if stale:
+            logger.warning("Failed to query AHDS FHIR regions; using stale cache: %s", e)
+            return stale
+        logger.warning("Failed to query AHDS FHIR regions; using fallback list: %s", e)
+        return FHIR_FALLBACK_REGIONS.copy()
 
 
 # ── Fabric Capacity API ────────────────────────────────────────────────
@@ -2364,8 +3675,13 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=7071, log_level="info", timeout_graceful_shutdown=3)
     except KeyboardInterrupt:
         logger.info("Server stopped by user (Ctrl+C)")
-    except Exception:
+    except SystemExit:
+        logger.critical("SERVER EXITED VIA SystemExit — see traceback below", exc_info=True)
+        _log_thread_stacks("SystemExit")
+        raise
+    except BaseException:
         logger.critical("SERVER CRASHED — see traceback below", exc_info=True)
+        _log_thread_stacks("BaseException")
         raise
     finally:
         logger.info("Server process exiting")

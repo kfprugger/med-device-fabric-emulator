@@ -1,134 +1,285 @@
 // ============================================================================
 // 05-dashboard-queries.kql
-// Pre-built queries for the Real-Time Dashboard.
-// Each section becomes a panel/tile in the Fabric RTI Dashboard.
+// Enhanced Masimo Patient Monitoring Real-Time Dashboard queries.
+// Source of truth for the automated dashboard template:
+//   fabric-rti/dashboard/masimo-clinical-dashboard.json
 // ============================================================================
 
 // ---------------------------------------------------------------------------
-// PANEL 1: Unit Census — Device count by status
-// Visual: Pie chart or stat tiles
+// PAGE: Command Center
 // ---------------------------------------------------------------------------
-// Title: "Device Status"
+
+// Title: Online Devices
+// Visual: card
 fn_DeviceStatus()
-| summarize device_count = count() by status
-| order by status asc
+| where status == 'ONLINE'
+| count
 
-// ---------------------------------------------------------------------------
-// PANEL 2: Active Alerts — Current open alerts by severity tier
-// Visual: Table with conditional formatting (red/orange/yellow)
-// ---------------------------------------------------------------------------
-// Title: "Active Clinical Alerts"
-fn_ClinicalAlerts(5)
-| project alert_tier, device_id, patient_name, alert_type,
-          spo2, pr, message
-| order by alert_tier asc
+// Title: Open Clinical Alerts
+// Visual: card
+fn_ClinicalAlerts(60)
+| count
 
-// ---------------------------------------------------------------------------
-// PANEL 3: SpO2 Heatmap — All devices, color-coded SpO2
-// Visual: Heatmap or multi-line chart
-// ---------------------------------------------------------------------------
-// Title: "SpO2 Heatmap (Last 30 min)"
+// Title: Critical Alerts
+// Visual: card
+fn_ClinicalAlerts(60)
+| where alert_tier == 'CRITICAL'
+| count
+
+// Title: Urgent Alerts
+// Visual: card
+fn_ClinicalAlerts(60)
+| where alert_tier == 'URGENT'
+| count
+
+// Title: Warning Alerts
+// Visual: card
+fn_ClinicalAlerts(60)
+| where alert_tier == 'WARNING'
+| count
+
+// Title: Ingestion Lag (seconds)
+// Visual: card
 TelemetryRaw
-| where todatetime(timestamp) > ago(30m)
-| summarize avg_spo2 = round(avg(todouble(telemetry.spo2)), 1)
-  by device_id, bin(todatetime(timestamp), 1m)
-| order by timestamp asc, device_id asc
+| summarize last_time=max(todatetime(timestamp))
+| extend ingestion_lag_seconds=datetime_diff('second', now(), last_time)
+| project ingestion_lag_seconds
+
+// Title: Clinical Alert Feed
+// Visual: table
+fn_ClinicalAlerts(60)
+| extend alert_age_minutes=round(datetime_diff('second', now(), alert_time) / 60.0, 1), condition_summary=iff(isempty(qualifying_conditions), 'Vital-sign threshold only', qualifying_conditions), risk_context=case(escalated, 'Escalated by clinical context', isempty(qualifying_conditions), 'No condition escalation', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement')
+| project alert_tier, alert_age_minutes, alert_time, device_id, patient_name, alert_type, spo2, pr, signal_iq, risk_context, recommended_action, message
+| order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc
+| take 20
+
+// Title: SpO₂ Trend + Alert Markers + Thresholds
+// Visual: line
+// Dashboard parameter: _selectedDevices
+let readings = TelemetryRaw
+| where todatetime(timestamp) > ago(60m)
+| where device_id in (_selectedDevices)
+| summarize value=round(avg(todouble(telemetry.spo2)), 1) by series=device_id, ts=bin(todatetime(timestamp), 30s); let buckets = readings
+| summarize by ts; let alert_markers = fn_ClinicalAlerts(60)
+| where device_id in (_selectedDevices)
+| project series=strcat('Alert ', alert_tier), ts=bin(alert_time, 30s), value=spo2; readings
+| union alert_markers
+| union (buckets
+| extend series='Warning threshold 94', value=94.0)
+| union (buckets
+| extend series='Urgent threshold 90', value=90.0)
+| union (buckets
+| extend series='Critical threshold 85', value=85.0)
+| order by ts asc
+| render timechart
+
+// Title: Data Freshness / Throughput
+// Visual: table
+TelemetryRaw
+| summarize last_time=max(todatetime(timestamp)), total_devices=dcount(device_id)
+| extend join_key=1
+| join kind=inner (TelemetryRaw
+| where todatetime(timestamp) > ago(1m)
+| summarize events_last_minute=count(), active_devices_30s=dcountif(device_id, todatetime(timestamp) > ago(30s))
+| extend join_key=1) on join_key
+| extend ingestion_lag_seconds=datetime_diff('second', now(), last_time), expected_events_per_minute=total_devices * 60, observed_pct=round(100.0 * todouble(events_last_minute) / todouble(total_devices * 60), 1)
+| project last_time, ingestion_lag_seconds, events_last_minute, expected_events_per_minute, observed_pct, active_devices_30s, total_devices
+
+// Title: Pulse Rate Trend — Last 60 Minutes
+// Visual: line
+// Dashboard parameter: _selectedDevices
+TelemetryRaw
+| where todatetime(timestamp) > ago(60m)
+| where device_id in (_selectedDevices)
+| summarize avg_pr=round(avg(todouble(telemetry.pr)), 0) by device_id, bin(todatetime(timestamp), 30s)
+| order by timestamp asc
+| render timechart
+
+// Title: Alert Markers — Selected Device
+// Visual: table
+// Dashboard parameter: _selectedDevices
+fn_ClinicalAlerts(60)
+| where device_id in (_selectedDevices)
+| project alert_time, alert_tier, device_id, patient_name, spo2, pr, alert_type, message
+| order by alert_time desc
+| take 25
 
 // ---------------------------------------------------------------------------
-// PANEL 4: Alert Trend — Alerts over time (last 24h)
-// Visual: Time-series bar chart
+// PAGE: Clinical Alerts
 // ---------------------------------------------------------------------------
-// Title: "Alert Trend (24h)"
-AlertHistory
-| where alert_time > ago(24h)
-| summarize alert_count = count() by alert_tier, bin(alert_time, 15m)
-| order by alert_time asc
 
-// ---------------------------------------------------------------------------
-// PANEL 5: Top Alerting Devices — Devices with most alerts
-// Visual: Horizontal bar chart
-// ---------------------------------------------------------------------------
-// Title: "Top 10 Alerting Devices (24h)"
-AlertHistory
-| where alert_time > ago(24h)
-| summarize
-    total_alerts = count(),
-    critical = countif(alert_tier == "CRITICAL"),
-    urgent   = countif(alert_tier == "URGENT"),
-    warning  = countif(alert_tier == "WARNING")
-  by device_id
-| top 10 by total_alerts desc
-
-// ---------------------------------------------------------------------------
-// PANEL 6: Vital Signs Snapshot — Latest reading per device (table)
-// Visual: Table with sparklines
-// ---------------------------------------------------------------------------
-// Title: "Vital Signs — Latest"
-fn_LatestReadings()
-| extend
-    spo2_status = case(spo2 < 85, "🔴", spo2 < 90, "🟠", spo2 < 94, "🟡", "🟢"),
-    pr_status   = case(pr > 150 or pr < 40, "🔴", pr > 130 or pr < 45, "🟠",
-                       pr > 110 or pr < 50, "🟡", "🟢")
-| project device_id, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_iq, timestamp
-| order by spo2 asc
-
-// ---------------------------------------------------------------------------
-// PANEL 7: Signal Quality — Devices with degraded signal
-// Visual: Table filtered to signal_iq < 95
-// ---------------------------------------------------------------------------
-// Title: "Degraded Signal Quality"
-fn_LatestReadings()
-| where signal_iq < 95
-| project device_id, signal_iq, spo2, pr, timestamp
-| order by signal_iq asc
-
-// ============================================================================
-// CLINICAL ALERTS MAP DASHBOARD (Phase 2 — requires Silver Lakehouse)
-// ============================================================================
-
-// ---------------------------------------------------------------------------
-// MAP TILE: Alert locations — bubble map with alert counts per hospital
-// Visual: Map (requires fn_AlertLocationMap which joins Silver Lakehouse)
-// ---------------------------------------------------------------------------
-// Title: "Alert Locations"
-fn_AlertLocationMap(60)
-| summarize alert_count = count(),
-    critical = countif(alert_tier == 'CRITICAL'),
-    urgent = countif(alert_tier == 'URGENT'),
-    warning = countif(alert_tier == 'WARNING'),
-    patients = dcount(patient_name),
-    devices = dcount(device_id)
-    by location_name, latitude, longitude, city, state
-| extend tooltip = strcat(location_name, '\n', alert_count, ' alerts (', critical, ' critical)\n', devices, ' devices, ', patients, ' patients')
-
-// ---------------------------------------------------------------------------
-// BAR TILE: Alerts by Hospital — stacked by severity
-// Visual: Bar chart
-// ---------------------------------------------------------------------------
-// Title: "Alerts by Hospital"
-fn_AlertLocationMap(60)
-| summarize total = count(),
-    critical = countif(alert_tier == 'CRITICAL'),
-    urgent = countif(alert_tier == 'URGENT'),
-    warning = countif(alert_tier == 'WARNING')
-    by location_name
-| order by total desc
-
-// ---------------------------------------------------------------------------
-// TABLE TILE: Alert detail with location
-// Visual: Table
-// ---------------------------------------------------------------------------
-// Title: "Alert Detail"
-fn_AlertLocationMap(60)
-| project alert_time, device_id, patient_name, alert_tier, alert_type,
-          spo2, pr, location_name, city
-| order by alert_tier asc, alert_time desc
+// Title: Clinical Alert Triage Queue
+// Visual: table
+let repeats = fn_ClinicalAlerts(120)
+| summarize repeat_count=count() by device_id; fn_ClinicalAlerts(60)
+| join kind=leftouter repeats on device_id
+| extend alert_age_minutes=round(datetime_diff('second', now(), alert_time) / 60.0, 1), condition_summary=iff(isempty(qualifying_conditions), 'Vital-sign threshold only', qualifying_conditions), risk_context=case(escalated, 'Escalated by clinical context', isempty(qualifying_conditions), 'No condition escalation', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement'), is_repeat_alert=iff(repeat_count > 1, 'Repeat', 'New')
+| project alert_tier, alert_age_minutes, alert_time, device_id, patient_name, patient_id, alert_type, spo2, pr, signal_iq, condition_summary, risk_context, recommended_action, is_repeat_alert, message
+| order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc
 | take 100
 
+// Title: Why Alerts Fired
+// Visual: table
+fn_ClinicalAlerts(60)
+| extend reason=case(alert_type == 'SPO2_LOW', strcat('SpO2 ', tostring(spo2), '% below threshold'), alert_type == 'PR_ABNORMAL', strcat('Pulse ', tostring(pr), ' bpm outside threshold'), 'Multiple vital-sign thresholds breached'), context=case(escalated, strcat('Escalated by conditions: ', qualifying_conditions), isempty(qualifying_conditions), 'Vital-sign threshold only', strcat('Conditions: ', qualifying_conditions)), recommended_action=case(alert_tier == 'CRITICAL', 'Immediate bedside assessment / escalation', alert_tier == 'URGENT', 'Nurse review within 5 minutes', 'Monitor trend and verify sensor placement')
+| project alert_time, alert_tier, device_id, patient_name, reason, context, recommended_action
+| order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc
+| take 50
+
+// Title: Clinical Load by Severity — 24h
+// Visual: bar
+AlertHistory
+| where alert_time > ago(24h)
+| summarize alert_count=count() by alert_tier, ts=bin(alert_time, 15m)
+| order by ts asc
+| render barchart
+
+// Title: Top Noisy Devices — 24h
+// Visual: table
+AlertHistory
+| where alert_time > ago(24h)
+| summarize total_alerts=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), last_alert=max(alert_time), patients=dcount(patient_id) by device_id
+| order by total_alerts desc
+| take 10
+
 // ---------------------------------------------------------------------------
-// CARD TILE: Total active alerts
-// Visual: Card
+// PAGE: Device Detail
 // ---------------------------------------------------------------------------
-// Title: "Total Active Alerts"
+
+// Title: Selected Device Vitals
+// Visual: table
+fn_LatestReadings()
+| where device_id in (_selectedDevices)
+| extend spo2_status=case(spo2 < 85, 'Critical', spo2 < 90, 'Urgent', spo2 < 94, 'Warning', 'Normal'), pr_status=case(pr > 150 or pr < 40, 'Critical', pr > 130 or pr < 45, 'Urgent', pr > 110 or pr < 50, 'Warning', 'Normal'), signal_status=case(signal_iq < 95, 'Check sensor', 'Good')
+| project device_id, timestamp, spo2_status, spo2, pr_status, pr, pi, pvi, sphb, signal_status, signal_iq
+| order by spo2 asc
+
+// Title: Selected Device SpO₂ + Alert Markers + Thresholds
+// Visual: line
+// Dashboard parameter: _selectedDevices
+let readings = TelemetryRaw
+| where todatetime(timestamp) > ago(2h)
+| where device_id in (_selectedDevices)
+| summarize value=round(avg(todouble(telemetry.spo2)), 1) by series=device_id, ts=bin(todatetime(timestamp), 30s); let buckets = readings
+| summarize by ts; let alert_markers = fn_ClinicalAlerts(120)
+| where device_id in (_selectedDevices)
+| project series=strcat('Alert ', alert_tier), ts=bin(alert_time, 30s), value=spo2; readings
+| union alert_markers
+| union (buckets
+| extend series='Warning threshold 94', value=94.0)
+| union (buckets
+| extend series='Urgent threshold 90', value=90.0)
+| union (buckets
+| extend series='Critical threshold 85', value=85.0)
+| order by ts asc
+| render timechart
+
+// Title: Selected Device Pulse Rate
+// Visual: line
+// Dashboard parameter: _selectedDevices
+TelemetryRaw
+| where todatetime(timestamp) > ago(60m)
+| where device_id in (_selectedDevices)
+| summarize avg_pr=round(avg(todouble(telemetry.pr)), 0) by device_id, bin(todatetime(timestamp), 30s)
+| order by timestamp asc
+| render timechart
+
+// Title: Selected Device Alert History
+// Visual: table
+// Dashboard parameter: _selectedDevices
+fn_ClinicalAlerts(60)
+| where device_id in (_selectedDevices)
+| project alert_time, alert_tier, device_id, patient_name, spo2, pr, alert_type, message
+| order by alert_time desc
+| take 25
+
+// Title: Patient Risk Context
+// Visual: table
+fn_ClinicalAlerts(240)
+| where device_id in (_selectedDevices)
+| summarize latest_alert=max(alert_time), alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), conditions=make_set_if(qualifying_conditions, isnotempty(qualifying_conditions), 5), escalated=max(toint(escalated)) by device_id, patient_name, patient_id
+| extend risk_context=case(escalated == 1, strcat('Escalated by conditions: ', tostring(conditions)), array_length(conditions) == 0, 'Vital-sign threshold only', strcat('Conditions: ', tostring(conditions)))
+| project device_id, patient_name, patient_id, latest_alert, alert_count, critical, urgent, risk_context
+| order by critical desc, urgent desc, alert_count desc
+
+// Title: Signal Quality Trend
+// Visual: line
+// Dashboard parameter: _selectedDevices
+TelemetryRaw
+| where todatetime(timestamp) > ago(60m)
+| where device_id in (_selectedDevices)
+| summarize avg_signal_iq=round(avg(todouble(telemetry.signal_iq)), 1) by device_id, bin(todatetime(timestamp), 30s)
+| order by timestamp asc
+| render timechart
+
+// ---------------------------------------------------------------------------
+// PAGE: Operations
+// ---------------------------------------------------------------------------
+
+// Title: Device Connectivity Status
+// Visual: table
+fn_DeviceStatus()
+| extend age_bucket=case(seconds_ago < 30, '<30s', seconds_ago < 120, '30s-2m', '>2m'), connection_action=case(status == 'ONLINE', 'No action', status == 'STALE', 'Check telemetry path', 'Escalate device connectivity')
+| project status, device_id, last_seen, seconds_ago, age_bucket, connection_action
+| order by case(status == 'OFFLINE', 1, status == 'STALE', 2, 3), seconds_ago desc
+
+// Title: Signal Quality vs Clinical Risk
+// Visual: table
+fn_LatestReadings()
+| extend signal_quality=case(signal_iq < 95 and spo2 < 94, 'Low SpO2 + poor signal', signal_iq < 95, 'Poor signal only', spo2 < 94, 'Low SpO2 + good signal', 'Vitals/signal normal')
+| summarize devices=count(), min_spo2=min(spo2), avg_signal_iq=round(avg(todouble(signal_iq)), 1) by signal_quality
+| order by devices desc
+
+// Title: Devices Needing Sensor / Clinical Review
+// Visual: table
+fn_LatestReadings()
+| where signal_iq < 95 or spo2 < 94
+| extend signal_quality=case(signal_iq < 95 and spo2 < 94, 'Low SpO2 + poor signal', signal_iq < 95, 'Poor signal only', 'Low SpO2 + good signal'), action=case(signal_iq < 95 and spo2 < 94, 'Check probe placement, then assess patient', signal_iq < 95, 'Check probe placement', 'Assess patient oxygenation')
+| project device_id, signal_quality, signal_iq, spo2, pr, action, timestamp
+| order by signal_iq asc, spo2 asc
+| take 100
+
+// Title: Events per Minute — Last 60 Minutes
+// Visual: line
+TelemetryRaw
+| where todatetime(timestamp) > ago(60m)
+| summarize events=count(), devices=dcount(device_id) by ts=bin(todatetime(timestamp), 1m)
+| order by ts asc
+| render timechart
+
+// Title: Data Freshness / Throughput
+// Visual: table
+TelemetryRaw
+| summarize last_time=max(todatetime(timestamp)), total_devices=dcount(device_id)
+| extend join_key=1
+| join kind=inner (TelemetryRaw
+| where todatetime(timestamp) > ago(1m)
+| summarize events_last_minute=count(), active_devices_30s=dcountif(device_id, todatetime(timestamp) > ago(30s))
+| extend join_key=1) on join_key
+| extend ingestion_lag_seconds=datetime_diff('second', now(), last_time), expected_events_per_minute=total_devices * 60, observed_pct=round(100.0 * todouble(events_last_minute) / todouble(total_devices * 60), 1)
+| project last_time, ingestion_lag_seconds, events_last_minute, expected_events_per_minute, observed_pct, active_devices_30s, total_devices
+
+// ---------------------------------------------------------------------------
+// PAGE: Facility Map
+// ---------------------------------------------------------------------------
+
+// Title: Alert Locations
+// Visual: map
 fn_AlertLocationMap(60)
-| count
+| summarize alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), patients=dcount(patient_name), devices=dcount(device_id) by location_name, latitude, longitude, city, state
+| extend tooltip=strcat(location_name, ' ', alert_count, ' alerts (', critical, ' critical) ', devices, ' devices, ', patients, ' patients')
+| project longitude, latitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices, tooltip
+| render scatterchart with (kind=map, xcolumn=longitude, ycolumns=latitude, series=alert_count, title='Alert Locations Map')
+
+// Title: Alerts by Hospital
+// Visual: bar
+fn_AlertLocationMap(60)
+| summarize total=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING') by location_name
+| order by total desc
+
+// Title: Facility Alert Detail
+// Visual: table
+fn_AlertLocationMap(60)
+| project alert_time, alert_tier, device_id, patient_name, alert_type, spo2, pr, location_name, city, state, qualifying_conditions, message
+| order by case(alert_tier == 'CRITICAL', 1, alert_tier == 'URGENT', 2, alert_tier == 'WARNING', 3, 4) asc, alert_time desc
+| take 100

@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Badge,
+  Button,
   Card,
   CardHeader,
   makeStyles,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   ProgressBar,
   Text,
-  Tooltip,
   tokens,
 } from "@fluentui/react-components";
 import {
@@ -15,11 +18,12 @@ import {
   ArrowSyncCircleRegular,
   ClockRegular,
   PauseCircleRegular,
+  InfoRegular,
   ChevronDownRegular,
   ChevronUpRegular,
   WarningFilled,
 } from "@fluentui/react-icons";
-import type { PhaseInfo } from "../api";
+import type { PhaseInfo, PhaseSubStep, PhaseSubStepStatus } from "../api";
 import { getPhaseLogs } from "../api";
 import type { PhaseLog } from "../mockDeployment";
 import { useReducedMotion } from "../hooks/useReducedMotion";
@@ -92,6 +96,63 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground1,
   },
+  subStepPills: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: tokens.spacingHorizontalXS,
+    padding: `0 ${tokens.spacingHorizontalL} ${tokens.spacingVerticalXS}`,
+  },
+  subStepPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    maxWidth: "220px",
+    padding: `2px ${tokens.spacingHorizontalXS}`,
+    borderRadius: tokens.borderRadiusCircular,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground2,
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground2,
+  },
+  subStepPillWarning: {
+    border: `1px solid ${tokens.colorPaletteYellowBorderActive}`,
+    backgroundColor: tokens.colorStatusWarningBackground1,
+    color: tokens.colorNeutralForeground1,
+  },
+  subStepPillFailed: {
+    border: `1px solid ${tokens.colorPaletteRedBorderActive}`,
+    backgroundColor: tokens.colorPaletteRedBackground1,
+    color: tokens.colorPaletteRedForeground1,
+  },
+  subStepDetailPanel: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: tokens.spacingVerticalXS,
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
+    backgroundColor: tokens.colorNeutralBackground2,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  subStepDetail: {
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+    borderRadius: tokens.borderRadiusMedium,
+    borderLeft: `3px solid ${tokens.colorPaletteYellowBorderActive}`,
+    backgroundColor: tokens.colorStatusWarningBackground1,
+  },
+  subStepDetailFailed: {
+    borderLeftColor: tokens.colorPaletteRedBorderActive,
+    backgroundColor: tokens.colorPaletteRedBackground1,
+  },
+  infoButton: {
+    minWidth: "24px",
+    width: "24px",
+    height: "24px",
+    color: tokens.colorNeutralForeground3,
+  },
+  infoPopoverContent: {
+    maxWidth: "320px",
+    whiteSpace: "normal" as const,
+    lineHeight: "1.4",
+  },
 });
 
 function statusIcon(status: string, hasWarnings?: boolean) {
@@ -129,6 +190,23 @@ function statusBadge(status: string, hasWarnings?: boolean) {
   return <Badge color={colorMap[status] || "subtle"}>{status}</Badge>;
 }
 
+function subStepBadgeColor(status: PhaseSubStepStatus): "success" | "danger" | "informative" | "warning" | "subtle" {
+  if (status === "succeeded") return "success";
+  if (status === "failed") return "danger";
+  if (status === "warning") return "warning";
+  if (status === "running") return "informative";
+  return "subtle";
+}
+
+function subStepLabel(subStep: PhaseSubStep): string {
+  const duration = formatDuration(subStep.duration);
+  return duration ? `${subStep.name} · ${duration}` : subStep.name;
+}
+
+function isActionSubStep(subStep: PhaseSubStep): boolean {
+  return subStep.status === "failed" || subStep.status === "warning";
+}
+
 function formatDuration(duration?: number | string): string {
   if (duration === undefined || duration === null || duration === "") return "";
   // If it's already a formatted string from the backend (e.g. "10.2 min", "0 min")
@@ -162,18 +240,21 @@ interface PhaseCardProps {
 }
 
 const PHASE_TOOLTIPS: Record<string, string> = {
-  "Step 1: Fabric Workspace": "Workspace validation and managed identity provisioning",
-  "Step 1b: Base Azure Infrastructure": "Event Hub, ACR, Storage, Key Vault, Masimo emulator ACI",
-  "Step 2: FHIR Service & Data Loading": "FHIR Service, Synthea patients, FHIR Loader upload",
-  "Step 2b: DICOM Infrastructure & Loading": "DICOM Service, TCIA download, re-tag, ADLS upload",
-  "Step 3: Fabric RTI Phase 1": "Eventhouse, KQL DB, Eventstream, dashboard, FHIR $export",
-  "Step 4: HDS Detection": "Auto-detect Healthcare Data Solutions + scipy environment",
-  "Step 5: Fabric RTI Phase 2": "Bronze shortcut, KQL shortcuts, enriched alerts, Clinical Alerts Map",
-  "Step 5b: HDS Pipelines": "DICOM shortcut, clinical/imaging/OMOP pipeline triggers",
-  "Step 6: Data Agents": "Patient 360 + Clinical Triage Data Agents",
-  "Step 7: Imaging Toolkit": "Cohorting Agent, OHIF DICOM Viewer, Power BI Imaging Report",
-  "Step 8: Ontology": "DeviceAssociation table, ClinicalDeviceOntology, agent binding",
-  "Step 9: Data Activator": "ClinicalAlertActivator Reflex + email notification rules",
+  "Phase 1: Fabric Workspace": "Workspace validation, capacity assignment, and managed identity provisioning",
+  "Phase 1: Base Azure Infrastructure": "Event Hub, ACR, Storage, Key Vault, and Masimo emulator ACI",
+  "Phase 1: FHIR Service + Synthea + Loader": "FHIR infrastructure, Synthea patients, FHIR Loader upload, and device associations",
+  "Phase 1: Shared HDS Infrastructure": "Shared HDS workspace and storage prerequisites when FHIR is bypassed",
+  "Phase 1: DICOM Loader": "TCIA download, patient-preserving re-tagging, ADLS upload, and FHIR ImagingStudy creation",
+  "Phase 2: Fabric RTI": "Masimo Eventhouse, KQL database/functions, Eventstream topology, dashboard, and FHIR $export",
+  "Phase 2: Fabric RTI (auto)": "Post-HDS bronze shortcuts, KQL shortcuts, enriched alerts, and Clinical Alerts Map",
+  "Phase 3: HDS Deployment Detection": "Manual HDS deployment detection, notebook cleanup, and resume gate",
+  "Phase 3: DICOM Shortcut + HDS Pipelines": "DICOM shortcut, clinical/imaging/OMOP pipeline triggers, and row-count gates",
+  "Phase 4: Imaging & Reporting": "Cohorting Agent, OHIF DICOM Viewer, Direct Lake imaging report, and proxy/index validation",
+  "Phase 4: Ontology": "DeviceAssociation table, ClinicalDeviceOntology, DevicePayerOntology, and agent binding",
+  "Phase 4: Ontology-Aware Data Agents": "Patient 360 + Clinical Triage agents bound to ClinicalDeviceOntology",
+  "Phase 5: Data Activator": "ClinicalAlertActivator Reflex + email notification rules",
+  "Phase 6: CMS Quality & Claims": "Claims star schema, quality measures, Star Ratings, HCC risk, and Power BI report",
+  "Phase 7: Payer RTI & Ops": "Claim stream, payer scoring, activator, HealthcareOpsAgent, and graph agent",
 };
 
 function formatLogTime(iso: string): string {
@@ -184,15 +265,38 @@ function formatLogTime(iso: string): string {
     return "";
   }
 }
+function canonicalPhaseName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/^(phase\s*\d+:|\d+[a-z]?\.\s*[^:]+:)/i, "")
+    .replace(/\s*\(auto\)\s*/i, "")
+    .trim();
+}
+
+function getPhaseTooltip(phaseName: string): string {
+  const exact = PHASE_TOOLTIPS[phaseName];
+  if (exact) return exact;
+
+  const canonical = canonicalPhaseName(phaseName);
+  const match = Object.entries(PHASE_TOOLTIPS)
+    .map(([key, value]) => ({ keyCanonical: canonicalPhaseName(key), value }))
+    .sort((a, b) => b.keyCanonical.length - a.keyCanonical.length)
+    .find(({ keyCanonical }) => canonical.includes(keyCanonical) || keyCanonical.includes(canonical));
+  return match?.value ?? phaseName;
+}
+
 
 export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true, instanceId }: PhaseCardProps) {
   const styles = useStyles();
   const reducedMotion = useReducedMotion();
-  const tooltip = PHASE_TOOLTIPS[phase.phase] || phase.phase;
+  const tooltip = getPhaseTooltip(phase.phase);
   const isActive = phase.status === "running" || phase.status === "waiting_for_input";
-  const hasWarnings = (phase.warnings?.length ?? 0) > 0;
+  const subSteps = phase.subSteps ?? [];
+  const actionSubSteps = subSteps.filter(isActionSubStep);
+  const hasWarnings = (phase.warnings?.length ?? 0) > 0 || actionSubSteps.length > 0;
   const [expanded, setExpanded] = useState(defaultExpanded ?? isActive);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const previousStatusRef = useRef(phase.status);
+  const logPanelRef = useRef<HTMLDivElement>(null);
   const [fetchedLogs, setFetchedLogs] = useState<PhaseLog[] | null>(null);
   const [fetchingLogs, setFetchingLogs] = useState(false);
   const hasFetched = useRef(false);
@@ -223,16 +327,32 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
 
   const displayLogs = logs.length > 0 ? logs : (fetchedLogs ?? []);
 
-  // Auto-expand when phase becomes active
+  // Auto-expand when phase becomes active, then auto-collapse once that active work succeeds.
   useEffect(() => {
-    if (isActive) setExpanded(true);
+    if (isActive) {
+      setExpanded(true);
+    }
   }, [isActive]);
 
-  // Auto-scroll logs to bottom (respects autoScroll prop)
   useEffect(() => {
-    if (autoScroll && expanded && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
+    const previousStatus = previousStatusRef.current;
+    if (previousStatus !== phase.status) {
+      if (phase.status === "succeeded") {
+        setExpanded(false);
+      }
+      previousStatusRef.current = phase.status;
     }
+  }, [phase.status]);
+
+  // Auto-scroll only the log panel, never the whole page.
+  useEffect(() => {
+    if (!autoScroll || !expanded || !logPanelRef.current) return;
+
+    const panel = logPanelRef.current;
+    panel.scrollTo({
+      top: panel.scrollHeight,
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
   }, [displayLogs.length, expanded, autoScroll, reducedMotion]);
 
   const logLevelStyle = (level: PhaseLog["level"]) => {
@@ -254,8 +374,7 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   };
 
   return (
-    <Tooltip content={tooltip} relationship="description" positioning="after">
-      <Card
+    <Card
         id={`phase-card-${phase.phase.replace(/\s+/g, "-")}`}
         className={`${styles.card} ${isActive ? styles.cardActive : ""}`}
         size="small"
@@ -279,6 +398,27 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
               <Text className={styles.duration} size={200}>
                 {formatDuration(phase.duration)}
               </Text>
+              <Popover positioning={{ position: "below", align: "end" }} withArrow>
+                <PopoverTrigger disableButtonEnhancement>
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    className={styles.infoButton}
+                    icon={<InfoRegular />}
+                    aria-label={`About ${phase.phase}`}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  />
+                </PopoverTrigger>
+                <PopoverSurface
+                  className={styles.infoPopoverContent}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <Text weight="semibold" block>{phase.phase}</Text>
+                  <Text size={200}>{tooltip}</Text>
+                </PopoverSurface>
+              </Popover>
               <span className={styles.chevron}>
                 {expanded ? <ChevronUpRegular /> : <ChevronDownRegular />}
               </span>
@@ -286,15 +426,62 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
           }
         />
         {phase.status === "running" && <ProgressBar />}
-        {expanded && hasWarnings && (
+        {subSteps.length > 0 && (
+          <div className={styles.subStepPills} aria-label="Pipeline sub-steps">
+            {subSteps.map((subStep) => (
+              <span
+                key={subStep.name}
+                className={`${styles.subStepPill} ${subStep.status === "failed" ? styles.subStepPillFailed : subStep.status === "warning" ? styles.subStepPillWarning : ""}`}
+                title={subStep.detail || subStep.name}
+              >
+                <Badge color={subStepBadgeColor(subStep.status)} size="small">{subStep.status}</Badge>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subStepLabel(subStep)}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {expanded && (phase.warnings?.length ?? 0) > 0 && (
           <div className={styles.warningBanner}>
-            {phase.warnings!.map((w, i) => (
+            {(phase.warnings ?? []).map((w, i) => (
               <div key={i}>⚠ {w}</div>
             ))}
           </div>
         )}
+        {expanded && actionSubSteps.length > 0 && (
+          <div className={styles.subStepDetailPanel}>
+            {actionSubSteps.map((subStep) => (
+              <div
+                key={subStep.name}
+                className={`${styles.subStepDetail} ${subStep.status === "failed" ? styles.subStepDetailFailed : ""}`}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalXS, flexWrap: "wrap" }}>
+                  <Badge color={subStepBadgeColor(subStep.status)} size="small">{subStep.status}</Badge>
+                  <Text weight="semibold" size={200}>{subStep.name}</Text>
+                  {subStep.duration && <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{formatDuration(subStep.duration)}</Text>}
+                  {subStep.runId && <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>run {subStep.runId}</Text>}
+                  {subStep.url && (
+                    <a
+                      href={subStep.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
+                      style={{ color: tokens.colorBrandForeground1, fontSize: tokens.fontSizeBase100 }}
+                    >
+                      Open
+                    </a>
+                  )}
+                </div>
+                {subStep.detail && (
+                  <Text size={100} block style={{ marginTop: tokens.spacingVerticalXXS, color: tokens.colorNeutralForeground2 }}>
+                    {subStep.detail}
+                  </Text>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {expanded && (
-          <div className={styles.logPanel}>
+          <div className={styles.logPanel} ref={logPanelRef}>
             {displayLogs.length === 0 && (
               <div className={styles.emptyLog}>
                 {fetchingLogs
@@ -316,10 +503,8 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
                 </span>
               </div>
             ))}
-            <div ref={logEndRef} />
           </div>
         )}
-      </Card>
-    </Tooltip>
+    </Card>
   );
 }

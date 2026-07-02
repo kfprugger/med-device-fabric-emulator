@@ -30,8 +30,10 @@ import {
   getDeploymentCapacity,
   getLocks,
   listSubscriptions,
+  reconcileTeardowns,
   setLock,
   startTeardown,
+  startTeardownBatch,
   type DeploymentCapacityMapping,
 } from "../api";
 import { useAppState } from "../AppState";
@@ -487,15 +489,14 @@ export function TeardownView() {
       setError("Select at least one resource to tear down.");
       return;
     }
-
     const selected = candidates.filter((c) => selectedIds.has(c.id));
-    const names = selected.map((c) => `${c.type}: ${c.name}`).join("\n  ");
+    const names = selected.map((c) => `${c.type}: ${c.name}${c.resourceCount !== undefined ? ` (${c.resourceCount} item/resource${c.resourceCount === 1 ? "" : "s"})` : ""}${c.detail ? ` — ${c.detail}` : ""}`).join("\n  ");
     if (dryRun) {
       window.alert(`Dry run only — no resources will be deleted.\n\nPlanned targets:\n  ${names}\n\nTurn off Dry run when you are ready to execute teardown.`);
       return;
     }
     const confirmation = window.confirm(
-      `Permanently delete ${selectedIds.size} resource(s)?\n\n  ${names}\n\nEach will be deleted in parallel in its own teardown job. This action cannot be undone.\n\nAre you sure you want to continue?`
+      `Permanently delete ${selectedIds.size} resource(s)?\n\nImpact preview:\n  ${names}\n\nEach target runs in its own teardown job. Paired workspace + Azure RG deletes are grouped when both are selected. This action cannot be undone.\n\nAre you sure you want to continue?`
     );
     if (!confirmation) return;
 
@@ -541,18 +542,18 @@ export function TeardownView() {
       });
     }
 
-    // Fire all jobs in parallel — backend creates a separate asyncio task per job
+    // Use the backend batch endpoint for multi-job teardowns so operators get
+    // one durable page with every child job instead of a generic history jump.
     try {
-      const results = await Promise.allSettled(jobs.map((job) => startTeardown(job)));
-      const failures = results.filter((r) => r.status === "rejected");
-      if (failures.length === jobs.length) {
-        throw new Error("All teardown jobs failed to start");
+      if (jobs.length === 1) {
+        const result = await startTeardown(jobs[0]);
+        setLoading(false);
+        navigate(`/monitor/${encodeURIComponent(result.instanceId)}`);
+      } else {
+        const result = await startTeardownBatch(jobs);
+        setLoading(false);
+        navigate(`/teardown/batch/${encodeURIComponent(result.batchId)}`);
       }
-      if (failures.length > 0) {
-        setError(`${failures.length} of ${jobs.length} teardown jobs failed to start. Check history for successful ones.`);
-      }
-      setLoading(false);
-      navigate("/teardown/monitor");
       return;
     } catch {
       setError("Backend teardown API unavailable. Running mock teardown monitor.");
@@ -570,6 +571,12 @@ export function TeardownView() {
     const isExpanded = expandedIds.has(c.id);
     const isLocked = lockedIds.has(normalizeResourceId(c.id));
     const isPaired = pairedIds.has(c.id);
+
+    const openHistoryForCandidate = (event: React.MouseEvent) => {
+      event.stopPropagation();
+      const query = c.type === "azure" ? c.name : c.name;
+      navigate(`/history?type=teardown&q=${encodeURIComponent(query)}`);
+    };
     const colorIdx = pairColorIndex.get(c.id) ?? 0;
     const pairColor = PAIR_COLORS[colorIdx % PAIR_COLORS.length];
 
@@ -612,15 +619,12 @@ export function TeardownView() {
                 checked={isSelected}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(_, data) => {
-                  // Drive selection from the checkbox's own state so a click on
-                  // the box never double-toggles with the Card's onClick handler.
                   setSelectedIds((prev) => {
                     const next = new Set(prev);
                     if (data.checked) next.add(c.id);
                     else next.delete(c.id);
                     return next;
                   });
-                  // Still handle paired-SPN auto-(de)select logic
                   if (c.type === "fabric") {
                     const matchingSpns = candidates.filter(
                       (sp) => sp.type === "spn" && sp.name === c.name && !lockedIds.has(normalizeResourceId(sp.id))
@@ -642,7 +646,9 @@ export function TeardownView() {
               <div className={styles.candidateInfo}>
                 <div className={styles.candidateName}>
                   {typeBadge(c.type)}
-                  <Text weight="semibold">{c.name}</Text>
+                  <Button appearance="transparent" size="small" onClick={openHistoryForCandidate} style={{ padding: 0, minWidth: 0 }}>
+                    <Text weight="semibold" underline>{c.name}</Text>
+                  </Button>
                   {statusBadge(c.status)}
                   {c.previouslyDeployed && <Badge color="informative" size="small">Previously Deployed</Badge>}
                   {isLocked && <Badge color="subtle">Locked</Badge>}
@@ -763,19 +769,36 @@ export function TeardownView() {
     { border: tokens.colorPaletteBerryForeground2,     bg: tokens.colorPaletteBerryBackground2,         badge: tokens.colorPaletteBerryForeground2,         badgeText: "#fff" },
   ];
 
-  const allFabricCandidates = candidates.filter((c) => c.type === "fabric");
-  // Default: only show workspaces with all 3 criteria (qualified). When showAllHDS is on, also show partial HDS workspaces.
-  const qualifiedFabricCandidates = allFabricCandidates.filter((c) => c.qualified !== false);
-  const partialHdsCandidates = allFabricCandidates.filter((c) => c.qualified === false);
-  const fabricCandidates = showAllHDS && !scanning ? allFabricCandidates : qualifiedFabricCandidates;
-  const azureCandidates = candidates.filter((c) => c.type === "azure");
+  const sortCandidatesDesc = (items: TeardownCandidate[]) =>
+    [...items].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" }));
 
-  // SPNs: only show SPNs whose workspace is qualified by default; show all when showAllHDS is on
+  const allFabricCandidates = sortCandidatesDesc(candidates.filter((c) => c.type === "fabric"));
+  // Default: only show workspaces with all 3 criteria (qualified). When showAllHDS is on, also show partial HDS workspaces.
+  const qualifiedFabricCandidates = sortCandidatesDesc(allFabricCandidates.filter((c) => c.qualified !== false));
+  const partialHdsCandidates = sortCandidatesDesc(allFabricCandidates.filter((c) => c.qualified === false));
+  const fabricCandidates = showAllHDS && !scanning ? allFabricCandidates : qualifiedFabricCandidates;
+  const azureCandidates = sortCandidatesDesc(candidates.filter((c) => c.type === "azure"));
+
+  // SPNs: show orphaned identities by default even when their workspace is gone;
+  // active SPNs stay tied to qualified workspaces unless the operator opts into all partial deployments.
   const qualifiedWsNames = new Set(qualifiedFabricCandidates.map((c) => c.name));
-  const allSpnCandidates = candidates.filter((c) => c.type === "spn");
+  const allSpnCandidates = sortCandidatesDesc(candidates.filter((c) => c.type === "spn"));
   const spnCandidates = showAllHDS && !scanning
     ? allSpnCandidates
-    : allSpnCandidates.filter((c) => qualifiedWsNames.has(c.name));
+    : sortCandidatesDesc(allSpnCandidates.filter((c) => c.status === "orphaned" || qualifiedWsNames.has(c.name)));
+
+  const handleReconcile = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await reconcileTeardowns();
+      setScanMessage(result.reconciled ? `Reconciled ${result.reconciled} teardown run(s).` : "No interrupted teardown runs needed reconciliation.");
+    } catch {
+      setError("Unable to reconcile teardown history right now.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -804,6 +827,9 @@ export function TeardownView() {
           disabled={scanning || !selectedSubscription}
         >
           {scanning ? "Scanning…" : "Scan Resources"}
+        </Button>
+        <Button appearance="secondary" icon={<ArrowSyncRegular />} onClick={handleReconcile} disabled={loading || scanning}>
+          Reconcile history
         </Button>
         <Tooltip content="Demo mode uses generated teardown candidates and never lists live resources." relationship="description">
           <Button appearance="secondary" onClick={handleMockScan} disabled={scanning}>

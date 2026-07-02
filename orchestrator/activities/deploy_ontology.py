@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
-    """Execute Phase 6: Ontology Deployment.
+    """Execute Phase 4: Ontology Deployment.
 
     Args:
         config: DeploymentConfig as dict.
@@ -41,7 +41,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
                     ont["id"],
                 )
                 return {
-                    "phase": "Phase 6: Ontology",
+                    "phase": "Phase 4: Ontology",
                     "duration_seconds": time.time() - start,
                     "resources": {"ontology_id": ont["id"]},
                 }
@@ -97,7 +97,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 6: Ontology",
+        "phase": "Phase 4: Ontology",
         "duration_seconds": duration,
         "resources": {"ontology_id": ontology_id},
     }

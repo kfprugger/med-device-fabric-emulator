@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "14083824710159881763"
+      "templateHash": "14416106876695160501"
     }
   },
   "parameters": {
@@ -64,6 +64,19 @@
       "type": "Microsoft.EventHub/namespaces/eventhubs",
       "apiVersion": "2021-11-01",
       "name": "[format('{0}/{1}', format('{0}-eh-ns', parameters('appName')), 'telemetry-stream')]",
+      "properties": {
+        "messageRetentionInDays": 1,
+        "partitionCount": 2
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', format('{0}-eh-ns', parameters('appName')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployEventHubs')]",
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}', format('{0}-eh-ns', parameters('appName')), 'claim-stream')]",
       "properties": {
         "messageRetentionInDays": 1,
         "partitionCount": 2
@@ -218,6 +231,10 @@
     "eventHubName": {
       "type": "string",
       "value": "[if(parameters('deployEventHubs'), 'telemetry-stream', '')]"
+    },
+    "claimEventHubName": {
+      "type": "string",
+      "value": "[if(parameters('deployEventHubs'), 'claim-stream', '')]"
     },
     "eventHubNamespace": {
       "type": "string",

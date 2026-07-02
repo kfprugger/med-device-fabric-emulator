@@ -146,21 +146,3 @@ if ($statusCode -eq 202) {
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
-
-# ── DICOM Study Purge (if DICOM service exists in same RG) ──
-if ($ResourceGroupName) {
-    $dicomDeployment = az deployment group show `
-        --resource-group $ResourceGroupName `
-        --name dicom-infra `
-        --query properties.outputs 2>$null
-
-    if ($LASTEXITCODE -eq 0 -and $dicomDeployment) {
-        $dicomJson = $dicomDeployment | ConvertFrom-Json
-        $dicomUrl = $dicomJson.dicomServiceUrl.value
-        Write-Host ""
-        Write-Host "DICOM service found: $dicomUrl" -ForegroundColor Yellow
-        Write-Host "  DICOM studies will be deleted when the resource group is removed." -ForegroundColor DarkGray
-        Write-Host "  To purge DICOM data independently, delete individual studies via:" -ForegroundColor DarkGray
-        Write-Host "    DELETE $dicomUrl/v1/studies/{studyInstanceUID}" -ForegroundColor DarkGray
-    }
-}

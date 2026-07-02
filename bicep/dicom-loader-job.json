@@ -1,0 +1,113 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "14971656038740181213"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "acrName": {
+      "type": "string"
+    },
+    "imageName": {
+      "type": "string"
+    },
+    "storageAccountName": {
+      "type": "string"
+    },
+    "fhirServiceUrl": {
+      "type": "string"
+    },
+    "aciIdentityId": {
+      "type": "string"
+    },
+    "aciIdentityClientId": {
+      "type": "string"
+    },
+    "tciaCollection": {
+      "type": "string",
+      "defaultValue": "LIDC-IDRI"
+    },
+    "studyCount": {
+      "type": "string",
+      "defaultValue": "100"
+    },
+    "resourceTags": {
+      "type": "object",
+      "defaultValue": {}
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ContainerInstance/containerGroups",
+      "apiVersion": "2023-05-01",
+      "name": "dicom-loader-job",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('resourceTags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('aciIdentityId'))]": {}
+        }
+      },
+      "properties": {
+        "containers": [
+          {
+            "name": "dicom-loader",
+            "properties": {
+              "image": "[parameters('imageName')]",
+              "resources": {
+                "requests": {
+                  "cpu": 2,
+                  "memoryInGB": 4
+                }
+              },
+              "environmentVariables": [
+                {
+                  "name": "FHIR_SERVICE_URL",
+                  "value": "[parameters('fhirServiceUrl')]"
+                },
+                {
+                  "name": "STORAGE_ACCOUNT",
+                  "value": "[parameters('storageAccountName')]"
+                },
+                {
+                  "name": "DICOM_CONTAINER",
+                  "value": "dicom-output"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "[parameters('aciIdentityClientId')]"
+                },
+                {
+                  "name": "TCIA_COLLECTION",
+                  "value": "[parameters('tciaCollection')]"
+                },
+                {
+                  "name": "STUDY_COUNT",
+                  "value": "[parameters('studyCount')]"
+                }
+              ]
+            }
+          }
+        ],
+        "osType": "Linux",
+        "restartPolicy": "Never",
+        "imageRegistryCredentials": [
+          {
+            "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-01-01-preview').loginServer]",
+            "username": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-01-01-preview').username]",
+            "password": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-01-01-preview').passwords[0].value]"
+          }
+        ]
+      }
+    }
+  ]
+}

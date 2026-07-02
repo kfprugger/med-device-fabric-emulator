@@ -2,23 +2,28 @@
 # End-to-end orchestrator for the Masimo Medical Device + Fabric RTI pipeline.
 #
 # Sequence:
-#   ── Phase 1 ──
+#   ── Phase 1: Data Fabric Foundation ──
 #   Step 1   — Fabric workspace + identity (created first so HDS can be deployed in parallel)
 #   Step 1b  — Base Azure infrastructure (Event Hub, ACR, emulator container)
 #   Step 2   — FHIR Service + Synthea patient generation + FHIR data load
-#   Step 2b  — DICOM infrastructure + TCIA download, re-tag, upload
-#   Step 3   — Fabric RTI Phase 1 (Eventhouse, KQL, Eventstream, FHIR $export)
-#   Step 4   — (Manual) Deploy HDS in Fabric portal
-#   ── Phase 2 ──
-#   Step 5   — Fabric RTI Phase 2 (Bronze shortcut, KQL shortcuts, enriched alerts)
-#   Step 5b  — DICOM shortcut + HDS pipelines (clinical, imaging, OMOP)
-#   Step 6   — Data Agents (Patient 360 + Clinical Triage)
-#   ── Phase 3 ──
+#   Step 2b  — DICOM loader: TCIA download, re-tag, ADLS upload, ImagingStudy linkage
+#   ── Phase 2: Active Patient Telemetry ──
+#   Step 3   — Fabric RTI ingest (Eventhouse, KQL, Eventstream, FHIR $export)
+#   Step 5   — Fabric RTI enrichment (Bronze shortcut, KQL shortcuts, enriched alerts)
+#   ── Phase 3: HDS Bridge + Row Gates ──
+#   Step 4   — (Manual) Detect HDS deployment in Fabric portal
+#   Step 5b  — DICOM shortcut + HDS pipelines (clinical, imaging, OMOP, optional CMA) + row gates
+#   ── Phase 4: Semantic Intelligence & UX ──
 #   Step 7   — Cohorting Agent + DICOM Viewer + Imaging Report
 #              (requires Gold OMOP pipeline to have completed)
-#   ── Phase 4 ──
 #   Step 8   — Ontology (DeviceAssociation table + ClinicalDeviceOntology + agent binding)
+#   Step 8d  — Ontology-aware Data Agents (Patient 360 + Clinical Triage)
+#   ── Phase 5: Bedside Alerting & Action ──
 #   Step 9   — Data Activator (ClinicalAlertActivator Reflex + email rule)
+#   ── Phase 6: Population Health & Quality ──
+#   CMS Quality & Claims analytics, Star Ratings, HCC, PDC, readmission, cost/utilization
+#   ── Phase 7: Payer RTI & Ops ──
+#   Claim stream, payer scoring, activator, operations agents, graph agent
 #
 # Usage:
 #   .\Deploy-All.ps1                                                  # Full pipeline (all phases)
@@ -52,12 +57,18 @@ param (
     # ── Step control ──
     [switch]$SkipBaseInfra,          # Skip deploy.ps1 (emulator infra already exists)
     [switch]$SkipFhir,               # Skip deploy-fhir.ps1 (FHIR data already loaded)
-    [switch]$SkipDicom,              # Skip DICOM infra + loader
+    [switch]$SkipDicom,              # Skip TCIA DICOM download + ADLS/FHIR ImagingStudy load
     [switch]$SkipFabric,             # Skip deploy-fabric-rti.ps1 entirely
     [switch]$Phase2,             # Run only Fabric Phase 2
     [switch]$Phase3,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$Phase4,             # Run only Phase 4 (Ontology + Agent binding)
     [switch]$Phase5,             # Run only Phase 5 (CMS Quality & Claims)
+    [switch]$Phase7,                 # Run only Phase 7 (Payer RTI & Ops)
+    [switch]$SkipPhase7,             # Skip Payer RTI & Ops entirely
+    [switch]$SkipPayerRti,           # Skip claim-stream, payer KQL, claim emulator, Eventstream extension
+    [switch]$SkipPayerActivator,     # Skip PayerOpsActivator Reflex
+    [switch]$SkipOpsAgent,           # Skip HealthcareOpsAgent + Payer Ops Triage
+    [switch]$SkipGraphAgent,         # Skip Healthcare Graph Agent shell/manual instructions
     [switch]$RebuildContainers,      # Force container image rebuilds
     [switch]$ReusePatients,          # Reuse existing patients — skip Synthea/Loader, keep emulator
     [switch]$UseCachedSynthea,       # Use cached/prepackaged Synthea patient bundles
@@ -72,8 +83,11 @@ param (
     [switch]$SkipDataAgents,         # Skip Patient 360 + Clinical Triage agents
     [switch]$SkipImaging,            # Skip Imaging Toolkit (Cohorting Agent, DICOM Viewer, PBI)
     [switch]$SkipOntology,           # Skip ClinicalDeviceOntology + agent binding
+    [switch]$ReplaceOntology,        # Delete/recreate ClinicalDeviceOntology instead of preserving existing item
     [switch]$SkipActivator,          # Skip Data Activator (Reflex + email rule)
     [switch]$SkipQualityMeasures,    # Skip Population Health & Quality Dashboard (claims, measures, risk, utilization, report)
+    [switch]$RequireBronzeClinicalFhir, # Require Bronze ClinicalFhir rows after synthesized clinical pipeline runs
+    [switch]$RequireBronzeImagingDicom, # Require Bronze ImagingDicom rows after synthesized imaging pipeline runs
 
     # ── Phase 3 (FabricDicomCohortingToolkit) ──
     [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
@@ -83,6 +97,8 @@ param (
     [string]$AlertEmail = "",               # Email for clinical alert notifications (e.g. joey@brakeat.com)
     [string]$AlertTierThreshold = "URGENT", # Minimum tier to send email: WARNING, URGENT, or CRITICAL
     [int]$AlertCooldownMinutes = 15,         # Suppress duplicate alerts per device within this window
+    [string]$PayerOpsEmail = "",    # Email for payer operations alerts; falls back to -AlertEmail only when empty
+    [int]$ClaimEventRatePerMinute = 60,
 
     # ── SPN Credentials ──
     [string]$SpnClientId = "",
@@ -121,20 +137,65 @@ function Get-CachedAccessToken {
 }
 
 # Validate conditionally-required parameters
-if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $AdminSecurityGroup) {
-    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, -Phase4, and -Phase5 can omit it."
+if (-not $Teardown -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $AdminSecurityGroup) {
+    throw "Parameter '-AdminSecurityGroup' is required for deployment. Only -Teardown, -Phase2, -Phase3, -Phase4, -Phase5, and -Phase7 can omit it."
 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
-# Fallback for cross-platform DicomToolkitPath on Mac
-if ($DicomToolkitPath -eq "C:\git\FabricDicomCohortingToolkit" -and -not (Test-Path $DicomToolkitPath)) {
-    $MacGitPath = "/Users/joey/git/FabricDicomCohortingToolkit"
-    if (Test-Path $MacGitPath) {
-        $DicomToolkitPath = $MacGitPath
-        Write-Host "  [PATH-FALLBACK] Mapping C:\git\FabricDicomCohortingToolkit to Mac path: $DicomToolkitPath" -ForegroundColor Green
+$DicomToolkitRepoUrl = "https://github.com/kfprugger/FabricDicomCohortingToolkit.git"
+
+function Resolve-DicomToolkitPath {
+    param([string]$RequestedPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedPath) -and $RequestedPath -ne "C:\git\FabricDicomCohortingToolkit") {
+        return $RequestedPath
     }
+
+    if ($IsMacOS -or $IsLinux) {
+        $siblingPath = Join-Path (Split-Path -Parent $ScriptDir) "FabricDicomCohortingToolkit"
+        if (Test-Path $siblingPath) { return $siblingPath }
+        if ([string]::IsNullOrWhiteSpace($RequestedPath) -or $RequestedPath -eq "C:\git\FabricDicomCohortingToolkit") { return $siblingPath }
+    }
+
+    return $RequestedPath
+}
+
+function Ensure-DicomToolkitRepo {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (Test-Path (Join-Path $Path "Deploy-DataAgent.ps1")) {
+        return @{ Success = $true; Cloned = $false; Message = "DICOM Toolkit found at $Path" }
+    }
+
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        return @{ Success = $false; Cloned = $false; Message = "DICOM Toolkit missing at '$Path' and Git is not installed." }
+    }
+
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    if (Test-Path $Path) {
+        $hasContent = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue).Count -gt 0
+        if ($hasContent) {
+            return @{ Success = $false; Cloned = $false; Message = "DICOM Toolkit path '$Path' exists but does not contain Deploy-DataAgent.ps1. Set -DicomToolkitPath or move/remove the incomplete directory." }
+        }
+    }
+
+    Write-Host "  → DICOM Toolkit missing; cloning $DicomToolkitRepoUrl to $Path" -ForegroundColor Yellow
+    git clone $DicomToolkitRepoUrl $Path
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Path "Deploy-DataAgent.ps1"))) {
+        return @{ Success = $false; Cloned = $false; Message = "Failed to clone DICOM Toolkit from $DicomToolkitRepoUrl to '$Path'." }
+    }
+
+    return @{ Success = $true; Cloned = $true; Message = "DICOM Toolkit cloned to $Path" }
+}
+
+$DicomToolkitPath = Resolve-DicomToolkitPath -RequestedPath $DicomToolkitPath
+if ($DicomToolkitPath -ne "C:\git\FabricDicomCohortingToolkit") {
+    Write-Host "  [PATH] DICOM Toolkit path: $DicomToolkitPath" -ForegroundColor DarkGray
 }
 
 # ── Granular flag reconciliation ──────────────────────────────────────
@@ -143,10 +204,24 @@ if ($DicomToolkitPath -eq "C:\git\FabricDicomCohortingToolkit" -and -not (Test-P
 # SkipSynthea implies the FHIR loader has nothing new to load; however
 # the FHIR *service* infra still deploys so HDS / $export keep working.
 if ($SkipSynthea) { $ReusePatients = $true }
+if ($Phase4 -or $Phase5) { $SkipPhase7 = $true }
 if ($SkipFabric) {
     $SkipRtiPhase2 = $true
     $SkipActivator = $true
+    $SkipPhase7 = $true
+    $SkipPayerRti = $true
+    $SkipPayerActivator = $true
+    $SkipOpsAgent = $true
+    $SkipGraphAgent = $true
 }
+if ($SkipPhase7) {
+    $SkipPayerRti = $true
+    $SkipPayerActivator = $true
+    $SkipOpsAgent = $true
+    $SkipGraphAgent = $true
+}
+if ([string]::IsNullOrWhiteSpace($PayerOpsEmail) -and -not [string]::IsNullOrWhiteSpace($AlertEmail)) { $PayerOpsEmail = $AlertEmail }
+if ([string]::IsNullOrWhiteSpace($PayerOpsEmail)) { $SkipPayerActivator = $true }
 # Additional granular skips are checked inline at each step entry point.
 # The skip variables are available as $SkipRtiPhase2, $SkipHdsPipelines,
 # $SkipDataAgents, $SkipImaging, $SkipOntology, $SkipActivator,
@@ -274,7 +349,7 @@ function Test-Prerequisites {
     }
 
     # 8. Admin Security Group exists in Entra ID
-    if ($AdminSecurityGroup -and -not $Phase2 -and -not $Phase3 -and -not $Phase4) {
+    if ($AdminSecurityGroup -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7) {
         try {
             $grp = az ad group show --group $AdminSecurityGroup --query "id" -o tsv 2>$null
             if ($grp) {
@@ -323,17 +398,44 @@ function Test-Prerequisites {
             }
         }
     } catch {
-        $failures += "Cannot access Fabric API. Ensure Az module login has Fabric permissions."
-        Write-Host "  ✗ Fabric API unreachable: $($_.Exception.Message)" -ForegroundColor Red
+        $fabricCheckError = $_
+        $fabricCheckBody = ""
+        try { $fabricCheckBody = $fabricCheckError.ErrorDetails.Message } catch {}
+
+        $workspaceCapacityId = $null
+        try {
+            $wsResp = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces" -Headers $fabHeaders
+            $existingWs = $wsResp.value | Where-Object { $_.displayName -eq $FabricWorkspaceName } | Select-Object -First 1
+            if ($existingWs) {
+                $wsDetail = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/workspaces/$($existingWs.id)" -Headers $fabHeaders
+                $workspaceCapacityId = $wsDetail.capacityId
+            }
+        } catch {}
+
+        if ($workspaceCapacityId) {
+            Write-Host "  ✓ Fabric workspace '$FabricWorkspaceName' already has capacity assigned ($workspaceCapacityId)" -ForegroundColor Green
+            if ($fabricCheckBody -match "RequestDeniedByInboundPolicy") {
+                Write-Host "    Note: /capacities is blocked by Fabric inbound policy; using workspace capacity state instead." -ForegroundColor DarkGray
+            }
+        } else {
+            if ($fabricCheckBody -match "RequestDeniedByInboundPolicy") {
+                $failures += "Fabric API capacities endpoint is blocked by inbound communication policy and workspace '$FabricWorkspaceName' has no visible capacity assignment. Connect from an allowed network/VPN or relax the Fabric policy."
+            } else {
+                $failures += "Cannot access Fabric API. Ensure Az module login has Fabric permissions."
+            }
+            Write-Host "  ✗ Fabric API unreachable: $($fabricCheckError.Exception.Message)" -ForegroundColor Red
+        }
     }
 
-    # 10. DicomToolkitPath (Phase 3 only)
-    if ($Phase3 -and $DicomToolkitPath) {
-        if (Test-Path $DicomToolkitPath) {
-            Write-Host "  ✓ DICOM Toolkit found at $DicomToolkitPath" -ForegroundColor Green
+    # 10. DicomToolkitPath (Phase 3 / imaging toolkit)
+    $requiresDicomToolkit = -not $SkipImaging -and ($Phase2 -or $Phase3 -or (-not $Phase4 -and -not $Phase5 -and -not $Phase7))
+    if ($requiresDicomToolkit) {
+        $toolkit = Ensure-DicomToolkitRepo -Path $DicomToolkitPath
+        if ($toolkit.Success) {
+            Write-Host "  ✓ $($toolkit.Message)" -ForegroundColor Green
         } else {
-            $failures += "DICOM Toolkit not found at '$DicomToolkitPath'. Clone from GitHub or set -DicomToolkitPath"
-            Write-Host "  ✗ DICOM Toolkit not found at $DicomToolkitPath" -ForegroundColor Red
+            $failures += $toolkit.Message
+            Write-Host "  ✗ $($toolkit.Message)" -ForegroundColor Red
         }
     }
 
@@ -544,6 +646,17 @@ function Invoke-Step {
         exit 1
     }
 }
+
+function Assert-LastExternalCommandSucceeded {
+    param(
+        [Parameter(Mandatory)][string]$CommandName
+    )
+    $exitCode = $global:LASTEXITCODE
+    if ($null -ne $exitCode -and $exitCode -ne 0) {
+        throw "$CommandName failed with exit code $exitCode"
+    }
+}
+
 
 function Write-Summary {
     param(
@@ -881,12 +994,17 @@ if ($Teardown) {
     Write-Host "  MODE: Phase 3 only (Cohorting Agent + DICOM Viewer + Imaging Report)" -ForegroundColor Magenta
 } elseif ($Phase4) {
     Write-Host "  MODE: Phase 4 only (Ontology + Agent binding + Data Activator)" -ForegroundColor Blue
+} elseif ($Phase5) {
+    Write-Host "  MODE: Phase 5 only (CMS Quality & Claims)" -ForegroundColor DarkYellow
+} elseif ($Phase7) {
+    Write-Host "  MODE: Phase 7 only (Payer RTI & Ops)" -ForegroundColor Cyan
 } else {
     $skips = @()
     if ($SkipBaseInfra) { $skips += "Base Infra" }
     if ($SkipFhir) { $skips += "FHIR/Synthea" }
     if ($SkipDicom) { $skips += "DICOM" }
     if ($SkipFabric) { $skips += "Fabric" }
+    if ($SkipPhase7) { $skips += "Payer RTI & Ops" }
     if ($skips.Count -gt 0) {
         Write-Host "  SKIPPING: $($skips -join ', ')" -ForegroundColor Yellow
     } else {
@@ -923,48 +1041,67 @@ if ($Teardown) {
 # ============================================================================
 
 if ($Phase2) {
-    Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 3
+    Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 1
 
     if (-not $SkipRtiPhase2) {
-    Invoke-Step -StepName "Phase 2: Fabric RTI" `
-        -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
-        $phase2Args = @{
-            Phase2              = $true
-            FabricWorkspaceName = $FabricWorkspaceName
-            ResourceGroupName   = $ResourceGroupName
-            Location            = $Location
-        }
-        if ($SilverLakehouseId) { $phase2Args['SilverLakehouseId'] = $SilverLakehouseId }
-        if ($SilverLakehouseName) { $phase2Args['SilverLakehouseName'] = $SilverLakehouseName }
-        if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
+        Invoke-Step -StepName "Phase 2: Fabric RTI Enrichment" `
+            -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
+            $phase2Args = @{
+                Phase2              = $true
+                FabricWorkspaceName = $FabricWorkspaceName
+                ResourceGroupName   = $ResourceGroupName
+                Location            = $Location
+            }
+            if ($SilverLakehouseId) { $phase2Args['SilverLakehouseId'] = $SilverLakehouseId }
+            if ($SilverLakehouseName) { $phase2Args['SilverLakehouseName'] = $SilverLakehouseName }
+            if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
 
-        & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
-    }
+            & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
+            if ($LASTEXITCODE -ne 0) { throw "deploy-fabric-rti.ps1 -Phase2 failed with exit code $LASTEXITCODE" }
+        }
     } # end if (-not $SkipRtiPhase2)
 
-    # DICOM shortcut + HDS pipelines (clinical, imaging, OMOP)
-    if (-not $SkipDicom -and -not $SkipHdsPipelines) {
-        Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines" `
-            -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-            & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" `
-                -FabricWorkspaceName $FabricWorkspaceName `
-                -ResourceGroupName $ResourceGroupName
+    # DICOM shortcut + HDS pipelines (clinical, imaging, OMOP, optional CMA).
+    # Do not gate this on -SkipDicom: resumed runs skip the DICOM loader after it succeeds,
+    # but still need to create shortcuts and trigger HDS pipelines if that phase failed.
+    if (-not $SkipHdsPipelines) {
+        Emit-PhaseTransition -Phase 3 -Label "HDS Bridge + Row Gates" -StepCount 1
+        Invoke-Step -StepName "Phase 3: DICOM Shortcut + HDS Pipelines" `
+            -Description "Shortcut for DICOM data, then run clinical, imaging, OMOP, and optional CMA pipelines" -Action {
+            $hdsPipelineArgs = @{
+                FabricWorkspaceName = $FabricWorkspaceName
+                ResourceGroupName   = $ResourceGroupName
+            }
+            if ($RequireBronzeClinicalFhir) { $hdsPipelineArgs['RequireClinicalFhirData'] = $true }
+            if ($RequireBronzeImagingDicom) { $hdsPipelineArgs['RequireImagingDicomData'] = $true }
+            $global:LASTEXITCODE = 0
+            & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" @hdsPipelineArgs
+            Assert-LastExternalCommandSucceeded "storage-access-trusted-workspace.ps1"
         }
     }
 
-    # Data Agents (Patient 360 + Clinical Triage) — part of Phase 2
+    # Data Agents depend on ClinicalDeviceOntology. Do not deploy unbound agents in Phase 2-only mode.
     if (-not $SkipDataAgents) {
-    Invoke-Step -StepName "Phase 2: Data Agents" `
-        -Description "Deploy Patient 360 + Clinical Triage agents" -Action {
-        Write-Host "  This step will:" -ForegroundColor White
-        Write-Host "    [1/2] Create/update Patient 360 Data Agent" -ForegroundColor DarkGray
-        Write-Host "    [2/2] Create/update Clinical Triage Data Agent" -ForegroundColor DarkGray
-        Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
-        Write-Host ""
+        if (-not $SkipOntology) {
+            Write-Host "  ⚠ Skipping Data Agents in -Phase2 mode because ClinicalDeviceOntology is not deployed until Phase 4." -ForegroundColor Yellow
+            Write-Host "    Run -Phase4 next, or use a full deployment, to deploy ontology-aware agents." -ForegroundColor DarkGray
+        } else {
+            Invoke-Step -StepName "Phase 2: Data Agents" `
+                -Description "Deploy Patient 360 + Clinical Triage agents (ontology explicitly skipped)" -Action {
+                Write-Host "  ⚠ Deploying Data Agents without ontology because -SkipOntology is set" -ForegroundColor Yellow
+                Write-Host "  This step will:" -ForegroundColor White
+                Write-Host "    [1/2] Create/update Patient 360 Data Agent" -ForegroundColor DarkGray
+                Write-Host "    [2/2] Create/update Clinical Triage Data Agent" -ForegroundColor DarkGray
+                Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
+                Write-Host ""
 
-        & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
-            -FabricWorkspaceName $FabricWorkspaceName
-    }
+                $global:LASTEXITCODE = 0
+                & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
+                    -FabricWorkspaceName $FabricWorkspaceName `
+                    -IncludeDicomImaging:((-not $SkipImaging) -and (-not $SkipDicom))
+                Assert-LastExternalCommandSucceeded "deploy-data-agents.ps1"
+            }
+        }
     } # end if (-not $SkipDataAgents)
 
     Write-Summary -Title "PHASE 2 DEPLOYMENT SUMMARY" -PhaseName "Phase2" -PhaseResources @{
@@ -994,13 +1131,21 @@ if ($Phase4 -and -not $Phase2 -and -not $Phase3) {
     Write-Host "  >>  Skipping Phase 3 (imaging toolkit)             (-Phase4)" -ForegroundColor DarkGray
 }
 
+if ($Phase5 -and -not $Phase2 -and -not $Phase3 -and -not $Phase4) {
+    Write-Host "  >>  Skipping Phase 1-5 (-Phase5); running CMS Quality & Claims only" -ForegroundColor DarkGray
+}
+
+if ($Phase7 -and -not $Phase2 -and -not $Phase3 -and -not $Phase4 -and -not $Phase5) {
+    Write-Host "  >>  Skipping Phase 1-6 (-Phase7)" -ForegroundColor DarkGray
+}
+
 # ============================================================================
 # STEP 1 — FABRIC WORKSPACE + IDENTITY (created first so HDS can be deployed during Azure steps)
 # ============================================================================
 
-Emit-PhaseTransition -Phase 1 -Label "Data Fabric Foundation" -StepCount 6
+if (-not $Phase5 -and -not $Phase7) { Emit-PhaseTransition -Phase 1 -Label "Data Fabric Foundation" -StepCount 4 }
 
-if (-not $Phase3 -and -not $Phase4) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7) {
     Invoke-Step -StepName "Phase 1: Fabric Workspace" `
         -Description "Create workspace '$FabricWorkspaceName' + assign capacity + provision identity" -Action {
 
@@ -1030,7 +1175,7 @@ if (-not $Phase3 -and -not $Phase4) {
             $newWs = Invoke-RestMethod -Uri "$fabBase/workspaces" -Headers $fabHeaders -Method POST `
                 -Body (@{
                     displayName = $FabricWorkspaceName
-                    description = "Masimo Clinical Alert System — Real-Time Intelligence workspace for medical device telemetry monitoring and clinical alerting."
+                    description = "Healthcare intelligence workspace for connected clinical devices, FHIR/HDS clinical foundations, DICOM imaging cohorts, Fabric IQ ontologies, CMS quality, claims analytics, payer operations, and real-time telemetry."
                 } | ConvertTo-Json)
             $script:fabricWorkspaceId = $newWs.id
             Write-Host "  ✓ Workspace created: $FabricWorkspaceName ($($script:fabricWorkspaceId))" -ForegroundColor Green
@@ -1086,7 +1231,7 @@ if (-not $Phase3 -and -not $Phase4) {
 # STEP 1b — BASE AZURE INFRASTRUCTURE
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipBaseInfra) {
     $deployArgs = @{
         ResourceGroupName   = $ResourceGroupName
         Location            = $Location
@@ -1161,7 +1306,9 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
             }
         } else {
             Write-Host "    ⚠ Emulator ACI not found — running deploy.ps1 to create it..." -ForegroundColor Yellow
+            $global:LASTEXITCODE = 0
             & "$ScriptDir\phase-1\deploy.ps1" @deployArgs
+            Assert-LastExternalCommandSucceeded "phase-1 deploy.ps1"
         }
 
         Write-Host ""
@@ -1185,7 +1332,9 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
                 Write-Host "  [4/4] Deploying emulator ACI container (bicep/emulator.bicep)..." -ForegroundColor White
             }
             Write-Host ""
+            $global:LASTEXITCODE = 0
             & "$ScriptDir\phase-1\deploy.ps1" @deployArgs
+            Assert-LastExternalCommandSucceeded "phase-1 deploy.ps1"
         }
     }
 } else {
@@ -1196,7 +1345,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipBaseInfra) {
 # STEP 2 — FHIR SERVICE + SYNTHEA + LOADER (MODULAR)
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and (-not $SkipFhir -or -not $SkipDicom)) {
     if ($ReusePatients -and -not $SourceResourceGroup -and -not $SkipFhir) {
         Write-Host "  >>  Reusing existing patients — skipping Synthea + FHIR Loader" -ForegroundColor Yellow
         Write-Host "      Existing patient/device data in FHIR will be preserved." -ForegroundColor DarkGray
@@ -1237,6 +1386,7 @@ if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
             if ($ReusePatients) { $fhirArgs['ReusePatients'] = $true }
 
             & "$ScriptDir\phase-1\deploy-fhir.ps1" @fhirArgs
+            if ($LASTEXITCODE -ne 0) { throw "deploy-fhir.ps1 failed with exit code $LASTEXITCODE" }
         }
     }
 } else {
@@ -1244,16 +1394,16 @@ if (-not $Phase3 -and -not $Phase4 -and (-not $SkipFhir -or -not $SkipDicom)) {
 }
 
 # ============================================================================
-# STEP 2b — DICOM SERVICE + TCIA LOADER
+# STEP 2b — DICOM LOADER
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom) {
-    Invoke-Step -StepName "Phase 1: DICOM Service + Loader" `
-        -Description "DICOM infra, TCIA download, re-tag, upload (deploy-fhir.ps1 -RunDicom)" -Action {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipDicom) {
+    Invoke-Step -StepName "Phase 1: DICOM Loader" `
+        -Description "TCIA download, re-tag, ADLS upload, FHIR ImagingStudy creation (deploy-fhir.ps1 -RunDicom)" -Action {
         Write-Host "  This step will:" -ForegroundColor White
-        Write-Host "    [1/3] Build DICOM Loader container image in ACR" -ForegroundColor DarkGray
-        Write-Host "    [2/3] Deploy DICOM service into HDS workspace" -ForegroundColor DarkGray
-        Write-Host "    [3/3] Run DICOM Loader (TCIA download, re-tag, STOW-RS upload)" -ForegroundColor DarkGray
+        Write-Host "    [1/2] Build DICOM Loader container image in ACR" -ForegroundColor DarkGray
+        Write-Host "    [2/2] Run DICOM Loader (TCIA download, re-tag, ADLS upload, FHIR ImagingStudy)" -ForegroundColor DarkGray
+
         Write-Host ""
 
         $dicomArgs = @{
@@ -1269,6 +1419,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom) {
         if ($SourceResourceGroup) { $dicomArgs['SourceResourceGroup'] = $SourceResourceGroup }
 
         & "$ScriptDir\phase-1\deploy-fhir.ps1" @dicomArgs
+        if ($LASTEXITCODE -ne 0) { throw "deploy-fhir.ps1 -RunDicom failed with exit code $LASTEXITCODE" }
     }
 } else {
     Write-Host "  >>  Skipping DICOM (--SkipDicom)" -ForegroundColor DarkGray
@@ -1278,7 +1429,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipDicom) {
 # STEP 2c — FHIR $EXPORT (ensure data exists for HDS pipelines)
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir -and $ReusePatients) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFhir -and $ReusePatients) {
     Invoke-Step -StepName "Phase 1: FHIR `$export (catch-up)" `
         -Description "Export existing FHIR data to ADLS Gen2 for HDS pipelines" -Action {
         Write-Host "  Ensuring FHIR `$export data exists for downstream HDS ingestion." -ForegroundColor White
@@ -1394,9 +1545,13 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFhir -and $ReusePatients) {
 # STEP 3 — FABRIC RTI PHASE 1
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
-    Invoke-Step -StepName "Phase 1: Fabric RTI" `
-        -Description "Workspace, Eventhouse, KQL DB, Eventstream, FHIR export" -Action {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric) {
+    Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 2
+}
+
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric) {
+    Invoke-Step -StepName "Phase 2: Fabric RTI" `
+        -Description "Eventhouse, KQL DB, Eventstream, FHIR export, and core telemetry dashboard" -Action {
         Write-Host "  This step will:" -ForegroundColor White
         Write-Host "    [1/6] Create Fabric workspace '$FabricWorkspaceName'" -ForegroundColor DarkGray
         Write-Host "    [2/6] Create Eventhouse + KQL Database" -ForegroundColor DarkGray
@@ -1419,6 +1574,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
         if ($Tags.Count -gt 0) { $fabricArgs['Tags'] = $Tags }
 
         & "$ScriptDir/deploy-fabric-rti.ps1" @fabricArgs
+        if ($LASTEXITCODE -ne 0) { throw "deploy-fabric-rti.ps1 failed with exit code $LASTEXITCODE" }
     }
 } else {
     Write-Host "  >>  Skipping Fabric RTI (--SkipFabric)" -ForegroundColor DarkGray
@@ -1428,9 +1584,9 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipFabric) {
 # STEP 4 — HDS GUIDANCE (manual Fabric portal step)
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipHdsPipelines) {
     $script:stepNumber++
-    Write-Banner -Text "STEP $($script:stepNumber): HEALTHCARE DATA SOLUTIONS (MANUAL)" -Color Yellow
+    Write-Banner -Text "STEP $($script:stepNumber): PHASE 3: HDS DEPLOYMENT DETECTION (MANUAL)" -Color Yellow
     Write-Host ""
     Write-Host "  All automated steps are complete. The remaining setup requires" -ForegroundColor White
     Write-Host "  manual configuration in the Microsoft Fabric portal." -ForegroundColor White
@@ -1512,10 +1668,10 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
         # Run Phase 2 inline
         $Phase2 = $true
 
-        Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 3
+        Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 1
 
         if (-not $SkipRtiPhase2) {
-            Invoke-Step -StepName "Phase 2: Fabric RTI (auto)" `
+            Invoke-Step -StepName "Phase 2: Fabric RTI Enrichment (auto)" `
                 -Description "Bronze shortcut, clinical pipeline, KQL shortcuts, enriched alerts" -Action {
                 $phase2Args = @{
                     Phase2              = $true
@@ -1525,15 +1681,23 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
                 }
                 if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
                 & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
+                if ($LASTEXITCODE -ne 0) { throw "deploy-fabric-rti.ps1 -Phase2 failed with exit code $LASTEXITCODE" }
             }
         }
 
-        if (-not $SkipDicom -and -not $SkipHdsPipelines) {
-            Invoke-Step -StepName "Phase 2: DICOM Shortcut + HDS Pipelines (auto)" `
-                -Description "Shortcut for DICOM data, then run clinical, imaging, and OMOP pipelines" -Action {
-                & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" `
-                    -FabricWorkspaceName $FabricWorkspaceName `
-                    -ResourceGroupName $ResourceGroupName
+        if (-not $SkipHdsPipelines) {
+            Emit-PhaseTransition -Phase 3 -Label "HDS Bridge + Row Gates" -StepCount 1
+            Invoke-Step -StepName "Phase 3: DICOM Shortcut + HDS Pipelines (auto)" `
+                -Description "Shortcut for DICOM data, then run clinical, imaging, OMOP, and optional CMA pipelines" -Action {
+                $hdsPipelineArgs = @{
+                    FabricWorkspaceName = $FabricWorkspaceName
+                    ResourceGroupName   = $ResourceGroupName
+                }
+                if ($RequireBronzeClinicalFhir) { $hdsPipelineArgs['RequireClinicalFhirData'] = $true }
+                if ($RequireBronzeImagingDicom) { $hdsPipelineArgs['RequireImagingDicomData'] = $true }
+                $global:LASTEXITCODE = 0
+                & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" @hdsPipelineArgs
+                Assert-LastExternalCommandSucceeded "storage-access-trusted-workspace.ps1"
                 Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName
 
                 # Stage OMOP Academic Research Dashboard
@@ -1549,7 +1713,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
         }
 
         $script:stepResults += @{
-            Name     = "Phase 1: HDS Guidance"
+            Name     = "Phase 3: HDS Deployment Detection"
             Success  = $true
             Duration = "—"
             Detail   = "Auto-resumed: HDS deployed successfully"
@@ -1557,22 +1721,57 @@ if (-not $Phase3 -and -not $Phase4 -and -not $SkipHdsPipelines) {
     }
 }
 
+# Continuation runs can skip the already-completed HDS pipeline step. They still
+# need RTI Phase 2 enrichment: otherwise a resume with -SkipHdsPipelines refreshes
+# only core Eventhouse/Eventstream assets and then downstream phases run against
+# stale/missing Silver shortcuts and enriched alert functions.
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and $SkipHdsPipelines) {
+    if (-not $SkipFabric -and -not $SkipRtiPhase2) {
+        Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 1
+        Invoke-Step -StepName "Phase 2: Fabric RTI Enrichment (resume)" `
+            -Description "KQL shortcuts and enriched alerts; HDS pipelines already completed" -Action {
+            $phase2Args = @{
+                Phase2              = $true
+                FabricWorkspaceName = $FabricWorkspaceName
+                ResourceGroupName   = $ResourceGroupName
+                Location            = $Location
+            }
+            if ($SilverLakehouseId) { $phase2Args['SilverLakehouseId'] = $SilverLakehouseId }
+            if ($SilverLakehouseName) { $phase2Args['SilverLakehouseName'] = $SilverLakehouseName }
+            if ($Tags.Count -gt 0) { $phase2Args['Tags'] = $Tags }
+
+            & "$ScriptDir/deploy-fabric-rti.ps1" @phase2Args
+            if ($LASTEXITCODE -ne 0) { throw "deploy-fabric-rti.ps1 -Phase2 failed with exit code $LASTEXITCODE" }
+        }
+    }
+    $Phase2 = $true
+}
+
 # ============================================================================
 # STEP 6 — DATA AGENTS (after Phase 2 + OMOP)
 # ============================================================================
 
-# Deploy Data Agents if running Phase 2 or if the Silver Lakehouse is available
+# Deploy Data Agents only after ontology exists. If ontology is enabled, Phase 4 deploys
+# ClinicalDeviceOntology first and then creates/updates ontology-aware agents.
 if ($Phase2 -and -not $SkipDataAgents) {
-    Invoke-Step -StepName "Phase 2: Data Agents" `
-        -Description "Deploy Patient 360 + Clinical Triage agents" -Action {
-        Write-Host "  This step will:" -ForegroundColor White
-        Write-Host "    [1/2] Create/update Patient 360 Data Agent" -ForegroundColor DarkGray
-        Write-Host "    [2/2] Create/update Clinical Triage Data Agent" -ForegroundColor DarkGray
-        Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
-        Write-Host ""
+    if (-not $SkipOntology) {
+        Write-Host "  >>  Deferring Data Agents until Phase 4 ontology is deployed" -ForegroundColor DarkGray
+    } else {
+        Invoke-Step -StepName "Phase 2: Data Agents" `
+            -Description "Deploy Patient 360 + Clinical Triage agents (ontology explicitly skipped)" -Action {
+            Write-Host "  ⚠ Deploying Data Agents without ontology because -SkipOntology is set" -ForegroundColor Yellow
+            Write-Host "  This step will:" -ForegroundColor White
+            Write-Host "    [1/2] Create/update Patient 360 Data Agent" -ForegroundColor DarkGray
+            Write-Host "    [2/2] Create/update Clinical Triage Data Agent" -ForegroundColor DarkGray
+            Write-Host "  Architecture: KQL (TelemetryRaw + AlertHistory) + Lakehouse (Silver tables)" -ForegroundColor DarkGray
+            Write-Host ""
 
-        & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
-            -FabricWorkspaceName $FabricWorkspaceName
+            $global:LASTEXITCODE = 0
+            & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
+                -FabricWorkspaceName $FabricWorkspaceName `
+                -IncludeDicomImaging:((-not $SkipImaging) -and (-not $SkipDicom))
+            Assert-LastExternalCommandSucceeded "deploy-data-agents.ps1"
+        }
     }
 }
 
@@ -1581,7 +1780,7 @@ if ($Phase2 -and -not $SkipDataAgents) {
 # Requires: Gold OMOP pipeline completed, Silver + Gold lakehouses populated
 # ============================================================================
 
-Emit-PhaseTransition -Phase 3 -Label "Multimodal Cohorting & Imaging" -StepCount 1
+if (-not $Phase5 -and -not $Phase7) { Emit-PhaseTransition -Phase 3 -Label "Multimodal Cohorting & Imaging" -StepCount 1 }
 
 if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
     # Phase 3 preflight: verify Gold OMOP lakehouse has data
@@ -1591,9 +1790,10 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
         Invoke-Step -StepName "Phase 3: Imaging & Reporting" `
             -Description "Cohorting Agent + DICOM Viewer (FabricDicomCohortingToolkit)" -Action {
 
-            # Validate toolkit path
-            if (-not (Test-Path "$DicomToolkitPath/Deploy-DataAgent.ps1")) {
-                throw "FabricDicomCohortingToolkit not found at '$DicomToolkitPath'. Clone it: git clone https://github.com/kfprugger/FabricDicomCohortingToolkit '$DicomToolkitPath'"
+            # Validate or bootstrap toolkit path
+            $toolkit = Ensure-DicomToolkitRepo -Path $DicomToolkitPath
+            if (-not $toolkit.Success) {
+                throw $toolkit.Message
             }
 
             Write-Host "  ┌──────────────────────────────────────────────────────────────┐" -ForegroundColor Magenta
@@ -1617,11 +1817,43 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                 $p3Headers = @{ Authorization = "Bearer $p3Token"; "Content-Type" = "application/json" }
                 $p3Base = "https://api.fabric.microsoft.com/v1"
 
-                $p3Ws = (Invoke-RestMethod -Uri "$p3Base/workspaces" -Headers $p3Headers).value |
+                function Invoke-P3FabricRest {
+                    param(
+                        [Parameter(Mandatory)][string]$Uri,
+                        [string]$Method = 'GET',
+                        [object]$Body = $null,
+                        [string]$Label = 'Fabric request'
+                    )
+                    for ($attempt = 1; $attempt -le 8; $attempt++) {
+                        try {
+                            $p3Token = Get-FabricTokenLocal
+                            $headers = @{ Authorization = "Bearer $p3Token"; "Content-Type" = "application/json" }
+                            if ($Body -ne $null) {
+                                return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -Body $Body -ErrorAction Stop
+                            }
+                            return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
+                        } catch {
+                            $statusCode = $null
+                            try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                            $errBody = $_.ErrorDetails.Message
+                            $isTransient = $statusCode -in @(403, 429, 500, 502, 503, 504) -and ($errBody -match 'RequestDeniedByInboundPolicy|Forbidden|Too Many Requests|Internal|Unavailable|Gateway' -or $statusCode -ne 403)
+                            if ($isTransient -and $attempt -lt 8) {
+                                $delay = [Math]::Min(15 * $attempt, 90)
+                                Write-Host "  $Label transient HTTP ${statusCode}; retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                                if ($errBody) { Write-Host "    $errBody" -ForegroundColor DarkGray }
+                                Start-Sleep -Seconds $delay
+                                continue
+                            }
+                            throw
+                        }
+                    }
+                }
+
+                $p3Ws = (Invoke-P3FabricRest -Uri "$p3Base/workspaces" -Label 'List workspaces').value |
                     Where-Object { $_.displayName -eq $FabricWorkspaceName }
                 $p3WsId = $p3Ws.id
 
-                $p3Items = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/items?type=Lakehouse" -Headers $p3Headers).value
+                $p3Items = (Invoke-P3FabricRest -Uri "$p3Base/workspaces/$p3WsId/items?type=Lakehouse" -Label 'List Phase 3 lakehouses').value
                 $goldLh = $p3Items | Where-Object { $_.displayName -match 'gold_omop' } | Select-Object -First 1
 
                 if (-not $goldLh) {
@@ -1640,8 +1872,11 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "    Source: $DicomToolkitPath/Deploy-DataAgent.ps1" -ForegroundColor DarkGray
             Write-Host ""
 
+            $global:LASTEXITCODE = 0
             & "$DicomToolkitPath/Deploy-DataAgent.ps1" `
-                -FabricWorkspaceName $FabricWorkspaceName
+                -FabricWorkspaceName $FabricWorkspaceName `
+                -WorkspaceId $p3WsId
+            Assert-LastExternalCommandSucceeded "Phase 3 Deploy-DataAgent.ps1"
 
             Write-Host ""
 
@@ -1657,10 +1892,12 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "    Resource Group: $viewerRg (shared with Phase 1)" -ForegroundColor DarkGray
             Write-Host ""
 
+            $global:LASTEXITCODE = 0
             & "$DicomToolkitPath/dicom-viewer/Deploy-DicomViewer.ps1" `
                 -ResourceGroup $viewerRg `
                 -FabricWorkspaceName $FabricWorkspaceName `
                 -Location $Location
+            Assert-LastExternalCommandSucceeded "Deploy-DicomViewer.ps1"
 
             Write-Host ""
 
@@ -1681,14 +1918,12 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "  Creating reporting lakehouse and running materialization notebook..." -ForegroundColor White
 
             # Create reporting lakehouse if it doesn't exist
-            $p3Token2 = Get-FabricTokenLocal
-            $p3H2 = @{ Authorization = "Bearer $p3Token2"; "Content-Type" = "application/json" }
-            $existingLh = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/lakehouses" -Headers $p3H2).value |
+            $existingLh = (Invoke-P3FabricRest -Uri "$p3Base/workspaces/$p3WsId/lakehouses" -Label 'List reporting lakehouses').value |
                 Where-Object { $_.displayName -eq "healthcare1_reporting_gold" }
             if (-not $existingLh) {
                 Write-Host "  Creating healthcare1_reporting_gold lakehouse..." -ForegroundColor White
                 $lhBody = '{"displayName":"healthcare1_reporting_gold","type":"Lakehouse"}'
-                Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/items" -Headers $p3H2 -Method Post -Body $lhBody | Out-Null
+                Invoke-P3FabricRest -Uri "$p3Base/workspaces/$p3WsId/items" -Method Post -Body $lhBody -Label 'Create reporting lakehouse' | Out-Null
                 Write-Host "  ✓ Reporting lakehouse created" -ForegroundColor Green
             } else {
                 Write-Host "  ✓ Reporting lakehouse already exists" -ForegroundColor Green
@@ -1697,10 +1932,13 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             # Deploy + run notebook (pass explicit OHIF URL when available)
             $nbArgs = @{
                 FabricWorkspaceName      = $FabricWorkspaceName
+                WorkspaceId               = $p3WsId
                 DicomViewerResourceGroup = $viewerRg
             }
             if ($ohifViewerBaseUrl) { $nbArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
+            $global:LASTEXITCODE = 0
             & "$DicomToolkitPath/deploy-notebook.ps1" @nbArgs
+            Assert-LastExternalCommandSucceeded "deploy-notebook.ps1"
             Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p3WsId
             Write-Host ""
 
@@ -1711,7 +1949,9 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host "  --- Step 7d: Power BI Imaging Report (Direct Lake) ---" -ForegroundColor Cyan
             $reportArgs = @{ FabricWorkspaceName = $FabricWorkspaceName }
             if ($ohifViewerBaseUrl) { $reportArgs['OhifViewerBaseUrl'] = $ohifViewerBaseUrl }
+            $global:LASTEXITCODE = 0
             & "$DicomToolkitPath\Deploy-ImagingReport.ps1" @reportArgs
+            Assert-LastExternalCommandSucceeded "Deploy-ImagingReport.ps1"
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After PBI report, before final checks ──
@@ -1727,11 +1967,8 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                     Write-Host "  Proxy MI: $proxyPrincipalId" -ForegroundColor DarkGray
 
                     # Add proxy MI as Contributor on Fabric workspace (for OneLake DFS reads)
-                    $p3Token3 = Get-FabricTokenLocal
-                    $p3H3 = @{ Authorization = "Bearer $p3Token3"; "Content-Type" = "application/json" }
-
                     # Check if already assigned
-                    $existingRoles = (Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" -Headers $p3H3).value
+                    $existingRoles = (Invoke-P3FabricRest -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" -Label 'List workspace role assignments').value
                     $alreadyAssigned = $existingRoles | Where-Object { $_.principal.id -eq $proxyPrincipalId }
 
                     if ($alreadyAssigned) {
@@ -1742,8 +1979,8 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                             role = "Contributor"
                         } | ConvertTo-Json -Depth 3
 
-                        Invoke-RestMethod -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" `
-                            -Headers $p3H3 -Method POST -Body $roleBody | Out-Null
+                        Invoke-P3FabricRest -Uri "$p3Base/workspaces/$p3WsId/roleAssignments" `
+                            -Method POST -Body $roleBody -Label 'Assign proxy workspace role' | Out-Null
                         Write-Host "  ✓ Added proxy MI as Contributor on workspace (required for OneLake DFS reads)" -ForegroundColor Green
                     }
                 } else {
@@ -1753,6 +1990,18 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                 # Check if DICOM index has studies
                 $proxyFqdn = az containerapp show -g $viewerRg -n "hds-dicom-proxy" `
                     --query "properties.configuration.ingress.fqdn" -o tsv 2>$null
+                if (-not $proxyFqdn) {
+                    $viewerStateFile = Join-Path $DicomToolkitPath "dicom-viewer/state-tracking/.deployment-state.json"
+                    if (Test-Path $viewerStateFile) {
+                        try {
+                            $viewerState = Get-Content $viewerStateFile -Raw | ConvertFrom-Json
+                            if ($viewerState.proxyUrl) {
+                                $proxyFqdn = ([uri]$viewerState.proxyUrl).Host
+                                Write-Host "  Proxy FQDN recovered from deployment state: $proxyFqdn" -ForegroundColor DarkGray
+                            }
+                        } catch { }
+                    }
+                }
                 if ($proxyFqdn) {
                     try {
                         $healthResp = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 10
@@ -1764,10 +2013,12 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                             Write-Host "  ⚠ DICOM index is empty — auto-rebuilding from current Silver data..." -ForegroundColor Yellow
 
                             try {
+                                $global:LASTEXITCODE = 0
                                 & "$DicomToolkitPath\dicom-viewer\Deploy-DicomViewer.ps1" `
                                     -ResourceGroup $viewerRg `
                                     -FabricWorkspaceName $FabricWorkspaceName `
                                     -Location $Location -SkipOhifBuild -Force
+                                Assert-LastExternalCommandSucceeded "Deploy-DicomViewer.ps1 -SkipOhifBuild -Force"
 
                                 # Re-check after rebuild
                                 Start-Sleep -Seconds 5
@@ -1781,6 +2032,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                                     Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
                                     Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
                                     Write-Host "        -Location `"$Location`" -SkipOhifBuild -Force" -ForegroundColor Cyan
+                                    throw "DICOM index is still empty after rebuild"
                                 }
                             } catch {
                                 Write-Host "  ⚠ Auto-rebuild failed: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1789,14 +2041,20 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                                 Write-Host "        -ResourceGroup `"$viewerRg`" ``" -ForegroundColor Cyan
                                 Write-Host "        -FabricWorkspaceName `"$FabricWorkspaceName`" ``" -ForegroundColor Cyan
                                 Write-Host "        -Location `"$Location`" -SkipOhifBuild -Force" -ForegroundColor Cyan
+                                throw "DICOM index auto-rebuild failed: $($_.Exception.Message)"
                             }
                         }
                     } catch {
                         Write-Host "  ⚠ Could not reach proxy health endpoint" -ForegroundColor Yellow
+                        throw "DICOM proxy health endpoint is not reachable: $($_.Exception.Message)"
                     }
+                }
+                else {
+                    throw "DICOM proxy FQDN not found for hds-dicom-proxy"
                 }
             } catch {
                 Write-Host "  ⚠ Post-deploy check failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                throw
             }
 
             # ── DIAGNOSTIC CHECKPOINT: Final state after all Phase 3 steps ──
@@ -1807,12 +2065,12 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 }
 
 # ============================================================================
-# STEPS 8-9 — PHASE 4: ONTOLOGY + AGENT BINDING + DATA ACTIVATOR
+# STEPS 8-9 — PHASE 4: ONTOLOGY + AGENT BINDING
 # Requires: Silver Lakehouse populated, clinical pipeline completed,
 #           Eventhouse with TelemetryRaw + AlertHistory tables
 # ============================================================================
 
-Emit-PhaseTransition -Phase 4 -Label "Connected Semantic Intelligence" -StepCount 1
+if (-not $Phase3 -and -not $Phase5 -and -not $Phase7) { Emit-PhaseTransition -Phase 4 -Label "Connected Semantic Intelligence" -StepCount 1 }
 
 if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
     Invoke-Step -StepName "Phase 4: Ontology" `
@@ -1869,7 +2127,7 @@ if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
                 if ($clinVerified) {
                     Write-Host "  ✓ Clinical pipeline completed" -ForegroundColor Green
                 } else {
-                    Write-Host "  ⚠ Clinical pipeline did not complete — ontology will still be deployed" -ForegroundColor Yellow
+                    Write-Host "  ⚠ Clinical pipeline did not complete — ontology deployment will fail" -ForegroundColor Yellow
                 }
             } elseif (-not $clinRuns) {
                 Write-Host "  ⚠ Clinical pipeline has never been run — invoking now..." -ForegroundColor Yellow
@@ -1901,13 +2159,18 @@ if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
                 Write-Host "  ⚠ Clinical pipeline last status: $($clinRuns[0].status)" -ForegroundColor Yellow
             }
         } else {
-            Write-Host "  ⚠ Clinical pipeline not found in workspace — skipping verification" -ForegroundColor Yellow
+            Write-Host "  ⚠ Clinical pipeline not found in workspace" -ForegroundColor Yellow
         }
+        if (-not $clinVerified) {
+            throw "Clinical pipeline was not verified as Completed; ontology deployment requires completed Silver clinical data"
+        }
+
 
         # ── Step 8b: Materialize DeviceAssociation table ──
         Write-Host ""
         Write-Host "  --- Step 8b: DeviceAssociation Table ---" -ForegroundColor Cyan
 
+        $deviceAssociationMaterialized = $false
         if ($SkipFabric) {
             Write-Host "  Bypassing DeviceAssociation table materialization (--SkipFabric active)" -ForegroundColor Yellow
         } else {
@@ -1916,7 +2179,17 @@ if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
             # Find Silver Lakehouse
             $p4Token = Get-FabricTokenLocal
             $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-            $p4Lakehouses = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/lakehouses" -Headers $p4Headers).value
+            try {
+                $p4Lakehouses = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/lakehouses" -Headers $p4Headers -ErrorAction Stop).value
+            } catch {
+                $p4StatusCode = $null
+                try { $p4StatusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                if ($p4StatusCode -eq 404) {
+                    $p4Lakehouses = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers -ErrorAction Stop).value | Where-Object { $_.type -eq 'Lakehouse' }
+                } else {
+                    throw $_
+                }
+            }
             $p4SilverLh = $p4Lakehouses | Where-Object { $_.displayName -match '[Ss]ilver' } | Select-Object -First 1
 
             if ($p4SilverLh) {
@@ -1928,43 +2201,137 @@ if (($Phase4 -or ($Phase2 -and -not $Phase3)) -and -not $SkipOntology) {
             if (Test-Path $daNotebookPath) {
                 # Build ipynb using PySpark logic that resolves by name first and falls back to absolute OneLake paths
                 $pysparkCode = @'
+from pyspark.sql import functions as F
 from pyspark.sql.functions import get_json_object
 import sys
 
-print("Attempting to load table Basic by name...")
-try:
-    df = spark.read.table("Basic").filter("get_json_object(code_string, '$.coding[0].code') = 'device-assoc'")
-    print("Successfully loaded Basic table by name.")
-except Exception as e:
-    print(f"Failed to load Basic table by name: {e}")
-    print("Falling back to absolute OneLake ABFSS path...")
-    basic_path = "abfss://WORKSPACE_ID@onelake.dfs.fabric.microsoft.com/LAKEHOUSE_ID/Tables/Basic"
-    df = spark.read.format("delta").load(basic_path).filter("get_json_object(code_string, '$.coding[0].code') = 'device-assoc'")
+WORKSPACE_ID = "WORKSPACE_ID_PLACEHOLDER"
+LAKEHOUSE_ID = "LAKEHOUSE_ID_PLACEHOLDER"
+INCLUDE_FHIR = INCLUDE_FHIR_PLACEHOLDER
+INCLUDE_DICOM = INCLUDE_DICOM_PLACEHOLDER
 
-res_df = df.select(
-    "id",
-    "idOrig",
-    get_json_object("extension", "$[0].valueReference.reference").alias("device_ref"),
-    get_json_object("subject_string", "$.display").alias("patient_name"),
-    get_json_object("subject_string", "$.idOrig").alias("patient_id"),
-    get_json_object("code_string", "$.coding[0].code").alias("assoc_code"),
-    get_json_object("code_string", "$.coding[0].display").alias("assoc_display")
+def read_delta_table(name):
+    print(f"Attempting to load table {name} by name...")
+    try:
+        df = spark.read.table(name)
+        print(f"Successfully loaded {name} table by name.")
+        return df
+    except Exception as e:
+        print(f"Failed to load {name} table by name: {e}")
+        print("Falling back to absolute OneLake ABFSS path...")
+        path = f"abfss://{WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/{LAKEHOUSE_ID}/Tables/{name}"
+        return spark.read.format("delta").load(path)
+
+def save_delta_table(df, name):
+    print(f"Attempting to save table {name} by name...")
+    try:
+        df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").saveAsTable(name)
+        print(f"Successfully saved {name} table by name.")
+    except Exception as e:
+        print(f"Failed to save {name} table by name: {e}")
+        print("Falling back to absolute OneLake ABFSS path...")
+        path = f"abfss://{WORKSPACE_ID}@onelake.dfs.fabric.microsoft.com/{LAKEHOUSE_ID}/Tables/{name}"
+        df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").save(path)
+        print(f"{name} table materialized successfully via abfss fallback.")
+
+def present(df, name):
+    return name in df.columns
+
+def maybe_col(df, name, data_type="string"):
+    return F.col(name) if present(df, name) else F.lit(None).cast(data_type)
+
+def select_col(df, name, data_type="string"):
+    return maybe_col(df, name, data_type).alias(name)
+
+def json_col(df, name, path):
+    return get_json_object(F.col(name), path) if present(df, name) else F.lit(None).cast("string")
+
+def non_empty(expr):
+    return F.when(expr.isNotNull() & (F.length(F.trim(expr.cast("string"))) > 0), expr.cast("string"))
+
+def patient_id_expr(df, column_name, imaging=False):
+    # HDS 1.3.x clears FHIR Reference.reference and preserves the original
+    # resource link under msftSourceReference, with idOrig as the normalized UUID.
+    # ImagingStudy also receives identifier.value and should prefer it first.
+    identifier = non_empty(json_col(df, column_name, "$.identifier.value"))
+    msft = non_empty(F.regexp_replace(json_col(df, column_name, "$.msftSourceReference"), "^Patient/", ""))
+    id_orig = non_empty(json_col(df, column_name, "$.idOrig"))
+    if imaging:
+        return F.coalesce(identifier, msft, id_orig)
+    return F.coalesce(msft, identifier, id_orig)
+
+
+basic_df = read_delta_table("Basic")
+device_df = basic_df.filter(get_json_object(F.col("code_string"), "$.coding[0].code") == "device-assoc")
+device_association_df = device_df.select(
+    select_col(device_df, "id"),
+    select_col(device_df, "idOrig"),
+    F.regexp_replace(json_col(device_df, "extension", "$[0].valueReference.reference"), "^Device/", "").alias("device_ref"),
+    json_col(device_df, "subject_string", "$.display").alias("patient_name"),
+    patient_id_expr(device_df, "subject_string").alias("patient_id"),
+    json_col(device_df, "code_string", "$.coding[0].code").alias("assoc_code"),
+    json_col(device_df, "code_string", "$.coding[0].display").alias("assoc_display")
 )
+save_delta_table(device_association_df, "DeviceAssociation")
 
-print("Attempting to save table DeviceAssociation by name...")
-try:
-    res_df.write.mode("overwrite").format("delta").saveAsTable("DeviceAssociation")
-    print("Successfully saved DeviceAssociation table by name.")
-except Exception as e:
-    print(f"Failed to save DeviceAssociation table by name: {e}")
-    print("Falling back to absolute OneLake ABFSS path...")
-    da_path = "abfss://WORKSPACE_ID@onelake.dfs.fabric.microsoft.com/LAKEHOUSE_ID/Tables/DeviceAssociation"
-    res_df.write.mode("overwrite").format("delta").save(da_path)
-    print("DeviceAssociation table materialized successfully via abfss fallback.")
+if INCLUDE_FHIR:
+    encounter_df = read_delta_table("Encounter")
+    save_delta_table(encounter_df.select(
+        select_col(encounter_df, "idOrig"),
+        select_col(encounter_df, "class_string"),
+        select_col(encounter_df, "status"),
+        F.coalesce(non_empty(maybe_col(encounter_df, "period_start")), non_empty(json_col(encounter_df, "period_string", "$.start"))).alias("period_start"),
+        patient_id_expr(encounter_df, "subject_string").alias("patient_id")
+    ), "EncounterOntology")
+
+    condition_df = read_delta_table("Condition")
+    save_delta_table(condition_df.select(
+        select_col(condition_df, "idOrig"),
+        select_col(condition_df, "code_string"),
+        select_col(condition_df, "clinicalStatus_string"),
+        patient_id_expr(condition_df, "subject_string").alias("patient_id")
+    ), "ConditionOntology")
+
+    med_df = read_delta_table("MedicationRequest")
+    save_delta_table(med_df.select(
+        select_col(med_df, "idOrig"),
+        select_col(med_df, "medicationCodeableConcept_string"),
+        select_col(med_df, "status"),
+        select_col(med_df, "authoredOn"),
+        patient_id_expr(med_df, "subject_string").alias("patient_id")
+    ), "MedicationRequestOntology")
+
+    obs_df = read_delta_table("Observation")
+    save_delta_table(obs_df.select(
+        select_col(obs_df, "idOrig"),
+        select_col(obs_df, "code_string"),
+        select_col(obs_df, "valueQuantity_value", "double"),
+        select_col(obs_df, "valueQuantity_unit"),
+        select_col(obs_df, "effectiveDateTime"),
+        patient_id_expr(obs_df, "subject_string").alias("patient_id")
+    ), "ObservationOntology")
+else:
+    print("Skipping FHIR ontology projection tables because INCLUDE_FHIR is false.")
+
+if INCLUDE_DICOM:
+    img_df = read_delta_table("ImagingStudy")
+    save_delta_table(img_df.select(
+        select_col(img_df, "idOrig"),
+        select_col(img_df, "description"),
+        patient_id_expr(img_df, "subject_string", imaging=True).alias("patient_id"),
+        select_col(img_df, "numberOfSeries", "long"),
+        select_col(img_df, "numberOfInstances", "long")
+    ), "ImagingStudyOntology")
+else:
+    print("Skipping ImagingStudyOntology because INCLUDE_DICOM is false.")
+
+print("Ontology projection tables materialized successfully.")
 '@
 
                 # Interpolate workspace and lakehouse IDs into the PySpark template
-                $pysparkCode = $pysparkCode.Replace("WORKSPACE_ID", $p4WsId).Replace("LAKEHOUSE_ID", $p4SilverLhId)
+                $pyIncludeFhir = if ($SkipFhir -and -not $Phase4) { "False" } else { "True" }
+                $pyIncludeDicom = if ($SkipDicom -and -not $Phase4) { "False" } else { "True" }
+                $pysparkCode = $pysparkCode.Replace("WORKSPACE_ID_PLACEHOLDER", $p4WsId).Replace("LAKEHOUSE_ID_PLACEHOLDER", $p4SilverLhId).Replace("INCLUDE_FHIR_PLACEHOLDER", $pyIncludeFhir).Replace("INCLUDE_DICOM_PLACEHOLDER", $pyIncludeDicom)
 
                 $daIpynb = @{
                     nbformat = 4
@@ -1983,7 +2350,27 @@ except Exception as e:
                 $daIpynbBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($daIpynbJson))
 
                 # Check for existing notebook and delete
-                $p4Items = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers).value
+                $p4Items = $null
+                for ($listAttempt = 1; $listAttempt -le 8; $listAttempt++) {
+                    try {
+                        $p4Token = Get-FabricTokenLocal
+                        $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
+                        $p4Items = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers -ErrorAction Stop).value
+                        break
+                    } catch {
+                        $listStatusCode = $null
+                        try { $listStatusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $listBody = $_.ErrorDetails.Message
+                        if (($listStatusCode -in @(429, 500, 502, 503, 504) -or $listStatusCode -eq 403) -and $listAttempt -lt 8) {
+                            $delay = [Math]::Min(15 * $listAttempt, 90)
+                            Write-Host "    Fabric item list transient HTTP $listStatusCode — retrying in ${delay}s... ($listAttempt/8)" -ForegroundColor Yellow
+                            if ($listBody) { Write-Host $listBody -ForegroundColor DarkGray }
+                            Start-Sleep $delay
+                            continue
+                        }
+                        throw $_
+                    }
+                }
                 $existingDaNb = $p4Items | Where-Object { $_.displayName -match '^create_device_association_table(_\d+)?$' -and $_.type -eq "Notebook" }
                 if ($existingDaNb) {
                     if ($existingDaNb -is [array]) { $existingDaNb = $existingDaNb[0] }
@@ -2015,10 +2402,12 @@ except Exception as e:
                 } | ConvertTo-Json -Depth 5
 
                 $daNbCreated = $false
-                for ($attempt = 1; $attempt -le 4; $attempt++) {
+                for ($attempt = 1; $attempt -le 8; $attempt++) {
                     try {
+                        $p4Token = Get-FabricTokenLocal
+                        $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
                         $daNbResp = Invoke-WebRequest -Uri "$p4Base/workspaces/$p4WsId/items" `
-                            -Headers $p4Headers -Method Post -Body $daNbBody -UseBasicParsing
+                            -Headers $p4Headers -Method Post -Body $daNbBody -UseBasicParsing -ErrorAction Stop
                         if ($daNbResp.StatusCode -eq 202) {
                             $daNbOpId = $daNbResp.Headers["x-ms-operation-id"]
                             if ($daNbOpId -is [array]) { $daNbOpId = $daNbOpId[0] }
@@ -2029,12 +2418,12 @@ except Exception as e:
                     } catch {
                         $errCode = $null
                         try { $errCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $errBody = $_.ErrorDetails.Message
                         if ($errCode -eq 409) {
                             if ($attempt -lt 3) {
                                 Write-Host "    409 Conflict (Name Reservation Lock) — retrying in 10s ($attempt/3)" -ForegroundColor Yellow
                                 Start-Sleep 10
                             } else {
-                                # Generate a dynamic suffix to bypass the name lock instantly
                                 $timestamp = Get-Date -Format "yyyyMMddHHmmss"
                                 $daNotebookDisplayName = "create_device_association_table_$timestamp"
                                 Write-Host "    409 Conflict persisted. Bypassing lock by suffixing notebook to: $daNotebookDisplayName" -ForegroundColor Cyan
@@ -2042,6 +2431,11 @@ except Exception as e:
                                 $daNbBodyObj.displayName = $daNotebookDisplayName
                                 $daNbBody = $daNbBodyObj | ConvertTo-Json -Depth 5
                             }
+                        } elseif (($errCode -in @(429, 500, 502, 503, 504) -or $errCode -eq 403) -and $attempt -lt 8) {
+                            $delay = [Math]::Min(15 * $attempt, 90)
+                            Write-Host "    Notebook create transient HTTP $errCode — retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                            if ($errBody) { Write-Host $errBody -ForegroundColor DarkGray }
+                            Start-Sleep $delay
                         } else { throw }
                     }
                 }
@@ -2050,8 +2444,8 @@ except Exception as e:
                     # Find the notebook and run it
                     $p4Token = Get-FabricTokenLocal
                     $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-                    $daNb = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items?type=Notebook" -Headers $p4Headers).value |
-                        Where-Object { $_.displayName -eq $daNotebookDisplayName }
+                    $daNb = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers).value |
+                        Where-Object { $_.type -eq "Notebook" -and $_.displayName -eq $daNotebookDisplayName }
                     Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p4WsId
                     if ($daNb) {
                         Write-Host "  Running notebook (attached to Silver Lakehouse)..." -ForegroundColor White
@@ -2065,7 +2459,7 @@ except Exception as e:
                                 }
                             } | ConvertTo-Json -Depth 5
                             Invoke-WebRequest -Method POST `
-                                -Uri "$p4Base/workspaces/$p4WsId/items/$($daNb.id)/jobs/RunNotebook/instances?jobType=RunNotebook" `
+                                -Uri "$p4Base/workspaces/$p4WsId/items/$($daNb.id)/jobs/instances?jobType=RunNotebook" `
                                 -Headers $p4Headers -Body $runBody -UseBasicParsing | Out-Null
                             Write-Host "  ✓ DeviceAssociation notebook invoked" -ForegroundColor Green
 
@@ -2075,154 +2469,279 @@ except Exception as e:
                                 Start-Sleep 15
                                 $p4Token = Get-FabricTokenLocal
                                 $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-                                $daJobs = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items/$($daNb.id)/jobs/instances?limit=1" -Headers $p4Headers).value
+                                try {
+                                    $daJobs = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items/$($daNb.id)/jobs/instances?limit=1" -Headers $p4Headers -ErrorAction Stop).value
+                                } catch {
+                                    $jobStatusCode = $null
+                                    try { $jobStatusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                                    $jobBody = $_.ErrorDetails.Message
+                                    if ($jobStatusCode -in @(429, 500, 502, 503, 504) -or ($jobStatusCode -eq 403 -and $jobBody -match "RequestDeniedByInboundPolicy")) {
+                                        Write-Host "    DeviceAssociation job status transient HTTP $jobStatusCode — retrying..." -ForegroundColor Yellow
+                                        continue
+                                    }
+                                    throw $_
+                                }
                                 if ($daJobs -and $daJobs[0].status -eq 'Completed') {
                                     Write-Host "  ✓ DeviceAssociation table materialized" -ForegroundColor Green
+                                    $deviceAssociationMaterialized = $true
                                     break
                                 } elseif ($daJobs -and $daJobs[0].status -in @('Failed', 'Cancelled')) {
-                                    Write-Host "  ⚠ Notebook $($daJobs[0].status) — DeviceAssociation may not be created" -ForegroundColor Yellow
-                                    break
+                                    throw "DeviceAssociation notebook $($daJobs[0].status)"
                                 }
                                 $daElapsed = [math]::Round((New-TimeSpan -Start $daStart).TotalMinutes, 1)
                                 Write-Host "    [$daElapsed min] Notebook: $($daJobs[0].status)" -ForegroundColor DarkGray
                             }
+                            if (-not $deviceAssociationMaterialized) {
+                                throw "DeviceAssociation notebook did not complete within 10 minutes"
+                            }
                         } catch {
-                            Write-Host "  ⚠ Could not run notebook: $($_.Exception.Message)" -ForegroundColor Yellow
+                            throw "Could not run DeviceAssociation notebook: $($_.Exception.Message)"
                         }
                     }
+                    else {
+                        throw "DeviceAssociation notebook was created but not found for execution"
+                    }
+                }
+                else {
+                    throw "DeviceAssociation notebook item was not created"
                 }
             } else {
-                Write-Host "  ⚠ Notebook source not found at: $daNotebookPath" -ForegroundColor Yellow
+                throw "Notebook source not found at: $daNotebookPath"
             }
         } else {
-            Write-Host "  ⚠ Silver Lakehouse not found — skipping DeviceAssociation" -ForegroundColor Yellow
+            throw "Silver Lakehouse not found — cannot materialize DeviceAssociation"
         }
     }
+
+        if (-not $SkipFabric -and -not $deviceAssociationMaterialized) {
+            throw "DeviceAssociation table was not materialized"
+        }
 
         # ── Step 8c: Deploy Ontology ──
         Write-Host ""
         Write-Host "  --- Step 8c: Ontology Deployment ---" -ForegroundColor Cyan
-        Write-Host "  Deploying ClinicalDeviceOntology..." -ForegroundColor White
+        Write-Host "  Deploying ClinicalDeviceOntology and DevicePayerOntology..." -ForegroundColor White
 
-        Invoke-Step -StepName "Phase 4: Ontology Deployment" -Description "Deploying ClinicalDeviceOntology" -Action {
-            Write-Host "  Deploying ClinicalDeviceOntology..." -ForegroundColor White
+        Invoke-Step -StepName "Phase 4: Ontology Deployment" -Description "Deploying clinical and payer ontologies" -Action {
+            Write-Host "  Deploying ClinicalDeviceOntology (clinical device graph only)..." -ForegroundColor White
 
-            $ontologyArgs = @{
+            $clinicalOntologyArgs = @{
                 FabricWorkspaceName = $FabricWorkspaceName
-                IncludeFhir         = [bool](-not $SkipFhir)
-                IncludeDicom        = [bool](-not $SkipDicom)
+                OntologyName        = "ClinicalDeviceOntology"
+                IncludeFhir         = [bool]($Phase4 -or (-not $SkipFhir))
+                IncludeDicom        = [bool]($Phase4 -or (-not $SkipDicom))
                 IncludeTelemetry    = [bool](-not $SkipFabric)
-                IncludeGold         = [bool](-not $SkipQualityMeasures)
+                IncludeGold         = $false
+                ReplaceExisting     = [bool]$ReplaceOntology
             }
-            & "$ScriptDir\phase-4\deploy-ontology.ps1" @ontologyArgs
+            $global:LASTEXITCODE = 0
+            & "$ScriptDir\phase-4\deploy-ontology.ps1" @clinicalOntologyArgs
+            Assert-LastExternalCommandSucceeded "deploy-ontology.ps1 ClinicalDeviceOntology"
+
+            if (-not $SkipQualityMeasures) {
+                Write-Host ""
+                Write-Host "  Deploying DevicePayerOntology (device + patient + diagnosis + claims graph)..." -ForegroundColor White
+                $payerOntologyArgs = @{
+                    FabricWorkspaceName = $FabricWorkspaceName
+                    OntologyName        = "DevicePayerOntology"
+                    IncludeFhir         = [bool](-not $SkipFhir)
+                    IncludeDicom        = [bool](-not $SkipDicom)
+                    IncludeTelemetry    = [bool](-not $SkipFabric)
+                    IncludeGold         = $true
+                }
+                $global:LASTEXITCODE = 0
+                & "$ScriptDir\phase-4\deploy-ontology.ps1" @payerOntologyArgs
+                Assert-LastExternalCommandSucceeded "deploy-ontology.ps1 DevicePayerOntology"
+            } else {
+                Write-Host "  ⚠ Skipping DevicePayerOntology because -SkipQualityMeasures is set" -ForegroundColor Yellow
+            }
             Write-Host ""
         }
 
-        # ── Step 8d: Bind ontology to Data Agents ──
+        # ── Step 8d: Deploy ontology-aware clinical Data Agents ──
+        if (-not $SkipDataAgents) {
+            Write-Host "  --- Step 8d: Ontology-Aware Clinical Data Agents ---" -ForegroundColor Cyan
+            Invoke-Step -StepName "Phase 4: Ontology-Aware Data Agents" `
+                -Description "Deploy Patient 360 + Clinical Triage after ClinicalDeviceOntology exists" -Action {
+                Write-Host "  This step will:" -ForegroundColor White
+                Write-Host "    [1/2] Create/update Patient 360 Data Agent with ClinicalDeviceOntology" -ForegroundColor DarkGray
+                Write-Host "    [2/2] Create/update Clinical Triage Data Agent with ClinicalDeviceOntology" -ForegroundColor DarkGray
+                Write-Host "  Architecture: KQL + Silver Lakehouse + ClinicalDeviceOntology" -ForegroundColor DarkGray
+                Write-Host ""
+
+                $global:LASTEXITCODE = 0
+                & "$ScriptDir\phase-2\deploy-data-agents.ps1" `
+                    -FabricWorkspaceName $FabricWorkspaceName `
+                    -IncludeDicomImaging:((-not $SkipImaging) -and (-not $SkipDicom))
+                Assert-LastExternalCommandSucceeded "deploy-data-agents.ps1"
+            }
+            Write-Host ""
+        }
+
+        # ── Step 8d: Bind ontologies to the right Data Agents ──
         Write-Host "  --- Step 8d: Agent Ontology Binding ---" -ForegroundColor Cyan
 
-        # Discover the deployed ontology
-        $p4Token = Get-FabricTokenLocal
-        $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-        $ontologies = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/ontologies" -Headers $p4Headers).value
-        $ontology = $ontologies | Where-Object { $_.displayName -eq "ClinicalDeviceOntology" } | Select-Object -First 1
+        function Add-OntologyDatasourceToAgents {
+            param(
+                [Parameter(Mandatory)][string]$OntologyName,
+                [Parameter(Mandatory)][string[]]$AgentNames,
+                [Parameter(Mandatory)][string]$UserDescription,
+                [Parameter(Mandatory)][string]$DataSourceInstructions,
+                [string[]]$RemoveOntologyNames = @(),
+                [switch]$OptionalAgents
+            )
 
-        if ($ontology) {
+            $p4Token = Get-FabricTokenLocal
+            $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
+            function Invoke-P4RestWithRetry {
+                param([Parameter(Mandatory)][string]$Uri, [int]$MaxRetries = 8)
+                for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+                    try {
+                        return Invoke-RestMethod -Uri $Uri -Headers $p4Headers -ErrorAction Stop
+                    } catch {
+                        $statusCode = $null
+                        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $errBody = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+                        if (($statusCode -eq 403 -and $errBody -match 'RequestDeniedByInboundPolicy|Forbidden') -or $statusCode -in @(429, 500, 502, 503, 504)) {
+                            if ($attempt -lt $MaxRetries) {
+                                $delay = [Math]::Min(120, 10 * [Math]::Pow(2, $attempt - 1))
+                                Write-Host "  Fabric API transient HTTP ${statusCode}; retrying in ${delay}s... ($attempt/$MaxRetries)" -ForegroundColor Yellow
+                                Start-Sleep -Seconds $delay
+                                continue
+                            }
+                        }
+                        throw $_
+                    }
+                }
+            }
+
+            $ontologies = (Invoke-P4RestWithRetry -Uri "$p4Base/workspaces/$p4WsId/ontologies").value
+            $ontology = $ontologies | Where-Object { $_.displayName -eq $OntologyName } | Select-Object -First 1
+            if (-not $ontology) { throw "Ontology '$OntologyName' not found — agent binding skipped" }
+
             $ontologyId = $ontology.id
-            Write-Host "  ✓ Ontology found: ClinicalDeviceOntology ($ontologyId)" -ForegroundColor Green
+            Write-Host "  ✓ Ontology found: $OntologyName ($ontologyId)" -ForegroundColor Green
 
-            # Find Data Agents — bind ontology to all three agents
-            $agents = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items?type=DataAgent" -Headers $p4Headers).value
-
-            foreach ($agentName in @("Patient 360", "Clinical Triage", "HDS Multi-Layer Imaging Cohort Agent")) {
+            $agents = (Invoke-P4RestWithRetry -Uri "$p4Base/workspaces/$p4WsId/items?type=DataAgent").value
+            $bindingFailures = @()
+            foreach ($agentName in $AgentNames) {
                 $agent = $agents | Where-Object { $_.displayName -eq $agentName } | Select-Object -First 1
                 if (-not $agent) {
-                    Write-Host "  ⚠ Agent '$agentName' not found — skipping" -ForegroundColor Yellow
+                    $msg = "Agent '$agentName' not found"
+                    if ($OptionalAgents) { Write-Host "  ⚠ $msg; skipping optional ontology binding" -ForegroundColor Yellow; continue }
+                    $bindingFailures += $msg
                     continue
                 }
 
-                Write-Host "  Adding ontology datasource to '$agentName'..." -ForegroundColor White
+                Write-Host "  Binding $OntologyName to '$agentName'..." -ForegroundColor White
+                $bound = $false
+                for ($bindAttempt = 1; $bindAttempt -le 6 -and -not $bound; $bindAttempt++) {
+                    try {
+                        $p4Token = Get-FabricTokenLocal
+                        $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
+                        $defResp = Invoke-WebRequest -Method POST `
+                            -Uri "$p4Base/workspaces/$p4WsId/items/$($agent.id)/getDefinition" `
+                            -Headers $p4Headers -UseBasicParsing -ErrorAction Stop
+                        $defOpId = $defResp.Headers["x-ms-operation-id"]
+                        if ($defOpId -is [array]) { $defOpId = $defOpId[0] }
+                        Start-Sleep 5
+                        $p4Token = Get-FabricTokenLocal
+                        $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
+                        $defResult = Invoke-RestMethod -Uri "$p4Base/operations/$defOpId/result" -Headers $p4Headers -ErrorAction Stop
+                        $existingParts = @($defResult.definition.parts)
 
-                # Get current agent definition
-                try {
-                    $defResp = Invoke-WebRequest -Method POST `
-                        -Uri "$p4Base/workspaces/$p4WsId/items/$($agent.id)/getDefinition" `
-                        -Headers $p4Headers -UseBasicParsing
-                    $defOpId = $defResp.Headers["x-ms-operation-id"]
-                    if ($defOpId -is [array]) { $defOpId = $defOpId[0] }
-                    Start-Sleep 5
-                    $p4Token = Get-FabricTokenLocal
-                    $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-                    $defResult = Invoke-RestMethod -Uri "$p4Base/operations/$defOpId/result" -Headers $p4Headers
-                    $existingParts = $defResult.definition.parts
-
-                    # Build ontology datasource JSON
-                    $ontDatasourceJson = @{
-                        '$schema'              = "1.0.0"
-                        artifactId             = $ontologyId
-                        workspaceId            = $p4WsId
-                        displayName            = "ClinicalDeviceOntology"
-                        type                   = "ontology"
-                        userDescription        = "Semantic layer: 9 entity types (Patient, Device, Encounter, Condition, MedicationRequest, Observation, DeviceAssociation, ClinicalAlert, DeviceTelemetry) with relationships across Lakehouse and Eventhouse."
-                        dataSourceInstructions = "Use this ontology to understand entity relationships. It maps Patient↔Device, Patient→Encounter, Patient→Condition, Device→DeviceTelemetry, Device→ClinicalAlert."
-                    } | ConvertTo-Json -Depth 10
-
-                    $ontFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = @() } | ConvertTo-Json -Depth 5)
-
-                    # Add ontology datasource parts to existing definition
-                    $ontFolderName = "ontology-ClinicalDeviceOntology"
-                    $ontDsPart = @{
-                        path        = "Files/Config/draft/$ontFolderName/datasource.json"
-                        payload     = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ontDatasourceJson))
-                        payloadType = "InlineBase64"
-                    }
-                    $ontFsPart = @{
-                        path        = "Files/Config/draft/$ontFolderName/fewshots.json"
-                        payload     = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ontFewShotsJson))
-                        payloadType = "InlineBase64"
-                    }
-
-                    # Always update ontology datasource to ensure artifactId matches current ontology
-                    $hasOntDs = $existingParts | Where-Object { $_.path -match "ontology-ClinicalDeviceOntology" }
-                    if ($hasOntDs) {
-                        # Remove existing ontology parts — will re-add with current ID
-                        $existingParts = @($existingParts | Where-Object { $_.path -notmatch "ontology-ClinicalDeviceOntology" })
-                    }
-
-                    # Merge: keep all existing parts + add ontology parts
-                    $updatedParts = @($existingParts) + @($ontDsPart, $ontFsPart)
-
-                    # Update definition
-                    $updateBody = @{
-                        definition = @{
-                            parts = $updatedParts
+                        $ontologyNamesToRemove = @($RemoveOntologyNames + $OntologyName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+                        foreach ($removeName in $ontologyNamesToRemove) {
+                            $safeRemoveName = [regex]::Escape("ontology-$removeName")
+                            $existingParts = @($existingParts | Where-Object { $_.path -notmatch $safeRemoveName })
                         }
-                    }
-                    $updateResp = Invoke-WebRequest -Method POST `
-                        -Uri "$p4Base/workspaces/$p4WsId/items/$($agent.id)/updateDefinition" `
-                        -Headers $p4Headers `
-                        -Body ($updateBody | ConvertTo-Json -Depth 20) `
-                        -UseBasicParsing
 
-                    if ($updateResp.StatusCode -in @(200, 202)) {
-                        if ($updateResp.StatusCode -eq 202) {
-                            $upOpId = $updateResp.Headers["x-ms-operation-id"]
-                            if ($upOpId -is [array]) { $upOpId = $upOpId[0] }
-                            Start-Sleep 10
+                        $ontDatasourceJson = @{
+                            '$schema'              = "1.0.0"
+                            artifactId             = $ontologyId
+                            workspaceId            = $p4WsId
+                            displayName            = $OntologyName
+                            type                   = "ontology"
+                            userDescription        = $UserDescription
+                            dataSourceInstructions = $DataSourceInstructions
+                        } | ConvertTo-Json -Depth 10
+
+                        $ontFewShotsJson = (@{ '$schema' = "1.0.0"; fewShots = @() } | ConvertTo-Json -Depth 5)
+                        $ontFolderName = "ontology-$OntologyName"
+                        $ontDsPart = @{
+                            path        = "Files/Config/draft/$ontFolderName/datasource.json"
+                            payload     = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ontDatasourceJson))
+                            payloadType = "InlineBase64"
                         }
-                        $action = if ($hasOntDs) { "updated" } else { "added" }
-                        Write-Host "  ✓ Ontology datasource $action on '$agentName' (ID: $ontologyId)" -ForegroundColor Green
+                        $ontFsPart = @{
+                            path        = "Files/Config/draft/$ontFolderName/fewshots.json"
+                            payload     = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ontFewShotsJson))
+                            payloadType = "InlineBase64"
+                        }
+
+                        $updatedParts = @($existingParts) + @($ontDsPart, $ontFsPart)
+                        $updateBody = @{ definition = @{ parts = $updatedParts } }
+                        $updateResp = Invoke-WebRequest -Method POST `
+                            -Uri "$p4Base/workspaces/$p4WsId/items/$($agent.id)/updateDefinition" `
+                            -Headers $p4Headers `
+                            -Body ($updateBody | ConvertTo-Json -Depth 20) `
+                            -UseBasicParsing -ErrorAction Stop
+
+                        if ($updateResp.StatusCode -in @(200, 202)) {
+                            if ($updateResp.StatusCode -eq 202) {
+                                $upOpId = $updateResp.Headers["x-ms-operation-id"]
+                                if ($upOpId -is [array]) { $upOpId = $upOpId[0] }
+                                Start-Sleep 10
+                            }
+                            Write-Host "  ✓ $OntologyName datasource applied to '$agentName'" -ForegroundColor Green
+                            $bound = $true
+                        } else {
+                            throw "Ontology datasource update returned HTTP $($updateResp.StatusCode) for '$agentName'"
+                        }
+                    } catch {
+                        $bindStatusCode = $null
+                        try { $bindStatusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $bindBody = $_.ErrorDetails.Message
+                        if (($bindStatusCode -in @(429, 500, 502, 503, 504) -or $bindStatusCode -eq 403) -and $bindAttempt -lt 6) {
+                            $delay = [Math]::Min(20 * $bindAttempt, 120)
+                            Write-Host "    Agent binding transient HTTP $bindStatusCode for '$agentName' — retrying in ${delay}s... ($bindAttempt/6)" -ForegroundColor Yellow
+                            if ($bindBody) { Write-Host $bindBody -ForegroundColor DarkGray }
+                            Start-Sleep $delay
+                            continue
+                        }
+                        $bindingFailures += "Could not bind $OntologyName to '$agentName': $($_.Exception.Message)"
                     }
-                } catch {
-                    Write-Host "  ⚠ Could not bind ontology to '$agentName': $($_.Exception.Message)" -ForegroundColor Yellow
                 }
             }
-        } else {
-            Write-Host "  ⚠ Ontology not found after deployment — agent binding skipped" -ForegroundColor Yellow
+
+            if ($bindingFailures.Count -gt 0) {
+                throw "Ontology agent binding failed: $($bindingFailures -join '; ')"
+            }
+        }
+
+        $clinicalAgentNames = @("Patient 360", "Clinical Triage")
+        if (-not $SkipImaging -and -not $SkipDicom) { $clinicalAgentNames += "HDS Multi-Layer Imaging Cohort Agent" }
+
+        Add-OntologyDatasourceToAgents `
+            -OntologyName "ClinicalDeviceOntology" `
+            -AgentNames $clinicalAgentNames `
+            -UserDescription "Clinical device semantic layer for Patient, Device, Encounter, Condition, MedicationRequest, Observation, ImagingStudy, DeviceAssociation, and real-time DeviceTelemetry." `
+            -DataSourceInstructions "Use this ontology for clinical device vocabulary and relationship grounding only. It maps Patient↔Device, Patient→Encounter, Patient→Condition, Patient→Observation, Patient→MedicationRequest, Patient→ImagingStudy, and Device→DeviceTelemetry across Lakehouse and Eventhouse sources. Clinical alerts remain available through the KQL/Data Activator path (fn_ClinicalAlerts / ClinicalAlertActivator) rather than this ontology until Fabric exposes actionable AlertHistory ontology import diagnostics. The actual patient-device assignment rows and patient home/location demographics must still be queried from the Lakehouse dbo.Basic and dbo.Patient tables. Do not use it for payer/claims reasoning." `
+            -RemoveOntologyNames @("DevicePayerOntology")
+
+        if (-not $SkipQualityMeasures) {
+            Add-OntologyDatasourceToAgents `
+                -OntologyName "DevicePayerOntology" `
+                -AgentNames @("Payer Ops Triage", "Healthcare Graph Agent", "HealthcareOpsAgent") `
+                -UserDescription "Payer-oriented device ontology linking Patient, Device, Diagnosis, Claim, Payer, CareGap, PatientRisk, HighCostClaimant, clinical alerts, and telemetry." `
+                -DataSourceInstructions "Use this ontology for claims, payer operations, care gaps, high-cost claimant, RAF/risk, payer-category, and device-to-payer questions. It keeps payer semantics out of the clinical-device ontology while preserving patient/device/diagnosis/claim relationships." `
+                -RemoveOntologyNames @("ClinicalDeviceOntology") `
+                -OptionalAgents
         }
 
         Write-Host ""
     }
+}
 
     # ============================================================================
     # PHASE 5 — Bedside Alerting & Action
@@ -2261,19 +2780,84 @@ except Exception as e:
             $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
             $p4Base = "https://api.fabric.microsoft.com/v1"
 
+            function Test-FabricTransientError {
+                param([object]$StatusCode, [string]$ErrorText = "")
+                $status = $null
+                try { if ($null -ne $StatusCode) { $status = [int]$StatusCode } } catch { return $false }
+                if ($status -in @(429, 500, 502, 503, 504)) { return $true }
+                return ($status -eq 403 -and $ErrorText -match 'RequestDeniedByInboundPolicy|inbound communication policy|Forbidden')
+            }
+
+            function Invoke-P4ActivatorRest {
+                param(
+                    [Parameter(Mandatory)][string]$Uri,
+                    [string]$Method = 'GET',
+                    [object]$Body = $null,
+                    [string]$Label = 'Fabric request'
+                )
+                for ($attempt = 1; $attempt -le 8; $attempt++) {
+                    try {
+                        $token = Get-FabricTokenLocal
+                        $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                        if ($Body -ne $null) { return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -Body $Body -ErrorAction Stop }
+                        return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
+                    } catch {
+                        $statusCode = $null
+                        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $errBody = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+                        if ((Test-FabricTransientError -StatusCode $statusCode -ErrorText $errBody) -and $attempt -lt 8) {
+                            $delay = [Math]::Min(15 * $attempt, 90)
+                            Write-Host "  $Label transient HTTP ${statusCode}; retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                            if ($errBody) { Write-Host "    $errBody" -ForegroundColor DarkGray }
+                            Start-Sleep -Seconds $delay
+                            continue
+                        }
+                        throw
+                    }
+                }
+            }
+
+            function Invoke-P4ActivatorWeb {
+                param(
+                    [Parameter(Mandatory)][string]$Uri,
+                    [string]$Method = 'GET',
+                    [object]$Body = $null,
+                    [string]$Label = 'Fabric request'
+                )
+                for ($attempt = 1; $attempt -le 8; $attempt++) {
+                    try {
+                        $token = Get-FabricTokenLocal
+                        $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                        if ($Body -ne $null) { return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -Body $Body -UseBasicParsing -ErrorAction Stop }
+                        return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -UseBasicParsing -ErrorAction Stop
+                    } catch {
+                        $statusCode = $null
+                        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+                        $errBody = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+                        if ((Test-FabricTransientError -StatusCode $statusCode -ErrorText $errBody) -and $attempt -lt 8) {
+                            $delay = [Math]::Min(15 * $attempt, 90)
+                            Write-Host "  $Label transient HTTP ${statusCode}; retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                            if ($errBody) { Write-Host "    $errBody" -ForegroundColor DarkGray }
+                            Start-Sleep -Seconds $delay
+                            continue
+                        }
+                        throw
+                    }
+                }
+            }
+
             # Resolve workspace ID
-            $p4Workspaces = (Invoke-RestMethod -Uri "$p4Base/workspaces" -Headers $p4Headers).value
+            $p4Workspaces = (Invoke-P4ActivatorRest -Uri "$p4Base/workspaces" -Label 'List workspaces').value
             $p4Ws = $p4Workspaces | Where-Object { $_.displayName -eq $FabricWorkspaceName } | Select-Object -First 1
             if (-not $p4Ws) {
-                Write-Host "  ✗ Workspace '$FabricWorkspaceName' not found — cannot deploy Activator" -ForegroundColor Red
-                return
+                throw "Workspace '$FabricWorkspaceName' not found — cannot deploy Activator"
             }
             $p4WsId = $p4Ws.id
 
             $reflexName = "ClinicalAlertActivator"
 
             # Check for existing Reflex
-            $p4Items = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers).value
+            $p4Items = (Invoke-P4ActivatorRest -Uri "$p4Base/workspaces/$p4WsId/items" -Label 'List workspace items').value
             $existingReflex = $p4Items | Where-Object { $_.displayName -eq $reflexName -and $_.type -eq 'Reflex' }
 
             $reflexId = $null
@@ -2284,13 +2868,13 @@ except Exception as e:
             }
 
             # Discover KQL Database for KQL source (itemId must be KQL DB, not Eventhouse)
-            $p4KqlDbs = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/kqlDatabases" -Headers $p4Headers).value
+            $p4KqlDbs = (Invoke-P4ActivatorRest -Uri "$p4Base/workspaces/$p4WsId/kqlDatabases" -Label 'List KQL databases').value
             $p4KqlDb = $p4KqlDbs | Where-Object { $_.displayName -match 'Masimo' } | Select-Object -First 1
             if (-not $p4KqlDb) { $p4KqlDb = $p4KqlDbs | Select-Object -First 1 }
             if ($p4KqlDb -is [array]) { $p4KqlDb = $p4KqlDb[0] }
 
             if (-not $p4KqlDb) {
-                Write-Host "  ⚠ No KQL Database found — cannot configure data source" -ForegroundColor Yellow
+                throw "No KQL Database found — cannot configure ClinicalAlertActivator data source"
             } else {
                 Write-Host "  ✓ KQL Database: $($p4KqlDb.displayName) ($($p4KqlDb.id))" -ForegroundColor Green
 
@@ -2306,6 +2890,7 @@ except Exception as e:
                 $attrPatientId = [guid]::NewGuid().ToString()
                 $attrMessageId = [guid]::NewGuid().ToString()
 
+                $ruleApplied = $false
                 $kqlQuery = "fn_ClinicalAlerts($AlertCooldownMinutes) | where alert_tier in ('CRITICAL', 'URGENT') | project device_id, alert_tier, spo2, pr, patient_name, message, alert_time"
 
                 # Build instance strings as raw JSON (PowerShell ConvertTo-Json corrupts nested instance strings)
@@ -2371,8 +2956,8 @@ except Exception as e:
                     } | ConvertTo-Json -Depth 10
 
                     try {
-                        $rResp = Invoke-WebRequest -Uri "$p4Base/workspaces/$p4WsId/items" `
-                            -Headers $p4Headers -Method POST -Body $createBody -UseBasicParsing -ErrorAction Stop
+                        $rResp = Invoke-P4ActivatorWeb -Uri "$p4Base/workspaces/$p4WsId/items" `
+                            -Method POST -Body $createBody -Label 'Create ClinicalAlertActivator'
                         if ($rResp.StatusCode -eq 201) {
                             $reflexId = ($rResp.Content | ConvertFrom-Json).id
                             Write-Host "  ✓ Reflex created with KQL pipeline: $reflexName ($reflexId)" -ForegroundColor Green
@@ -2384,23 +2969,27 @@ except Exception as e:
                                 Start-Sleep 5
                                 $p4Token = Get-FabricTokenLocal
                                 $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
-                                $op = Invoke-RestMethod -Uri "$p4Base/operations/$rOpId" -Headers $p4Headers
+                                $op = Invoke-P4ActivatorRest -Uri "$p4Base/operations/$rOpId" -Label 'Poll Reflex create operation'
                                 if ($op.status -ne 'Running') { break }
                             }
                             Start-Sleep 3
-                            $p4Items2 = (Invoke-RestMethod -Uri "$p4Base/workspaces/$p4WsId/items" -Headers $p4Headers).value
+                            $p4Items2 = (Invoke-P4ActivatorRest -Uri "$p4Base/workspaces/$p4WsId/items" -Label 'Refresh workspace items').value
                             $reflex = $p4Items2 | Where-Object { $_.displayName -eq $reflexName -and $_.type -eq 'Reflex' }
                             if ($reflex -is [array]) { $reflex = $reflex[0] }
-                            $reflexId = $reflex.id
-                            Write-Host "  ✓ Reflex created with KQL pipeline: $reflexName ($reflexId)" -ForegroundColor Green
+                            if ($reflex) {
+                                $reflexId = $reflex.id
+                                Write-Host "  ✓ Reflex created with KQL pipeline: $reflexName ($reflexId)" -ForegroundColor Green
+                            } else {
+                                throw "Reflex create operation completed but '$reflexName' was not found"
+                            }
                         }
                     } catch {
                         $errMsg = $_.Exception.Message
                         try { $errMsg = ($_.ErrorDetails.Message | ConvertFrom-Json).message } catch {}
-                        Write-Host "  ⚠ Could not create Reflex: $errMsg" -ForegroundColor Yellow
-                        $reflexId = $null
+                        throw "Could not create Reflex: $errMsg"
                     }
                 }
+                if (-not $reflexId) { throw "Reflex '$reflexName' was not created" }
 
                 # Step 2: Add email rule via updateDefinition (Create Item rejects EventTrigger with KQL source)
                 if ($reflexId) {
@@ -2411,20 +3000,21 @@ except Exception as e:
                         $p4Headers = @{ Authorization = "Bearer $p4Token"; "Content-Type" = "application/json" }
                         $fullB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($fullEntitiesJson))
                         $updateBody = @{ definition = @{ parts = @(@{path="ReflexEntities.json"; payload=$fullB64; payloadType="InlineBase64"}) } } | ConvertTo-Json -Depth 10
-                        Invoke-WebRequest -Method POST `
+                        $ruleResp = Invoke-P4ActivatorWeb -Method POST `
                             -Uri "$p4Base/workspaces/$p4WsId/items/$reflexId/updateDefinition" `
-                            -Headers $p4Headers -Body $updateBody -UseBasicParsing | Out-Null
+                            -Body $updateBody -Label 'Update ClinicalAlertActivator definition'
+                        if ($ruleResp.StatusCode -notin @(200, 202)) { throw "Rule update returned HTTP $($ruleResp.StatusCode)" }
+                        $ruleApplied = $true
                         Write-Host "  ✓ Email rule added (shouldRun=true)" -ForegroundColor Green
                     } catch {
                         $ruleErr = $_.Exception.Message
                         try { $ruleErr = ($_.ErrorDetails.Message | ConvertFrom-Json).message } catch {}
-                        Write-Host "  ⚠ Could not push rule: $ruleErr" -ForegroundColor Yellow
-                        Write-Host "    Add rule manually in Fabric portal: spo2 < 94 → Email $AlertEmail" -ForegroundColor DarkGray
+                        throw "Could not push rule: $ruleErr"
                     }
                 }
             }
 
-            if ($reflexId) {
+            if ($reflexId -and $ruleApplied) {
                 Write-Host ""
                 Write-Host "  ╔═══════════════════════════════════════════════════════╗" -ForegroundColor Green
                 Write-Host "  ║  ✓ Data Activator deployed!                          ║" -ForegroundColor Green
@@ -2436,11 +3026,13 @@ except Exception as e:
                 Write-Host "  Attributes: alert_tier, spo2, pr, patient_name, message" -ForegroundColor White
                 Write-Host "  Rule:       Email $AlertEmail on every alert event" -ForegroundColor White
             }
+            else {
+                throw "ClinicalAlertActivator was not fully deployed"
+            }
         }
 
         Write-Host ""
     }
-}
 
 # ============================================================================
 # PHASE 6 — Population Health & Quality
@@ -2453,6 +3045,7 @@ except Exception as e:
 #           MedicationRequest, Immunization tables)
 # ============================================================================
 
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase7) {
 Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
 
     Invoke-Step -StepName "Phase 6: CMS Quality Measures" `
@@ -2473,12 +3066,147 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             return $t
         }
 
+        function Get-P5FabricHttpError {
+            param([Parameter(Mandatory)]$ErrorRecord)
+
+            $statusCode = $null
+            try {
+                if ($null -ne $ErrorRecord.Exception.Response.StatusCode) {
+                    $statusCode = [int]$ErrorRecord.Exception.Response.StatusCode
+                }
+            } catch {}
+            if ($null -eq $statusCode) {
+                try {
+                    if ($null -ne $ErrorRecord.Exception.Response.StatusCode.value__) {
+                        $statusCode = [int]$ErrorRecord.Exception.Response.StatusCode.value__
+                    }
+                } catch {}
+            }
+
+            $textParts = @()
+            try { if ($ErrorRecord.ErrorDetails.Message) { $textParts += [string]$ErrorRecord.ErrorDetails.Message } } catch {}
+            try { if ($ErrorRecord.Exception.Message) { $textParts += [string]$ErrorRecord.Exception.Message } } catch {}
+            try {
+                $responseContent = $ErrorRecord.Exception.Response.Content
+                if ($responseContent) {
+                    $responseText = $responseContent.ReadAsStringAsync().GetAwaiter().GetResult()
+                    if ($responseText) { $textParts += [string]$responseText }
+                }
+            } catch {}
+            try {
+                $responseStream = $ErrorRecord.Exception.Response.GetResponseStream()
+                if ($responseStream) {
+                    $reader = [System.IO.StreamReader]::new($responseStream)
+                    try {
+                        $responseText = $reader.ReadToEnd()
+                        if ($responseText) { $textParts += [string]$responseText }
+                    } finally {
+                        $reader.Dispose()
+                    }
+                }
+            } catch {}
+
+            $errText = ($textParts |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Select-Object -Unique) -join "`n"
+
+            if ($null -eq $statusCode -and $errText -match '(?i)\b(403|429|500|502|503|504)\b') {
+                $statusCode = [int]$Matches[1]
+            }
+
+            [pscustomobject]@{
+                StatusCode = $statusCode
+                Text = $errText
+            }
+        }
+
+        function Test-P5FabricTransientError {
+            param(
+                [AllowNull()][object]$StatusCode,
+                [AllowNull()][string]$ErrorText
+            )
+
+            $status = $null
+            try {
+                if ($null -ne $StatusCode) { $status = [int]$StatusCode }
+            } catch {
+                return $false
+            }
+
+            if ($status -in @(429, 500, 502, 503, 504)) { return $true }
+            if ($status -ne 403) { return $false }
+
+            return ($ErrorText -match '(?i)RequestDeniedByInboundPolicy|inbound communication policy|Response status code does not indicate success:\s*403\s*\(Forbidden\)|HTTP\s*403\s*\(Forbidden\)|\b403\s+Forbidden\b')
+        }
+
+        function Invoke-P5FabricRest {
+            param(
+                [Parameter(Mandatory)][string]$Uri,
+                [string]$Method = 'GET',
+                [object]$Body = $null,
+                [string]$Label = 'Fabric request'
+            )
+            for ($attempt = 1; $attempt -le 8; $attempt++) {
+                try {
+                    $token = Get-FabricTokenLocal
+                    $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                    if ($Body -ne $null) {
+                        return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -Body $Body -ErrorAction Stop
+                    }
+                    return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
+                } catch {
+                    $fabricError = Get-P5FabricHttpError -ErrorRecord $_
+                    $isTransient = Test-P5FabricTransientError -StatusCode $fabricError.StatusCode -ErrorText $fabricError.Text
+                    if ($isTransient -and $attempt -lt 8) {
+                        $delay = [Math]::Min(15 * $attempt, 90)
+                        $statusLabel = if ($null -ne $fabricError.StatusCode) { $fabricError.StatusCode } else { 'unknown' }
+                        Write-Host "  $Label transient HTTP ${statusLabel}; retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                        if ($fabricError.Text.Trim()) { Write-Host "    $($fabricError.Text.Trim())" -ForegroundColor DarkGray }
+                        Start-Sleep -Seconds $delay
+                        continue
+                    }
+                    throw
+                }
+            }
+        }
+
+        function Invoke-P5FabricWeb {
+            param(
+                [Parameter(Mandatory)][string]$Uri,
+                [string]$Method = 'GET',
+                [object]$Body = $null,
+                [string]$Label = 'Fabric request'
+            )
+            for ($attempt = 1; $attempt -le 8; $attempt++) {
+                try {
+                    $token = Get-FabricTokenLocal
+                    $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                    if ($Body -ne $null) {
+                        return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -Body $Body -UseBasicParsing -ErrorAction Stop
+                    }
+                    return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -UseBasicParsing -ErrorAction Stop
+                } catch {
+                    $fabricError = Get-P5FabricHttpError -ErrorRecord $_
+                    $isTransient = Test-P5FabricTransientError -StatusCode $fabricError.StatusCode -ErrorText $fabricError.Text
+                    if ($isTransient -and $attempt -lt 8) {
+                        $delay = [Math]::Min(15 * $attempt, 90)
+                        $statusLabel = if ($null -ne $fabricError.StatusCode) { $fabricError.StatusCode } else { 'unknown' }
+                        Write-Host "  $Label transient HTTP ${statusLabel}; retrying in ${delay}s... ($attempt/8)" -ForegroundColor Yellow
+                        if ($fabricError.Text.Trim()) { Write-Host "    $($fabricError.Text.Trim())" -ForegroundColor DarkGray }
+                        Start-Sleep -Seconds $delay
+                        continue
+                    }
+                    throw
+                }
+            }
+        }
+
         $p5Token = Get-FabricTokenLocal
         $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
         $p5Base = "https://api.fabric.microsoft.com/v1"
 
         # Resolve workspace
-        $p5Ws = (Invoke-RestMethod -Uri "$p5Base/workspaces" -Headers $p5Headers).value |
+        $p5Ws = (Invoke-P5FabricRest -Uri "$p5Base/workspaces" -Label 'List workspaces').value |
             Where-Object { $_.displayName -eq $FabricWorkspaceName }
         if (-not $p5Ws) { throw "Workspace '$FabricWorkspaceName' not found" }
         $p5WsId = $p5Ws.id
@@ -2489,6 +3217,7 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
         Write-Host "  --- Step 10a: Claims & Quality Materialization ---" -ForegroundColor Cyan
 
         $qualityNotebookPath = Join-Path $ScriptDir "phase-5\materialize_claims_quality.py"
+        $qualityNotebookCompleted = $false
         if (Test-Path $qualityNotebookPath) {
             $pyContent = Get-Content $qualityNotebookPath -Raw
 
@@ -2517,10 +3246,19 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             $nbName = "NB_Materialize_Claims_Quality"
             $p5Token = Get-FabricTokenLocal
             $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-            $existingNbs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items?type=Notebook" -Headers $p5Headers).value
+            $existingNbs = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items?type=Notebook" -Label 'List materialization notebooks').value
             $existingNb = $existingNbs | Where-Object { $_.displayName -eq $nbName } | Select-Object -First 1
 
-            if ($existingNb) {
+            $createBodyObj = @{
+                displayName = $nbName
+                type = "Notebook"
+                definition = @{
+                    format = "ipynb"
+                    parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
+                }
+            }
+
+            if ($existingNb -and $existingNb.id) {
                 Write-Host "  Notebook '$nbName' exists — updating definition..." -ForegroundColor White
                 $updateBody = @{
                     definition = @{
@@ -2528,23 +3266,61 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                         parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
                     }
                 } | ConvertTo-Json -Depth 10
-                Invoke-WebRequest -Method POST -Uri "$p5Base/workspaces/$p5WsId/items/$($existingNb.id)/updateDefinition" `
-                    -Headers $p5Headers -Body $updateBody -UseBasicParsing | Out-Null
-                $nbId = $existingNb.id
-            } else {
-                Write-Host "  Creating notebook '$nbName'..." -ForegroundColor White
-                $createBody = @{
-                    displayName = $nbName
-                    type = "Notebook"
-                    definition = @{
-                        format = "ipynb"
-                        parts = @(@{ path = "artifact.content.ipynb"; payload = $ipynbB64; payloadType = "InlineBase64" })
+                try {
+                    Invoke-P5FabricWeb -Method POST -Uri "$p5Base/workspaces/$p5WsId/items/$($existingNb.id)/updateDefinition" `
+                        -Body $updateBody -Label 'Update materialization notebook' | Out-Null
+                    $nbId = $existingNb.id
+                } catch {
+                    $updateStatus = (Get-P5FabricHttpError -ErrorRecord $_).StatusCode
+                    if ($updateStatus -eq 404) {
+                        Write-Host "  Existing notebook id was not runnable/updatable — creating a fresh materialization notebook." -ForegroundColor Yellow
+                        $existingNb = $null
+                    } else {
+                        throw
                     }
-                } | ConvertTo-Json -Depth 10
-                $createResp = Invoke-RestMethod -Method POST -Uri "$p5Base/workspaces/$p5WsId/items" `
-                    -Headers $p5Headers -Body $createBody
-                $nbId = $createResp.id
+                }
+            } elseif ($existingNb) {
+                Write-Host "  Existing notebook listing had no item id — creating a fresh materialization notebook." -ForegroundColor Yellow
+                $existingNb = $null
             }
+
+            if (-not $nbId) {
+                Write-Host "  Creating notebook '$nbName'..." -ForegroundColor White
+                $createBody = $createBodyObj | ConvertTo-Json -Depth 10
+                try {
+                    $createResp = Invoke-P5FabricRest -Method POST -Uri "$p5Base/workspaces/$p5WsId/items" `
+                        -Body $createBody -Label 'Create materialization notebook'
+                } catch {
+                    $createStatus = (Get-P5FabricHttpError -ErrorRecord $_).StatusCode
+                    if ($createStatus -eq 409) {
+                        $nbName = "NB_Materialize_Claims_Quality_$(Get-Date -Format 'yyyyMMddHHmmss')"
+                        Write-Host "  Name reservation lock hit — creating '$nbName' instead." -ForegroundColor Yellow
+                        $createBodyObj.displayName = $nbName
+                        $createBody = $createBodyObj | ConvertTo-Json -Depth 10
+                        $createResp = Invoke-P5FabricRest -Method POST -Uri "$p5Base/workspaces/$p5WsId/items" `
+                            -Body $createBody -Label 'Create renamed materialization notebook'
+                    } else {
+                        throw
+                    }
+                }
+                $nbId = $createResp.id
+                if (-not $nbId) {
+                    Write-Host "  Notebook create returned no item id — waiting for Fabric item propagation..." -ForegroundColor Yellow
+                    for ($nbLookupAttempt = 1; $nbLookupAttempt -le 12; $nbLookupAttempt++) {
+                        Start-Sleep -Seconds 5
+                        $p5Token = Get-FabricTokenLocal
+                        $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
+                        $nbAfterCreate = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items?type=Notebook" -Label 'Find created materialization notebook').value |
+                            Where-Object { $_.displayName -eq $nbName } |
+                            Select-Object -First 1
+                        if ($nbAfterCreate -and $nbAfterCreate.id) {
+                            $nbId = $nbAfterCreate.id
+                            break
+                        }
+                    }
+                }
+            }
+            if (-not $nbId) { throw "Notebook '$nbName' was created/updated but no Fabric item id could be resolved." }
             Write-Host "  ✓ Notebook: $nbName ($nbId)" -ForegroundColor Green
             Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $p5WsId
 
@@ -2553,9 +3329,9 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             try {
                 $p5Token = Get-FabricTokenLocal
                 $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                Invoke-WebRequest -Method POST `
-                    -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/RunNotebook/instances?jobType=RunNotebook" `
-                    -Headers $p5Headers -Body '{}' -UseBasicParsing | Out-Null
+                Invoke-P5FabricWeb -Method POST `
+                    -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/instances?jobType=RunNotebook" `
+                    -Body '{}' -Label 'Run materialization notebook' | Out-Null
                 Write-Host "  ✓ Notebook invoked — waiting for completion..." -ForegroundColor Green
 
                 $nbStart = Get-Date
@@ -2563,22 +3339,40 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                     Start-Sleep 20
                     $p5Token = Get-FabricTokenLocal
                     $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                    $nbJobs = (Invoke-RestMethod -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/instances?limit=1" -Headers $p5Headers).value
+                    try {
+                        $nbJobs = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items/$nbId/jobs/instances?limit=1" -Label 'Poll materialization notebook').value
+                    } catch {
+                        $pollError = Get-P5FabricHttpError -ErrorRecord $_
+                        if (Test-P5FabricTransientError -StatusCode $pollError.StatusCode -ErrorText $pollError.Text) {
+                            $nbElapsed = [math]::Round((New-TimeSpan -Start $nbStart).TotalMinutes, 1)
+                            $statusLabel = if ($null -ne $pollError.StatusCode) { $pollError.StatusCode } else { 'unknown' }
+                            Write-Host "    [$nbElapsed min] Notebook status poll transient HTTP ${statusLabel}; retrying..." -ForegroundColor Yellow
+                            if ($pollError.Text.Trim()) { Write-Host "      $($pollError.Text.Trim())" -ForegroundColor DarkGray }
+                            continue
+                        }
+                        throw
+                    }
                     $nbElapsed = [math]::Round((New-TimeSpan -Start $nbStart).TotalMinutes, 1)
                     if ($nbJobs -and $nbJobs[0].status -eq 'Completed') {
                         Write-Host "  ✓ Materialization complete ($nbElapsed min)" -ForegroundColor Green
+                        $qualityNotebookCompleted = $true
                         break
                     } elseif ($nbJobs -and $nbJobs[0].status -in @('Failed', 'Cancelled')) {
                         Write-Host "  ⚠ Notebook $($nbJobs[0].status) after $nbElapsed min" -ForegroundColor Yellow
-                        break
+                        throw "CMS Quality materialization notebook $($nbJobs[0].status)"
                     }
                     Write-Host "    [$nbElapsed min] Status: $($nbJobs[0].status)" -ForegroundColor DarkGray
                 }
+                if (-not $qualityNotebookCompleted) {
+                    throw "CMS Quality materialization notebook did not complete within 20 min"
+                }
             } catch {
                 Write-Host "  ⚠ Could not run notebook: $($_.Exception.Message)" -ForegroundColor Yellow
+                throw
             }
         } else {
             Write-Host "  ⚠ Notebook source not found at: $qualityNotebookPath" -ForegroundColor Yellow
+            throw "Notebook source not found at: $qualityNotebookPath"
         }
 
         # ── Step 10b: Deploy Population Health & Quality Dashboard report ──
@@ -2612,7 +3406,7 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                         
                         # Find Gateway and Datasource IDs
                         $dsUrl = "https://api.powerbi.com/v1.0/myorg/groups/$p5WsId/datasets/429bede8-09bc-4806-b5db-40a1a79341d2/datasources"
-                        $dsResp = Invoke-RestMethod -Uri $dsUrl -Headers $p5Headers -Method Get -ErrorAction Stop
+                        $dsResp = Invoke-P5FabricRest -Uri $dsUrl -Label 'List quality report datasources'
                         $dsList = $dsResp.value
                         
                         if ($dsList -and $dsList.Count -gt 0) {
@@ -2638,9 +3432,8 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                                 }
                             } | ConvertTo-Json -Depth 10
                             
-                            $patchHeaders = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                            # Execute PATCH via Invoke-WebRequest because Invoke-RestMethod with PATCH has different cross-platform behavior
-                            $patchResp = Invoke-WebRequest -Method PATCH -Uri $patchUrl -Headers $patchHeaders -Body $patchBody -UseBasicParsing -ErrorAction Stop
+                            # Use the web wrapper for PATCH because REST PATCH behavior varies across PowerShell hosts.
+                            $patchResp = Invoke-P5FabricWeb -Method PATCH -Uri $patchUrl -Body $patchBody -Label 'Patch quality report datasource credentials'
                             if ($patchResp.StatusCode -eq 200) {
                                 Write-Host "  ✓ Service Principal credentials programmatically bound — no manual sign-in required!" -ForegroundColor Green
                                 $spnSuccess = $true
@@ -2667,6 +3460,7 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             }
         } else {
             Write-Host "  ⚠ Report directory not found at: $reportDir" -ForegroundColor Yellow
+            throw "Report directory not found at: $reportDir"
         }
 
         # ── Step 10c: Readmission Risk Data Activator Alert ──
@@ -2708,13 +3502,68 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                 }
             } | ConvertTo-Json -Depth 15
 
-            Write-Host "  ✓ Readmission Risk alert configured for: $AlertEmail (daily 8:00 AM ET)" -ForegroundColor Green
+            try {
+                $reflexObj = $reflexPayload | ConvertFrom-Json
+                $existingRiskReflex = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items" -Label 'List readmission risk alerts').value |
+                    Where-Object { $_.displayName -eq "ReadmissionRiskAlert" -and $_.type -eq "Reflex" } |
+                    Select-Object -First 1
+                if ($existingRiskReflex) {
+                    $updateBody = @{ definition = $reflexObj.definition } | ConvertTo-Json -Depth 15
+                    $riskResp = Invoke-P5FabricWeb -Method POST `
+                        -Uri "$p5Base/workspaces/$p5WsId/items/$($existingRiskReflex.id)/updateDefinition" `
+                        -Body $updateBody -Label 'Update ReadmissionRiskAlert'
+                    if ($riskResp.StatusCode -notin @(200, 202)) { throw "ReadmissionRiskAlert update returned HTTP $($riskResp.StatusCode)" }
+                    $riskReflexId = $existingRiskReflex.id
+                } else {
+                    $riskResp = Invoke-P5FabricWeb -Method POST `
+                        -Uri "$p5Base/workspaces/$p5WsId/items" `
+                        -Body $reflexPayload -Label 'Create ReadmissionRiskAlert'
+                    if ($riskResp.StatusCode -notin @(200, 201, 202)) { throw "ReadmissionRiskAlert create returned HTTP $($riskResp.StatusCode)" }
+                    $riskReflexId = $null
+                    try { $riskReflexId = ($riskResp.Content | ConvertFrom-Json).id } catch {}
+                    if (-not $riskReflexId) {
+                        Start-Sleep 5
+                        $createdRiskReflex = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items" -Label 'Find ReadmissionRiskAlert').value |
+                            Where-Object { $_.displayName -eq "ReadmissionRiskAlert" -and $_.type -eq "Reflex" } |
+                            Select-Object -First 1
+                        if ($createdRiskReflex) { $riskReflexId = $createdRiskReflex.id }
+                    }
+                }
+                if (-not $riskReflexId) { throw "ReadmissionRiskAlert was not created or discovered" }
+                Write-Host "  ✓ Readmission Risk alert configured for: $AlertEmail (daily 8:00 AM ET; Reflex $riskReflexId)" -ForegroundColor Green
+            } catch {
+                Write-Host "  ⚠ Readmission Risk alert not configured: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "    Continuing because claims materialization and dashboard deployment are complete." -ForegroundColor Yellow
+            }
         } else {
             Write-Host "  ⚠ Readmission Risk alert skipped (no AlertEmail or Activator disabled)" -ForegroundColor Yellow
         }
 
         Write-Host ""
     }
+}
+
+if ((-not $SkipPhase7 -and -not $Teardown) -or $Phase7) {
+    Emit-PhaseTransition -Phase 7 -Label "Payer RTI & Ops" -StepCount 4
+
+    Invoke-Step -StepName "Phase 7: Payer RTI & Ops" `
+        -Description "Claim-stream ingestion, payer KQL scoring, operations agents, graph attach instructions" -Action {
+
+        $global:LASTEXITCODE = 0
+        & "$ScriptDir/phase-7/deploy-payer-rti.ps1" `
+            -FabricWorkspaceName $FabricWorkspaceName `
+            -ResourceGroupName $ResourceGroupName `
+            -Location $Location `
+            -PayerOpsEmail $PayerOpsEmail `
+            -ClaimEventRatePerMinute $ClaimEventRatePerMinute `
+            -Tags $Tags `
+            -SkipPayerRti:$SkipPayerRti `
+            -SkipPayerActivator:$SkipPayerActivator `
+            -SkipOpsAgent:$SkipOpsAgent `
+            -SkipGraphAgent:$SkipGraphAgent
+        Assert-LastExternalCommandSucceeded "deploy-payer-rti.ps1"
+    }
+}
 
 if (-not $Teardown) {
     Write-Host ""
@@ -2745,7 +3594,7 @@ if (-not $Teardown) {
             Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Real-Time" -ItemTypes @("KQLDashboard", "Eventstream", "Reflex")
             
             # 5. Move Data Agents
-            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Agents" -ItemTypes @("DataAgent")
+            Move-FabricItemsToFolder -FabricWorkspaceName $FabricWorkspaceName -WorkspaceId $pSweepWsId -FolderName "Agents" -ItemTypes @("DataAgent", "OperationsAgent")
         }
     } catch {
         Write-Host "  ⚠ Workspace sweep organization failed: $_" -ForegroundColor Yellow
@@ -2756,8 +3605,8 @@ if (-not $Teardown) {
 # SUMMARY
 # ============================================================================
 
-$summaryTitle = if ($Phase5) { "PHASE 5 DEPLOYMENT SUMMARY" } elseif ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
-$summaryPhase = if ($Phase5) { "Phase5" } elseif ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4+5" }
+$summaryTitle = if ($Phase7) { "PHASE 7 DEPLOYMENT SUMMARY" } elseif ($Phase5) { "PHASE 5 DEPLOYMENT SUMMARY" } elseif ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
+$summaryPhase = if ($Phase7) { "Phase7" } elseif ($Phase5) { "Phase5" } elseif ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4+5+6+7" }
 Write-Summary -Title $summaryTitle -PhaseName $summaryPhase -PhaseResources @{
     FabricWorkspaceName = $FabricWorkspaceName
     ResourceGroupName   = $ResourceGroupName

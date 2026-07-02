@@ -167,16 +167,32 @@ function Invoke-ArmGroupDeployment {
     $startTime = Get-Date
     $lastHeartbeat = [datetime]::MinValue
     $state = ""
+    $statusFailureCount = 0
     while ($true) {
         $stateRaw = az deployment group show `
             --resource-group $ResourceGroup `
             --name $DeploymentName `
-            --query "properties.provisioningState" -o tsv 2>$null
+            --query "properties.provisioningState" -o tsv 2>&1
 
         if ($LASTEXITCODE -eq 0 -and $stateRaw) {
             $state = "$stateRaw".Trim()
+            $statusFailureCount = 0
         } else {
-            $state = "Running"
+            $statusFailureCount++
+            $statusError = "$stateRaw".Trim()
+            if ($statusError -match "ResourceGroupNotFound") {
+                Write-Host "    ARM status lookup failed: $statusError" -ForegroundColor Yellow
+                $state = "Failed"
+            } elseif ($statusError -match "DeploymentNotFound|could not be found|was not found" -and $statusFailureCount -ge 3) {
+                Write-Host "    ARM status lookup failed: $statusError" -ForegroundColor Yellow
+                $state = "Failed"
+            } elseif ($statusFailureCount -ge 18) {
+                Write-Host "    ARM status lookup failed $statusFailureCount consecutive times; treating deployment as failed." -ForegroundColor Yellow
+                if ($statusError) { Write-Host "    Last status error: $statusError" -ForegroundColor DarkGray }
+                $state = "Failed"
+            } else {
+                $state = "Running"
+            }
         }
 
         $now = Get-Date
@@ -411,8 +427,15 @@ if ($existingInfraOutputs) {
     foreach ($vault in $deletedVaults) {
         if ($vault) {
             Write-Host "Purging soft-deleted Key Vault: $vault" -ForegroundColor Yellow
-            az keyvault purge --name $vault --no-wait 2>$null
-            Start-Sleep -Seconds 5
+            az keyvault purge --name $vault 2>$null | Out-Null
+            for ($purgeWait = 1; $purgeWait -le 24; $purgeWait++) {
+                $stillDeleted = az keyvault list-deleted --query "[?name=='$vault'].name | [0]" -o tsv 2>$null
+                if (-not $stillDeleted) { break }
+                Write-Host "  Waiting for Key Vault purge to complete ($($purgeWait * 5)s)..." -ForegroundColor DarkGray
+                Start-Sleep -Seconds 5
+            }
+            $stillDeleted = az keyvault list-deleted --query "[?name=='$vault'].name | [0]" -o tsv 2>$null
+            if ($stillDeleted) { throw "Soft-deleted Key Vault '$vault' could not be purged before infrastructure deployment" }
         }
     }
 

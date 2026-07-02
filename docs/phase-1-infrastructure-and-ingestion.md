@@ -21,7 +21,6 @@ flowchart TB
         KV["Key Vault"]
         ACI_E["Emulator ACI\n(Masimo Radius-7)"]
         FHIR_WS["HDS Workspace\n(FHIR R4 Service)"]
-        DICOM_SVC["DICOM Service"]
         SYNTH["Synthea ACI Job"]
         FHIR_LDR["FHIR Loader ACI Job"]
         DICOM_LDR["DICOM Loader ACI Job"]
@@ -165,7 +164,7 @@ After loading patient data, `create-device-associations.py` runs:
 
 ---
 
-## Step 2b — DICOM Service + Loader
+## Step 2b — DICOM Loader
 
 **Script:** `phase-1/deploy-fhir.ps1 -RunDicom`
 

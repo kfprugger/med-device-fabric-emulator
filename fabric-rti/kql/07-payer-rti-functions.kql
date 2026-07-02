@@ -1,0 +1,431 @@
+// ============================================================================
+// 07-payer-rti-functions.kql
+// Payer RTI streaming tables, scoring functions, and Data Agent wrappers.
+// ============================================================================
+
+// INPUT TABLES
+.create-merge table claims_events (
+    event_id: string,
+    event_timestamp: datetime,
+    event_type: string,
+    claim_id: string,
+    patient_id: string,
+    provider_id: string,
+    facility_id: string,
+    payer_id: string,
+    diagnosis_code: string,
+    procedure_code: string,
+    claim_type: string,
+    claim_amount: real,
+    latitude: real,
+    longitude: real,
+    injected_fraud_flags: string
+)
+
+.create-merge table adt_events (
+    event_id: string,
+    event_timestamp: datetime,
+    event_type: string,
+    patient_id: string,
+    facility_id: string,
+    facility_name: string,
+    admission_type: string,
+    primary_diagnosis: string,
+    latitude: real,
+    longitude: real,
+    has_open_care_gaps: bool,
+    open_gap_measures: string
+)
+
+.create-merge table rx_events (
+    event_id: string,
+    event_timestamp: datetime,
+    event_type: string,
+    patient_id: string,
+    provider_id: string,
+    medication_code: string,
+    medication_name: string,
+    drug_class: string,
+    quantity: int,
+    days_supply: int,
+    latitude: real,
+    longitude: real
+)
+
+// OUTPUT TABLES
+.create-merge table fraud_scores (
+    score_id: string,
+    score_timestamp: datetime,
+    claim_id: string,
+    patient_id: string,
+    provider_id: string,
+    fraud_score: real,
+    fraud_flags: string,
+    risk_tier: string,
+    latitude: real,
+    longitude: real
+)
+
+.create-merge table care_gap_alerts (
+    alert_id: string,
+    alert_timestamp: datetime,
+    patient_id: string,
+    facility_id: string,
+    measure_id: string,
+    measure_name: string,
+    gap_days_overdue: int,
+    alert_priority: string,
+    alert_text: string,
+    latitude: real,
+    longitude: real
+)
+
+.create-merge table highcost_alerts (
+    alert_id: string,
+    alert_timestamp: datetime,
+    patient_id: string,
+    rolling_spend_30d: real,
+    rolling_spend_90d: real,
+    ed_visits_30d: int,
+    readmission_flag: bool,
+    risk_tier: string,
+    cost_trend: string,
+    latitude: real,
+    longitude: real
+)
+
+// Enable streaming ingestion on live input tables only.
+.alter table claims_events policy streamingingestion enable
+.alter table adt_events policy streamingingestion enable
+.alter table rx_events policy streamingingestion enable
+
+.create-or-alter table claims_events ingestion json mapping 'claims_events_mapping'
+```
+[
+    {"column": "event_id",              "path": "$.event_id",              "datatype": "string"},
+    {"column": "event_timestamp",       "path": "$.event_timestamp",       "datatype": "datetime"},
+    {"column": "event_type",            "path": "$.event_type",            "datatype": "string"},
+    {"column": "claim_id",              "path": "$.claim_id",              "datatype": "string"},
+    {"column": "patient_id",            "path": "$.patient_id",            "datatype": "string"},
+    {"column": "provider_id",           "path": "$.provider_id",           "datatype": "string"},
+    {"column": "facility_id",           "path": "$.facility_id",           "datatype": "string"},
+    {"column": "payer_id",              "path": "$.payer_id",              "datatype": "string"},
+    {"column": "diagnosis_code",        "path": "$.diagnosis_code",        "datatype": "string"},
+    {"column": "procedure_code",        "path": "$.procedure_code",        "datatype": "string"},
+    {"column": "claim_type",            "path": "$.claim_type",            "datatype": "string"},
+    {"column": "claim_amount",          "path": "$.claim_amount",          "datatype": "real"},
+    {"column": "latitude",              "path": "$.latitude",              "datatype": "real"},
+    {"column": "longitude",             "path": "$.longitude",             "datatype": "real"},
+    {"column": "injected_fraud_flags",  "path": "$.injected_fraud_flags",  "datatype": "string"}
+]
+```
+
+.create-or-alter table adt_events ingestion json mapping 'adt_events_mapping'
+```
+[
+    {"column": "event_id",           "path": "$.event_id",           "datatype": "string"},
+    {"column": "event_timestamp",    "path": "$.event_timestamp",    "datatype": "datetime"},
+    {"column": "event_type",         "path": "$.event_type",         "datatype": "string"},
+    {"column": "patient_id",         "path": "$.patient_id",         "datatype": "string"},
+    {"column": "facility_id",        "path": "$.facility_id",        "datatype": "string"},
+    {"column": "facility_name",      "path": "$.facility_name",      "datatype": "string"},
+    {"column": "admission_type",     "path": "$.admission_type",     "datatype": "string"},
+    {"column": "primary_diagnosis",  "path": "$.primary_diagnosis",  "datatype": "string"},
+    {"column": "latitude",           "path": "$.latitude",           "datatype": "real"},
+    {"column": "longitude",          "path": "$.longitude",          "datatype": "real"},
+    {"column": "has_open_care_gaps", "path": "$.has_open_care_gaps", "datatype": "bool"},
+    {"column": "open_gap_measures",  "path": "$.open_gap_measures",  "datatype": "string"}
+]
+```
+
+.create-or-alter table rx_events ingestion json mapping 'rx_events_mapping'
+```
+[
+    {"column": "event_id",         "path": "$.event_id",         "datatype": "string"},
+    {"column": "event_timestamp",  "path": "$.event_timestamp",  "datatype": "datetime"},
+    {"column": "event_type",       "path": "$.event_type",       "datatype": "string"},
+    {"column": "patient_id",       "path": "$.patient_id",       "datatype": "string"},
+    {"column": "provider_id",      "path": "$.provider_id",      "datatype": "string"},
+    {"column": "medication_code",  "path": "$.medication_code",  "datatype": "string"},
+    {"column": "medication_name",  "path": "$.medication_name",  "datatype": "string"},
+    {"column": "drug_class",       "path": "$.drug_class",       "datatype": "string"},
+    {"column": "quantity",         "path": "$.quantity",         "datatype": "int"},
+    {"column": "days_supply",      "path": "$.days_supply",      "datatype": "int"},
+    {"column": "latitude",         "path": "$.latitude",         "datatype": "real"},
+    {"column": "longitude",        "path": "$.longitude",        "datatype": "real"}
+]
+```
+
+.create-or-alter function with (
+    docstring = "Payer fraud risk scoring over streaming claims_events",
+    folder = "PayerAlerts"
+) fn_FraudRisk(windowMinutes: int = 60) {
+    let recent = claims_events
+        | where event_timestamp > ago(1m * windowMinutes)
+        | where event_type == "CLAIM_SUBMITTED";
+    let provider_stats = recent
+        | summarize
+            provider_claims = count(),
+            claims_per_hour = todouble(count()) * 60.0 / todouble(windowMinutes),
+            avg_amount = avg(claim_amount),
+            stdev_amount = stdev(claim_amount),
+            upcode_rate = 100.0 * todouble(countif(procedure_code == "99215")) / todouble(count())
+          by provider_id;
+    recent
+    | join kind=leftouter provider_stats on provider_id
+    | extend amount_zscore = iff(isnotnull(stdev_amount) and stdev_amount > 0.0, (claim_amount - avg_amount) / stdev_amount, 0.0)
+    | extend
+        velocity_points = case(claims_per_hour >= 20.0, 30.0, claims_per_hour >= 10.0, 15.0, 0.0),
+        amount_points = iff(amount_zscore >= 3.0 or injected_fraud_flags has "amount_outlier", 25.0, 0.0),
+        denial_points = iff(injected_fraud_flags has "denial_pattern", 25.0, 0.0),
+        upcoding_points = iff(procedure_code == "99215" or injected_fraud_flags has "upcoding", 20.0, 0.0)
+    | extend fraud_score = velocity_points + amount_points + denial_points + upcoding_points
+    | extend risk_tier = case(fraud_score >= 80.0, "CRITICAL", fraud_score >= 50.0, "HIGH", fraud_score >= 25.0, "MEDIUM", "LOW")
+    | extend fraud_flags = strcat_array(pack_array(
+            iff(velocity_points > 0.0, "velocity_burst", ""),
+            iff(amount_points > 0.0, "amount_outlier", ""),
+            iff(denial_points > 0.0, "denial_pattern", ""),
+            iff(upcoding_points > 0.0, "upcoding", ""),
+            injected_fraud_flags
+        ), "|")
+    | project
+        score_id = strcat("FRAUD-", claim_id),
+        score_timestamp = now(),
+        claim_id,
+        patient_id,
+        provider_id,
+        fraud_score = todouble(fraud_score),
+        fraud_flags = replace_string(fraud_flags, "||", "|"),
+        risk_tier,
+        latitude,
+        longitude,
+        claim_amount,
+        diagnosis_code,
+        procedure_code,
+        claims_per_hour,
+        amount_zscore
+    | order by fraud_score desc, score_timestamp desc
+}
+
+.create-or-alter function with (
+    docstring = "High-cost member trajectory from streaming claims_events",
+    folder = "PayerAlerts"
+) fn_HighCostTrajectory(lookbackDays: int = 90) {
+    claims_events
+    | where event_timestamp > ago(1d * lookbackDays)
+    | summarize
+        rolling_spend_30d = sumif(claim_amount, event_timestamp > ago(30d)),
+        rolling_spend_90d = sum(claim_amount),
+        ed_visits_30d = countif(event_timestamp > ago(30d) and (claim_type =~ "emergency" or procedure_code in ("99281", "99282", "99283", "99284", "99285"))),
+        last_claim_time = max(event_timestamp),
+        latitude = any(latitude),
+        longitude = any(longitude)
+      by patient_id
+    | extend
+        readmission_flag = false,
+        cost_trend = case(
+            rolling_spend_90d > 0.0 and (rolling_spend_30d * 3.0) > (rolling_spend_90d * 1.25), "ACCELERATING",
+            rolling_spend_90d > 0.0 and rolling_spend_30d >= (rolling_spend_90d * 0.40), "RISING",
+            "STABLE"),
+        risk_tier = case(
+            rolling_spend_30d > 100000.0 or ed_visits_30d >= 5, "CRITICAL",
+            rolling_spend_30d > 50000.0 or ed_visits_30d >= 3, "HIGH",
+            rolling_spend_30d > 15000.0, "MEDIUM",
+            "LOW")
+    | where risk_tier != "LOW"
+    | project
+        alert_id = strcat("HIGHCOST-", patient_id, "-", format_datetime(now(), "yyyyMMddHHmmss")),
+        alert_timestamp = now(),
+        patient_id,
+        rolling_spend_30d = todouble(rolling_spend_30d),
+        rolling_spend_90d = todouble(rolling_spend_90d),
+        ed_visits_30d = toint(ed_visits_30d),
+        readmission_flag,
+        risk_tier,
+        cost_trend,
+        latitude,
+        longitude,
+        last_claim_time
+    | order by risk_tier asc, rolling_spend_30d desc
+}
+
+.create-or-alter function with (
+    docstring = "Care gap enrichment fallback — GoldCareGaps external table unavailable. deploy-payer-rti.ps1 replaces this with the Gold-backed version when the Gold care-gaps shortcut is available.",
+    folder = "PayerAlerts"
+) fn_CareGapOnAlert(windowMinutes: int = 60) {
+    datatable(alert_id:string, alert_timestamp:datetime, patient_id:string, facility_id:string, measure_id:string, measure_name:string, gap_days_overdue:int, alert_priority:string, alert_text:string, latitude:real, longitude:real, provider_id:string, claim_id:string, fraud_score:real)[]
+}
+
+.create-or-alter function with (
+    skipvalidation = "true",
+    docstring = "Unified payer operations worklist across fraud, high-cost, and care-gap RTI alerts",
+    folder = "PayerAlerts"
+) fn_PayerOpsWorklist(windowMinutes: int = 60) {
+    let fraud = fn_FraudRisk(windowMinutes)
+        | where risk_tier in ("CRITICAL", "HIGH")
+        | project alert_id=score_id, alert_time=score_timestamp, alert_domain="FRAUD", priority=risk_tier,
+                  patient_id, provider_id, claim_id, metric_value=fraud_score,
+                  metric_name="fraud_score", message=strcat("Fraud risk ", tostring(fraud_score), " for claim ", claim_id, " provider ", provider_id), latitude, longitude;
+    let highcost = fn_HighCostTrajectory(90)
+        | where risk_tier in ("CRITICAL", "HIGH")
+        | project alert_id, alert_time=alert_timestamp, alert_domain="HIGH_COST", priority=risk_tier,
+                  patient_id, provider_id="", claim_id="", metric_value=rolling_spend_30d,
+                  metric_name="rolling_spend_30d", message=strcat("30d spend $", tostring(rolling_spend_30d), "; ED visits=", tostring(ed_visits_30d), "; trend=", cost_trend), latitude, longitude;
+    let gaps = fn_CareGapOnAlert(windowMinutes)
+        | where alert_priority in ("CRITICAL", "HIGH")
+        | project alert_id, alert_time=alert_timestamp, alert_domain="CARE_GAP", priority=alert_priority,
+                  patient_id, provider_id, claim_id, metric_value=todouble(gap_days_overdue),
+                  metric_name="gap_days_overdue", message=alert_text, latitude, longitude;
+    fraud | union highcost | union gaps | order by priority asc, alert_time desc
+}
+
+// ---------------------------------------------------------------------------
+// Self-contained Data Agent wrappers. These do not call fn_* functions and do
+// not reference external tables, matching 06-agent-wrapper-functions.kql.
+// ---------------------------------------------------------------------------
+.create-or-alter function with (
+    docstring = "Payer fraud risk scoring over the last 60 minutes. Self-contained — queries claims_events directly.",
+    folder = "AgentFunctions"
+) agent_FraudRisk() {
+    let recent = claims_events
+        | where event_timestamp > ago(60m)
+        | where event_type == "CLAIM_SUBMITTED";
+    let provider_stats = recent
+        | summarize
+            provider_claims = count(),
+            claims_per_hour = todouble(count()),
+            avg_amount = avg(claim_amount),
+            stdev_amount = stdev(claim_amount),
+            upcode_rate = 100.0 * todouble(countif(procedure_code == "99215")) / todouble(count())
+          by provider_id;
+    recent
+    | join kind=leftouter provider_stats on provider_id
+    | extend amount_zscore = iff(isnotnull(stdev_amount) and stdev_amount > 0.0, (claim_amount - avg_amount) / stdev_amount, 0.0)
+    | extend
+        velocity_points = case(claims_per_hour >= 20.0, 30.0, claims_per_hour >= 10.0, 15.0, 0.0),
+        amount_points = iff(amount_zscore >= 3.0 or injected_fraud_flags has "amount_outlier", 25.0, 0.0),
+        denial_points = iff(injected_fraud_flags has "denial_pattern", 25.0, 0.0),
+        upcoding_points = iff(procedure_code == "99215" or injected_fraud_flags has "upcoding", 20.0, 0.0)
+    | extend fraud_score = velocity_points + amount_points + denial_points + upcoding_points
+    | extend risk_tier = case(fraud_score >= 80.0, "CRITICAL", fraud_score >= 50.0, "HIGH", fraud_score >= 25.0, "MEDIUM", "LOW")
+    | extend fraud_flags = strcat_array(pack_array(
+            iff(velocity_points > 0.0, "velocity_burst", ""),
+            iff(amount_points > 0.0, "amount_outlier", ""),
+            iff(denial_points > 0.0, "denial_pattern", ""),
+            iff(upcoding_points > 0.0, "upcoding", ""),
+            injected_fraud_flags
+        ), "|")
+    | project
+        score_id = tostring(strcat("FRAUD-", claim_id)),
+        score_timestamp = todatetime(now()),
+        claim_id = tostring(claim_id),
+        patient_id = tostring(patient_id),
+        provider_id = tostring(provider_id),
+        fraud_score = todouble(fraud_score),
+        fraud_flags = tostring(replace_string(fraud_flags, "||", "|")),
+        risk_tier = tostring(risk_tier),
+        latitude = todouble(latitude),
+        longitude = todouble(longitude),
+        claim_amount = todouble(claim_amount),
+        diagnosis_code = tostring(diagnosis_code),
+        procedure_code = tostring(procedure_code),
+        claims_per_hour = todouble(claims_per_hour),
+        amount_zscore = todouble(amount_zscore)
+    | order by fraud_score desc, score_timestamp desc
+}
+
+.create-or-alter function with (
+    docstring = "High-cost member trajectory over the last 90 days. Self-contained — queries claims_events directly.",
+    folder = "AgentFunctions"
+) agent_HighCostTrajectory() {
+    claims_events
+    | where event_timestamp > ago(90d)
+    | summarize
+        rolling_spend_30d = sumif(claim_amount, event_timestamp > ago(30d)),
+        rolling_spend_90d = sum(claim_amount),
+        ed_visits_30d = countif(event_timestamp > ago(30d) and (claim_type =~ "emergency" or procedure_code in ("99281", "99282", "99283", "99284", "99285"))),
+        last_claim_time = max(event_timestamp),
+        latitude = any(latitude),
+        longitude = any(longitude)
+      by patient_id
+    | extend
+        readmission_flag = false,
+        cost_trend = case(
+            rolling_spend_90d > 0.0 and (rolling_spend_30d * 3.0) > (rolling_spend_90d * 1.25), "ACCELERATING",
+            rolling_spend_90d > 0.0 and rolling_spend_30d >= (rolling_spend_90d * 0.40), "RISING",
+            "STABLE"),
+        risk_tier = case(
+            rolling_spend_30d > 100000.0 or ed_visits_30d >= 5, "CRITICAL",
+            rolling_spend_30d > 50000.0 or ed_visits_30d >= 3, "HIGH",
+            rolling_spend_30d > 15000.0, "MEDIUM",
+            "LOW")
+    | where risk_tier != "LOW"
+    | project
+        alert_id = tostring(strcat("HIGHCOST-", patient_id, "-", format_datetime(now(), "yyyyMMddHHmmss"))),
+        alert_timestamp = todatetime(now()),
+        patient_id = tostring(patient_id),
+        rolling_spend_30d = todouble(rolling_spend_30d),
+        rolling_spend_90d = todouble(rolling_spend_90d),
+        ed_visits_30d = toint(ed_visits_30d),
+        readmission_flag = tobool(readmission_flag),
+        risk_tier = tostring(risk_tier),
+        cost_trend = tostring(cost_trend),
+        latitude = todouble(latitude),
+        longitude = todouble(longitude),
+        last_claim_time = todatetime(last_claim_time)
+    | order by risk_tier asc, rolling_spend_30d desc
+}
+
+.create-or-alter function with (
+    docstring = "Unified payer operations worklist across fraud and high-cost claim alerts. Self-contained — queries claims_events directly.",
+    folder = "AgentFunctions"
+) agent_PayerOpsWorklist() {
+    let recent = claims_events
+        | where event_timestamp > ago(60m)
+        | where event_type == "CLAIM_SUBMITTED";
+    let provider_stats = recent
+        | summarize
+            provider_claims = count(),
+            claims_per_hour = todouble(count()),
+            avg_amount = avg(claim_amount),
+            stdev_amount = stdev(claim_amount)
+          by provider_id;
+    let fraud = recent
+        | join kind=leftouter provider_stats on provider_id
+        | extend amount_zscore = iff(isnotnull(stdev_amount) and stdev_amount > 0.0, (claim_amount - avg_amount) / stdev_amount, 0.0)
+        | extend
+            velocity_points = case(claims_per_hour >= 20.0, 30.0, claims_per_hour >= 10.0, 15.0, 0.0),
+            amount_points = iff(amount_zscore >= 3.0 or injected_fraud_flags has "amount_outlier", 25.0, 0.0),
+            denial_points = iff(injected_fraud_flags has "denial_pattern", 25.0, 0.0),
+            upcoding_points = iff(procedure_code == "99215" or injected_fraud_flags has "upcoding", 20.0, 0.0)
+        | extend fraud_score = velocity_points + amount_points + denial_points + upcoding_points
+        | extend risk_tier = case(fraud_score >= 80.0, "CRITICAL", fraud_score >= 50.0, "HIGH", fraud_score >= 25.0, "MEDIUM", "LOW")
+        | where risk_tier in ("CRITICAL", "HIGH")
+        | project alert_id=tostring(strcat("FRAUD-", claim_id)), alert_time=todatetime(now()), alert_domain="FRAUD", priority=tostring(risk_tier),
+                  patient_id=tostring(patient_id), provider_id=tostring(provider_id), claim_id=tostring(claim_id), metric_value=todouble(fraud_score),
+                  metric_name="fraud_score", message=tostring(strcat("Fraud risk ", tostring(fraud_score), " for claim ", claim_id, " provider ", provider_id)), latitude=todouble(latitude), longitude=todouble(longitude);
+    let highcost = claims_events
+        | where event_timestamp > ago(90d)
+        | summarize
+            rolling_spend_30d = sumif(claim_amount, event_timestamp > ago(30d)),
+            rolling_spend_90d = sum(claim_amount),
+            ed_visits_30d = countif(event_timestamp > ago(30d) and (claim_type =~ "emergency" or procedure_code in ("99281", "99282", "99283", "99284", "99285"))),
+            latitude = any(latitude),
+            longitude = any(longitude)
+          by patient_id
+        | extend
+            cost_trend = case(
+                rolling_spend_90d > 0.0 and (rolling_spend_30d * 3.0) > (rolling_spend_90d * 1.25), "ACCELERATING",
+                rolling_spend_90d > 0.0 and rolling_spend_30d >= (rolling_spend_90d * 0.40), "RISING",
+                "STABLE"),
+            risk_tier = case(
+                rolling_spend_30d > 100000.0 or ed_visits_30d >= 5, "CRITICAL",
+                rolling_spend_30d > 50000.0 or ed_visits_30d >= 3, "HIGH",
+                rolling_spend_30d > 15000.0, "MEDIUM",
+                "LOW")
+        | where risk_tier in ("CRITICAL", "HIGH")
+        | project alert_id=tostring(strcat("HIGHCOST-", patient_id, "-", format_datetime(now(), "yyyyMMddHHmmss"))), alert_time=todatetime(now()), alert_domain="HIGH_COST", priority=tostring(risk_tier),
+                  patient_id=tostring(patient_id), provider_id="", claim_id="", metric_value=todouble(rolling_spend_30d),
+                  metric_name="rolling_spend_30d", message=tostring(strcat("30d spend $", tostring(rolling_spend_30d), "; ED visits=", tostring(ed_visits_30d), "; trend=", cost_trend)), latitude=todouble(latitude), longitude=todouble(longitude);
+    fraud | union highcost | order by priority asc, alert_time desc
+}

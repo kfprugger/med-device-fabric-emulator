@@ -1,4 +1,4 @@
-"""Phase 4: Fabric RTI Phase 2 — Silver shortcuts + enriched alerts.
+"""Phase 2: Fabric RTI enrichment — Silver shortcuts + enriched alerts.
 
 Ports logic from deploy-fabric-rti.ps1 -Phase2:
 - Create KQL shortcuts to Silver Lakehouse tables
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
-    """Execute Phase 4: Fabric RTI Phase 2.
+    """Execute Phase 2: Fabric RTI enrichment.
 
     Args:
         config: DeploymentConfig as dict.
@@ -76,7 +76,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 4: Fabric RTI Phase 2",
+        "phase": "Phase 2: Fabric RTI Enrichment",
         "duration_seconds": duration,
         "resources": {
             "silver_lakehouse_id": silver_lh_id,

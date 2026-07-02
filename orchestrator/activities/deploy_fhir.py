@@ -49,9 +49,9 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     skip_dicom = config.get("skip_dicom", False)
 
     if skip_fhir and skip_dicom:
-        logger.info("Skipping FHIR and DICOM infrastructure (both selected to skip).")
+        logger.info("Skipping FHIR service and DICOM loader prerequisites (both selected to skip).")
         return {
-            "phase": "Phase 2: FHIR Service & Data Loading",
+            "phase": "Phase 1: FHIR Service + Synthea + Loader",
             "duration_seconds": time.time() - start,
             "resources": {
                 "fhir_service_url": "",
@@ -194,12 +194,15 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     duration = time.time() - start
 
     return {
-        "phase": "Phase 2: FHIR Service & Data Loading",
+        "phase": "Phase 1: FHIR Service + Synthea + Loader",
         "duration_seconds": duration,
         "resources": {
             "fhir_service_url": fhir_service_url,
             "fhir_storage_account": fhir_storage_account,
             "fhir_managed_identity_id": fhir_mi_id,
+            "aci_identity_id": fhir_outputs.get("aciIdentityId", ""),
+            "aci_identity_principal_id": fhir_outputs.get("aciIdentityPrincipalId", ""),
+            "aci_identity_client_id": fhir_outputs.get("aciIdentityClientId", ""),
             "synthea_state": synthea_result["state"],
             "synthea_duration": synthea_result["duration_seconds"],
             "loader_state": loader_result["state"],

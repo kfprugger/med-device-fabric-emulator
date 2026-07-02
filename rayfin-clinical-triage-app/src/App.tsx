@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { rayfinClient } from './rayfinClient';
+import { useCallback, useEffect, useState } from 'react';
+import { ensureSignedInWithFabric, initEmbeddedAuth } from '@microsoft/rayfin-auth-provider-fabric';
+import { fabricAuthOptions, rayfinClient } from './rayfinClient';
 import type { AlertTriage } from '../rayfin/data/AlertTriage';
 
 const ALERT_FIELDS = [
@@ -16,24 +17,50 @@ function App() {
   const [alerts, setAlerts] = useState<AlertTriage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authenticating, setAuthenticating] = useState(false);
+
+  const fetchAlerts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await rayfinClient.data.AlertTriage
+        .select(ALERT_FIELDS)
+        .orderBy({ timestamp: 'desc' })
+        .execute();
+      setAlerts(data as AlertTriage[]);
+    } catch (err) {
+      console.error('Failed to fetch alerts from Rayfin backend', err);
+      setError('Sign in with Fabric to load clinical triage alerts.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchAlerts = async () => {
+    const initialize = async () => {
       try {
-        const data = await rayfinClient.data.AlertTriage
-          .select(ALERT_FIELDS)
-          .orderBy({ timestamp: 'desc' })
-          .execute();
-        setAlerts(data as AlertTriage[]);
+        await initEmbeddedAuth(rayfinClient.auth, fabricAuthOptions);
       } catch (err) {
-        console.error('Failed to fetch alerts from Rayfin backend', err);
-        setError('Could not reach the Rayfin backend. Is `npx rayfin up` running?');
-      } finally {
-        setLoading(false);
+        console.warn('Embedded Fabric auth was not established', err);
       }
+      await fetchAlerts();
     };
-    fetchAlerts();
-  }, []);
+    initialize();
+  }, [fetchAlerts]);
+
+  const signInWithFabric = async () => {
+    setAuthenticating(true);
+    setError(null);
+    try {
+      await ensureSignedInWithFabric(rayfinClient.auth, fabricAuthOptions);
+      await fetchAlerts();
+    } catch (err) {
+      console.error('Fabric sign-in failed', err);
+      setError('Fabric sign-in failed. Open this app from the Fabric item or allow the popup sign-in flow.');
+    } finally {
+      setAuthenticating(false);
+    }
+  };
 
   const updateStatus = async (id: string, status: AlertTriage['status']) => {
     const previous = alerts;
@@ -59,7 +86,10 @@ function App() {
 
       {error && (
         <div className="alert-banner" role="alert">
-          {error}
+          <span>{error}</span>
+          <button className="btn btn-primary" onClick={signInWithFabric} disabled={authenticating}>
+            {authenticating ? 'Signing in…' : 'Sign in with Fabric'}
+          </button>
         </div>
       )}
 

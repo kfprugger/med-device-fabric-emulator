@@ -27,6 +27,7 @@ A single Microsoft Fabric workspace that:
 - Loads DICOM medical imaging via OneLake shortcuts to ADLS Gen2
 - Deploys AI Data Agents for natural-language clinical queries across all data domains
 - Transforms data through HDS pipelines: Clinical → Imaging → OMOP CDM v5.4
+- Bootstraps the companion FabricDicomCohortingToolkit repo during preflight/deploy when imaging paths execute the Phase 3 toolkit block
 
 ---
 

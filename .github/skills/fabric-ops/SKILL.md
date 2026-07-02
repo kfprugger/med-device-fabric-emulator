@@ -70,11 +70,11 @@ Omit `-Wait` to teardown async (non-blocking). AHDS RG deletion takes 5-15 min.
 | 1 | 1 | Fabric Workspace + Identity | ~0.2 min |
 | 2 | 1 | Base Azure Infra (Event Hub, ACR, emulator) | ~3-4 min |
 | 3 | 1 | FHIR Service + Synthea + Loader | ~17-20 min |
-| 3b | 1 | DICOM Service + TCIA Loader | ~12-18 min |
+| 3b | 1 | DICOM Loader (TCIA → ADLS + ImagingStudy) | ~12-18 min |
 | 4 | 1 | Fabric RTI Phase 1 (Eventhouse, KQL, Eventstream) | ~2 min |
 | 5 | — | HDS Guidance (auto-detected or manual) | — |
 | 6 | 2 | Phase 2 (KQL shortcuts, enriched alerts) | ~14-15 min |
-| 6b | 2 | DICOM Shortcut + HDS Pipelines (Imaging→Clinical→OMOP) | ~40-55 min |
+| 6b | 2 | DICOM Shortcut + HDS Pipelines (Clinical→Imaging→OMOP, then optional CMA) | ~40-55 min |
 | 7 | 2 | Data Agents (Patient 360 + Clinical Triage) | ~0.1 min |
 | 8 | 3 | Phase 3 (Cohorting Agent, DICOM Viewer, PBI Report) | ~9-10 min |
 | 9 | 4 | Phase 4 (Clinical pipeline check, Ontology, Agent binding, Activator) | ~4-5 min |

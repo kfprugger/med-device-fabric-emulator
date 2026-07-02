@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@microsoft/rayfin-auth-provider-fabric": "^1.33.1",
     "@microsoft/rayfin-client": "^1.33.1",
     "@microsoft/rayfin-core": "^1.33.1",
     "@microsoft/rayfin-data": "^1.33.1",
