@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   getAuthContext,
+  getLive,
   getResourceScan,
   listCapacities,
   listSubscriptions,
   startResourceScan,
   type AuthContext,
+  type LiveStatus,
   type FabricCapacity,
   type Subscription,
 } from "./api";
@@ -33,6 +35,8 @@ interface AppState {
   capacities: FabricCapacity[];
   authContext: AuthContext | null;
   authContextLoading: boolean;
+  liveStatus: LiveStatus | null;
+  liveStatusLoading: boolean;
   refreshAuthContext: () => Promise<void>;
   teardownScan: BackgroundScanState;
   // Force a new teardown scan (used by the Teardown page refresh button).
@@ -58,6 +62,8 @@ const AppStateContext = createContext<AppState>({
   capacities: [],
   authContext: null,
   authContextLoading: true,
+  liveStatus: null,
+  liveStatusLoading: true,
   refreshAuthContext: async () => {},
   teardownScan: defaultScan,
   refreshTeardownScan: () => {},
@@ -69,6 +75,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [capacities, setCapacities] = useState<FabricCapacity[]>([]);
   const [authContext, setAuthContext] = useState<AuthContext | null>(null);
   const [authContextLoading, setAuthContextLoading] = useState(true);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  const [liveStatusLoading, setLiveStatusLoading] = useState(true);
   const [teardownScan, setTeardownScan] = useState<BackgroundScanState>(defaultScan);
   const pollTimerRef = useRef<number | null>(null);
   const activeScanIdRef = useRef<string>("");
@@ -152,14 +160,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const refreshAuthContext = async () => {
     setAuthContextLoading(true);
+    setLiveStatusLoading(true);
     try {
-      const context = await getAuthContext(true);
+      const [liveResult, context] = await Promise.all([getLive(), getAuthContext(true)]);
+      setLiveStatus(liveResult);
       setAuthContext(context);
       const preferredSubscriptionId = context?.cli.subscriptionId || context?.pwsh.subscriptionId || "";
       if (preferredSubscriptionId && subscriptions.some((subscription) => subscription.id === preferredSubscriptionId)) {
         setSelectedSubscription(preferredSubscriptionId);
       }
     } finally {
+      setLiveStatusLoading(false);
       setAuthContextLoading(false);
     }
   };
@@ -170,12 +181,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (hasBootstrappedRef.current) return;
     hasBootstrappedRef.current = true;
 
-    Promise.allSettled([getAuthContext(), listSubscriptions()])
-      .then(([authResult, subsResult]) => {
+    Promise.allSettled([getLive(), getAuthContext(), listSubscriptions()])
+      .then(([liveResult, authResult, subsResult]) => {
+        const live = liveResult.status === "fulfilled" ? liveResult.value : null;
         const context = authResult.status === "fulfilled" ? authResult.value : null;
+        setLiveStatus(live);
+        setLiveStatusLoading(false);
         setAuthContext(context);
         setAuthContextLoading(false);
-
         const subs = subsResult.status === "fulfilled" && Array.isArray(subsResult.value)
           ? subsResult.value
           : [];
@@ -198,6 +211,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         setAuthContext(null);
+        setLiveStatus(null);
+        setLiveStatusLoading(false);
         setAuthContextLoading(false);
       });
 
@@ -225,6 +240,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         capacities,
         authContext,
         authContextLoading,
+        liveStatus,
+        liveStatusLoading,
         refreshAuthContext,
         teardownScan,
         refreshTeardownScan,

@@ -48,49 +48,98 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
 
     workspace_id = ws["id"]
 
-    # Ensure capacity is assigned (matches Deploy-All.ps1 logic)
+    # Ensure capacity is assigned to the selected paid Fabric capacity when provided.
     ws_detail = fabric.call("GET", f"/workspaces/{workspace_id}")
-    if ws_detail and not ws_detail.get("capacityId"):
-        logger.info("No capacity assigned — searching for active Fabric capacity…")
+    current_capacity_id = ws_detail.get("capacityId") if ws_detail else ""
+    selected_capacity_name = (config.get("capacity_name") or "").strip()
+
+    def is_paid_f_sku(cap: dict) -> bool:
+        sku = (cap.get("sku") or "").upper()
+        return sku.startswith("F") and not sku.startswith("FT") and sku != "PP3"
+
+    def find_selected_capacity(capacities: list[dict]) -> dict:
+        matches = [
+            cap for cap in capacities
+            if cap.get("displayName") == selected_capacity_name or cap.get("name") == selected_capacity_name
+        ]
+        active_paid_matches = [
+            cap for cap in matches
+            if cap.get("state") == "Active" and is_paid_f_sku(cap)
+        ]
+        if not active_paid_matches:
+            scope_parts = [
+                config.get("capacity_subscription_id", ""),
+                config.get("capacity_resource_group", ""),
+                selected_capacity_name,
+            ]
+            scope = "/".join(part for part in scope_parts if part)
+            seen = ", ".join(
+                f"{cap.get('displayName') or cap.get('name')} [{cap.get('sku')}, {cap.get('state')}]"
+                for cap in matches
+            ) or "not returned by Fabric"
+            raise RuntimeError(
+                f"Selected Fabric capacity '{scope}' is not an active paid F-SKU; {seen}. "
+                "Trial FT capacities are not supported."
+            )
+        return active_paid_matches[0]
+
+    target_capacity = None
+    if selected_capacity_name or not current_capacity_id:
+        if selected_capacity_name:
+            logger.info("Resolving selected Fabric capacity '%s'…", selected_capacity_name)
+        else:
+            logger.info("No capacity assigned — searching for an active paid Fabric capacity…")
+
         caps_result = fabric.call("GET", "/capacities")
         capacities = caps_result.get("value", []) if caps_result else []
 
-        # Prefer F-SKUs (paid) over trial (FT1), exclude PP3
-        def sku_priority(cap: dict) -> int:
-            sku = cap.get("sku", "")
-            if sku.startswith("F") and sku != "FT1":
-                return 0  # Paid F-SKU
-            if sku == "FT1":
-                return 1  # Trial
-            return 2  # Other
+        if selected_capacity_name:
+            target_capacity = find_selected_capacity(capacities)
+        else:
+            paid_caps = [
+                cap for cap in capacities
+                if cap.get("state") == "Active" and is_paid_f_sku(cap)
+            ]
+            if not paid_caps:
+                raise RuntimeError(
+                    "No active paid Fabric F-SKU capacity found. Provision or resume a paid F-SKU (F2+); "
+                    "trial FT capacities are not supported."
+                )
+            target_capacity = paid_caps[0]
 
-        active_caps = [
-            c for c in capacities
-            if c.get("state") == "Active" and c.get("sku") != "PP3"
-        ]
-        active_caps.sort(key=sku_priority)
-
-        if active_caps:
-            cap = active_caps[0]
+    if selected_capacity_name:
+        if current_capacity_id != target_capacity.get("id"):
+            action = "Reassigning" if current_capacity_id else "Assigning"
             logger.info(
-                "Assigning capacity: %s (SKU: %s)…",
-                cap.get("displayName", ""),
-                cap.get("sku", ""),
+                "%s workspace to selected capacity: %s (SKU: %s)…",
+                action,
+                target_capacity.get("displayName", ""),
+                target_capacity.get("sku", ""),
             )
             fabric.call(
                 "POST",
                 f"/workspaces/{workspace_id}/assignToCapacity",
-                {"capacityId": cap["id"]},
+                {"capacityId": target_capacity["id"]},
             )
-            # Wait for capacity assignment to propagate
             import time as _time
             _time.sleep(5)
-            logger.info("Capacity assigned: %s", cap.get("displayName", ""))
+            logger.info("Selected capacity assigned: %s", target_capacity.get("displayName", ""))
         else:
-            raise RuntimeError(
-                "No active Fabric capacity found. "
-                "Start a trial at https://app.fabric.microsoft.com"
-            )
+            logger.info("Workspace already assigned to selected capacity: %s", selected_capacity_name)
+    elif not current_capacity_id:
+        logger.info(
+            "Assigning capacity: %s (SKU: %s)…",
+            target_capacity.get("displayName", ""),
+            target_capacity.get("sku", ""),
+        )
+        fabric.call(
+            "POST",
+            f"/workspaces/{workspace_id}/assignToCapacity",
+            {"capacityId": target_capacity["id"]},
+        )
+        import time as _time
+        _time.sleep(5)
+        logger.info("Capacity assigned: %s", target_capacity.get("displayName", ""))
     else:
         logger.info("Capacity already assigned")
 

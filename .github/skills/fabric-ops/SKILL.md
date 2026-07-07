@@ -74,7 +74,7 @@ Omit `-Wait` to teardown async (non-blocking). AHDS RG deletion takes 5-15 min.
 | 4 | 1 | Fabric RTI Phase 1 (Eventhouse, KQL, Eventstream) | ~2 min |
 | 5 | — | HDS Guidance (auto-detected or manual) | — |
 | 6 | 2 | Phase 2 (KQL shortcuts, enriched alerts) | ~14-15 min |
-| 6b | 2 | DICOM Shortcut + HDS Pipelines (Clinical→Imaging→OMOP, then optional CMA) | ~40-55 min |
+| 6b | 2 | DICOM Shortcut + HDS Pipelines (sidecars→Clinical→CMA→Imaging→OMOP) | ~40-55 min |
 | 7 | 2 | Data Agents (Patient 360 + Clinical Triage) | ~0.1 min |
 | 8 | 3 | Phase 3 (Cohorting Agent, DICOM Viewer, PBI Report) | ~9-10 min |
 | 9 | 4 | Phase 4 (Clinical pipeline check, Ontology, Agent binding, Activator) | ~4-5 min |
@@ -96,6 +96,14 @@ Key patterns to watch for in output:
 - `toomanyrequests` = Docker Hub rate limit (use MCR base images)
 - `409 Conflict` = resource name collision (retry with delay)
 - `SharedTokenCacheCredential` = token auth failure (refresh token)
+
+## Local Orchestrator Web UI
+
+- Start with `./Start-WebUI.ps1 -Force` when existing local backend/frontend ports should be reclaimed; use `./Start-WebUI.ps1 -SelfTest` for helper-only probe validation.
+- Startup success requires backend `/api/live`, frontend `/`, and the frontend `/api/live` proxy to respond. Probe failures are fatal and should be fixed before using the UI.
+- Backend logs include `orchestrator/orchestrator.log`, `orchestrator/backend-stderr.log`, and a per-run `orchestrator/orchestrator-session-<timestamp>.log`; `orchestrator/backend-crash-dump.log` appears only when backend crash diagnostics write it.
+- Liveness/readiness split: `/api/live` and default `/api/health` are cheap backend/database checks; `/api/health?deep=1` adds Azure auth and Fabric capacity readiness.
+- For Joey's BrakeKat browser smoke tests, use Microsoft Edge Profile 2 / **Work - Brakekat** (`/Users/joey/Desktop/Edge - Work - Brakekat.app`) and confirm the loaded tab title/URL, not just process startup.
 
 ## Querying Lakehouses via SQL
 
@@ -171,7 +179,7 @@ Invoke-WebRequest -Method POST `
 | `healthcare1_msft_omop_analytics` | Silver → Gold OMOP (must run AFTER imaging + clinical) |
 
 ### Pipeline Sequence Rule
-Pipelines CANNOT run in parallel. Sequence: **Imaging (wait) → Clinical (wait) → OMOP (fire-and-forget)**
+Default deployment monitor order: **optional SDoH/claims sidecars → Clinical (wait) → optional CMA (non-blocking) → Imaging (wait) → OMOP (wait)**. Sidecars are discovered from live DataPipeline items and invoked best-effort before the Clinical wait; CMA can start after Clinical/Silver readiness and does not wait for OMOP.
 
 ### Poll Pipeline Status
 ```powershell

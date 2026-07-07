@@ -18,6 +18,7 @@ import {
   Input,
   Option,
   SpinButton,
+  Spinner,
   Subtitle1,
   Text,
   Title2,
@@ -242,6 +243,7 @@ export function DeployWizard() {
   const { selectedSubscription, setSelectedSubscription, subscriptions: ctxSubscriptions, capacities: ctxCapacities } = useAppState();
   const [subscriptions, setSubscriptions] = useState(getMockSubscriptions());
   const [loading, setLoading] = useState(false);
+  const [deploymentStartMessage, setDeploymentStartMessage] = useState("");
   const [error, setError] = useState("");
   const [usingMock, setUsingMock] = useState(true);
   const [capacities, setCapacities] = useState<FabricCapacity[]>([]);
@@ -406,17 +408,24 @@ export function DeployWizard() {
   const usableCapacities = capacities.filter(isUsableCapacity);
   const onlyTrialCapacitiesDetected = capacities.length > 0 && capacities.every(isTrialCapacity);
 
+  const formatCapacityRegionLabel = (capacity: FabricCapacity) => {
+    const region = capacity.location ? formatAzureLocationLabel(capacity.location) : "Unknown region";
+    return region;
+  };
+
   const formatCapacityMenuLabel = (capacity: FabricCapacity) => {
     const subscriptionLabel = formatSubscriptionReference(capacity.subscriptionName, capacity.subscription);
+    const regionLabel = formatCapacityRegionLabel(capacity);
     const suffix = subscriptionLabel ? ` • ${subscriptionLabel}` : "";
-    return `${capacity.name} — ${capacity.sku} (${capacity.state ?? "Unknown"})${suffix}`;
+    return `${capacity.name} — ${capacity.sku} (${capacity.state ?? "Unknown"}) • ${regionLabel}${suffix}`;
   };
 
   const formatSelectedCapacityLabel = (value: string) => {
     const capacity = findCapacity(value);
     if (capacity) {
       const subscriptionLabel = formatSubscriptionReference(capacity.subscriptionName, capacity.subscription);
-      return subscriptionLabel ? `${capacity.name} (${subscriptionLabel})` : capacity.name;
+      const regionLabel = formatCapacityRegionLabel(capacity);
+      return subscriptionLabel ? `${capacity.name} — ${regionLabel} (${subscriptionLabel})` : `${capacity.name} — ${regionLabel}`;
     }
 
     const fallback = getCapacityFallbackParts(value);
@@ -1206,8 +1215,8 @@ export function DeployWizard() {
   };
 
   const startActualDeployment = async () => {
-    setShowResourcePreview(false);
     setLoading(true);
+    setDeploymentStartMessage("Validating local auth and starting the backend deployment run…");
     setError("");
 
     try {
@@ -1230,6 +1239,7 @@ export function DeployWizard() {
       navigate(`/monitor/${instanceId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
+      setDeploymentStartMessage("");
     } finally {
       setLoading(false);
     }
@@ -2692,6 +2702,12 @@ export function DeployWizard() {
               <Text block style={{ color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalM }}>
                 This preview is generated from the current wizard settings before anything is deployed. Names with <code>{uniqueSuffix}</code> are ARM/Bicep deterministic names based on the target resource group id.
               </Text>
+              {loading && deploymentStartMessage && (
+                <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, marginBottom: tokens.spacingVerticalM, padding: tokens.spacingHorizontalM, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorBrandBackground2, border: `1px solid ${tokens.colorBrandStroke1}` }}>
+                  <Spinner size="tiny" />
+                  <Text size={200}>{deploymentStartMessage}</Text>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: tokens.spacingHorizontalM, marginBottom: tokens.spacingVerticalM, flexWrap: "wrap" }}>
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                   Based on the architecture docs: emulator → Event Hub → Eventstream/Eventhouse, FHIR/DICOM → ADLS → HDS Lakehouses, then agents/ontology/alerts/reports.
@@ -2912,10 +2928,10 @@ export function DeployWizard() {
                   {deepCheckingExisting ? "Validating live state…" : "Run live validation"}
                 </Button>
               )}
-              <Button appearance="subtle" onClick={copyDeploymentPlan}>Copy plan</Button>
-              <Button appearance="secondary" onClick={() => setShowResourcePreview(false)}>Cancel</Button>
+              <Button appearance="subtle" onClick={copyDeploymentPlan} disabled={loading}>Copy plan</Button>
+              <Button appearance="secondary" onClick={() => setShowResourcePreview(false)} disabled={loading}>Cancel</Button>
               <Button appearance="primary" icon={<RocketRegular />} onClick={startActualDeployment} disabled={loading || validationErrors.length > 0}>
-                {loading ? "Starting…" : "Deploy these resources"}
+                {loading ? "Starting deployment…" : "Deploy these resources"}
               </Button>
             </DialogActions>
           </DialogBody>

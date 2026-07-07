@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 const apiProxy = {
   "/api": {
-    target: "http://localhost:7071",
+    target: "http://127.0.0.1:7071",
     changeOrigin: true,
   },
 };
@@ -11,10 +11,12 @@ const apiProxy = {
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: "127.0.0.1",
     port: 5173,
     proxy: apiProxy,
   },
   preview: {
+    host: "127.0.0.1",
     port: 4173,
     proxy: apiProxy,
   },

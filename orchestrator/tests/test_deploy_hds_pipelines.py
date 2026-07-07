@@ -44,6 +44,14 @@ class FakeFabricClient:
             return None
         return {"id": pipeline_id, "displayName": pipeline_name}
 
+    def list_items(self, workspace_id: str, item_type: str) -> list[dict[str, str]]:
+        assert workspace_id == WORKSPACE_ID
+        assert item_type == "DataPipeline"
+        return [
+            {"id": pipeline_id, "displayName": pipeline_name}
+            for pipeline_name, pipeline_id in self.pipeline_ids_by_name.items()
+        ]
+
     def call(
         self,
         method: str,
@@ -150,7 +158,7 @@ class DeployHdsCmaTests(unittest.TestCase):
             if method == "POST"
         ]
 
-    def test_cma_is_triggered_only_after_omop_completes_and_reported_non_blocking(
+    def test_cma_is_triggered_after_clinical_completes_before_imaging_and_omop(
         self,
     ) -> None:
         fake_client = FakeFabricClient(
@@ -161,7 +169,7 @@ class DeployHdsCmaTests(unittest.TestCase):
 
         result = self.run_activity()
 
-        omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES[-1]
+        clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES
         cma_name = self.deploy_hds.CMA_PIPELINE_NAME
         self.assertEqual(
             result["pipeline_results"],
@@ -174,12 +182,20 @@ class DeployHdsCmaTests(unittest.TestCase):
             result["non_blocking_followups"], {cma_name: "triggered_non_blocking"}
         )
         self.assertLess(
-            fake_client.events.index(("GET", omop_name)),
+            fake_client.events.index(("GET", clinical_name)),
             fake_client.events.index(("POST", cma_name)),
+        )
+        self.assertLess(
+            fake_client.events.index(("POST", cma_name)),
+            fake_client.events.index(("POST", imaging_name)),
+        )
+        self.assertLess(
+            fake_client.events.index(("POST", cma_name)),
+            fake_client.events.index(("POST", omop_name)),
         )
         self.assertEqual(
             self.posted_pipelines(fake_client),
-            [*self.deploy_hds.CORE_HDS_PIPELINE_NAMES, cma_name],
+            [clinical_name, cma_name, imaging_name, omop_name],
         )
 
     def test_absent_cma_is_recorded_not_deployed_without_extra_post(self) -> None:
@@ -200,9 +216,11 @@ class DeployHdsCmaTests(unittest.TestCase):
             self.deploy_hds.CORE_HDS_PIPELINE_NAMES,
         )
 
-    def test_cma_is_skipped_when_omop_does_not_complete(self) -> None:
+    def test_omop_failure_does_not_suppress_cma_triggered_after_clinical(
+        self,
+    ) -> None:
         statuses = self.completed_core_statuses()
-        omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES[-1]
+        clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES
         statuses[omop_name] = "Failed"
         fake_client = FakeFabricClient(
             pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
@@ -212,12 +230,96 @@ class DeployHdsCmaTests(unittest.TestCase):
 
         result = self.run_activity()
 
+        cma_name = self.deploy_hds.CMA_PIPELINE_NAME
+        self.assertEqual(result["pipeline_results"][clinical_name], "completed")
+        self.assertEqual(result["pipeline_results"][imaging_name], "completed")
         self.assertEqual(result["pipeline_results"][omop_name], "failed: Failed")
         self.assertEqual(
-            result["non_blocking_followups"],
-            {self.deploy_hds.CMA_PIPELINE_NAME: "skipped_core_pipeline_incomplete"},
+            result["non_blocking_followups"], {cma_name: "triggered_non_blocking"}
         )
-        self.assertNotIn(("POST", self.deploy_hds.CMA_PIPELINE_NAME), fake_client.events)
+        self.assertLess(
+            fake_client.events.index(("GET", clinical_name)),
+            fake_client.events.index(("POST", cma_name)),
+        )
+        self.assertLess(
+            fake_client.events.index(("POST", cma_name)),
+            fake_client.events.index(("POST", omop_name)),
+        )
+        self.assertEqual(
+            self.posted_pipelines(fake_client),
+            [clinical_name, cma_name, imaging_name, omop_name],
+        )
+
+    def test_clinical_failure_skips_cma_and_downstream_core_pipelines(self) -> None:
+        statuses = self.completed_core_statuses()
+        clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES
+        statuses[clinical_name] = "Failed"
+        fake_client = FakeFabricClient(
+            pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
+            statuses_by_name=statuses,
+        )
+        self.install_fake_client(fake_client)
+
+        result = self.run_activity()
+
+        cma_name = self.deploy_hds.CMA_PIPELINE_NAME
+        self.assertEqual(result["pipeline_results"][clinical_name], "failed: Failed")
+        self.assertEqual(
+            result["pipeline_results"][imaging_name], "skipped_prerequisites_incomplete"
+        )
+        self.assertEqual(
+            result["pipeline_results"][omop_name], "skipped_prerequisites_incomplete"
+        )
+        self.assertEqual(
+            result["non_blocking_followups"], {cma_name: "skipped_clinical_incomplete"}
+        )
+        self.assertEqual(self.posted_pipelines(fake_client), [clinical_name])
+
+    def test_sdoh_and_claims_sidecars_trigger_before_clinical_wait_without_patient_outreach(
+        self,
+    ) -> None:
+        sdoh_name = "healthcare1_msft_sdoh_ingestion"
+        claims_name = "healthcare1_msft_claims_enrichment"
+        patient_outreach_name = "healthcare1_msft_patient_outreach"
+        fake_client = FakeFabricClient(
+            pipeline_ids_by_name={
+                **self.pipeline_ids(include_cma=True),
+                sdoh_name: "pipeline-sdoh",
+                claims_name: "pipeline-claims",
+                patient_outreach_name: "pipeline-patient-outreach",
+            },
+            statuses_by_name=self.completed_core_statuses(),
+        )
+        self.install_fake_client(fake_client)
+
+        result = self.run_activity()
+
+        clinical_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES[0]
+        cma_name = self.deploy_hds.CMA_PIPELINE_NAME
+        clinical_get_index = fake_client.events.index(("GET", clinical_name))
+        posts_before_clinical_wait = [
+            pipeline_name
+            for method, pipeline_name in fake_client.events[:clinical_get_index]
+            if method == "POST"
+        ]
+        self.assertIn(sdoh_name, posts_before_clinical_wait)
+        self.assertIn(claims_name, posts_before_clinical_wait)
+        self.assertNotIn(patient_outreach_name, posts_before_clinical_wait)
+        self.assertLess(
+            fake_client.events.index(("POST", sdoh_name)), clinical_get_index
+        )
+        self.assertLess(
+            fake_client.events.index(("POST", claims_name)), clinical_get_index
+        )
+        self.assertEqual(
+            result["non_blocking_followups"][sdoh_name], "triggered_non_blocking"
+        )
+        self.assertEqual(
+            result["non_blocking_followups"][claims_name], "triggered_non_blocking"
+        )
+        self.assertEqual(
+            result["non_blocking_followups"][cma_name], "triggered_non_blocking"
+        )
 
     def test_cma_trigger_failure_is_reported_as_non_blocking_warning(self) -> None:
         fake_client = FakeFabricClient(

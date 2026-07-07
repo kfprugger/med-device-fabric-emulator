@@ -13,6 +13,7 @@ import json
 import logging
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -38,25 +39,26 @@ STEP_RESULT_RE = re.compile(r"[✓✗û]\s+(.+?)\s+[-—]\s+(\d+\.?\d*\s*min|—
 # Fallback: summary lines use space-padded names with duration at end (no dash separator)
 STEP_SUMMARY_RE = re.compile(r"[✓✗û]\s+(.+?)\s{2,}(\d+\.?\d*\s*min|—)")
 # HDS Record-Step summary rows include a separate status column before duration.
+PIPELINE_KIND_PATTERN = r"Clinical|Imaging|OMOP|CMA"
 PIPELINE_SUMMARY_RE = re.compile(
-    r"[✓✗û]\s+(Clinical|Imaging|OMOP)\s+Pipeline\s{2,}(.+?)\s{2,}(\d+\.?\d*\s*(?:min|sec)|—)",
+    rf"[✓✗û]\s+((?:{PIPELINE_KIND_PATTERN})\s+Pipeline|Sidecar Pipeline:\s+.+?)\s{{2,}}(.+?)\s{{2,}}(\d+\.?\d*\s*(?:min|sec)|—)",
     re.IGNORECASE,
 )
 # Phase transition marker: @@PHASE|<number>|<label>|<stepCount>@@
 PHASE_TRANSITION_RE = re.compile(r"@@PHASE\|(\d+)\|(.+?)\|(\d+)@@")
 
 # HDS pipeline sub-step names (failures here are warnings, not hard failures)
-HDS_PIPELINE_SUBSTEPS = {"Imaging Pipeline", "Clinical Pipeline", "OMOP Pipeline"}
+HDS_PIPELINE_SUBSTEPS = {"Sidecar Pipeline", "Clinical Pipeline", "CMA Pipeline", "Imaging Pipeline", "OMOP Pipeline"}
 # Regexes for HDS/Fabric pipeline lifecycle lines emitted by storage-access-trusted-workspace.ps1.
-PIPELINE_NAME_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b", re.IGNORECASE)
+PIPELINE_NAME_RE = re.compile(rf"\b(Sidecar Pipeline:\s+.+?|(?:{PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline)\b", re.IGNORECASE)
 PIPELINE_POLL_RE = re.compile(r"\[([\d.]+)\s*min\]\s*Status:\s*(\w+)", re.IGNORECASE)
-PIPELINE_STATUS_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline status:\s*(\w+)\s*\(([\d.]+)\s*min elapsed\)", re.IGNORECASE)
-PIPELINE_COMPLETED_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline completed\b", re.IGNORECASE)
-PIPELINE_FAILED_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\s+(Failed|Cancelled|Canceled)\b", re.IGNORECASE)
-PIPELINE_TIMEOUT_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline did not complete within\s+([\d.]+)\s*min", re.IGNORECASE)
-PIPELINE_SKIP_RE = re.compile(r"(?:SKIPPING|Skipping)\s+(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline|\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b.*\bSKIPPED\b", re.IGNORECASE)
-PIPELINE_INVOKE_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+pipeline\b.*\b(invoking|invoked|already running|recently invoked|will poll|waiting for .*completion)\b", re.IGNORECASE)
-PIPELINE_URL_RE = re.compile(r"\b(Clinical|Imaging|OMOP)(?:\s+\w+)*\s+Pipeline:\s+(https?://\S+)", re.IGNORECASE)
+PIPELINE_STATUS_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline status:\s*(\w+)\s*\(([\d.]+)\s*min elapsed\)", re.IGNORECASE)
+PIPELINE_COMPLETED_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline completed\b", re.IGNORECASE)
+PIPELINE_FAILED_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline\s+(Failed|Cancelled|Canceled)\b", re.IGNORECASE)
+PIPELINE_TIMEOUT_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline did not complete within\s+([\d.]+)\s*min", re.IGNORECASE)
+PIPELINE_SKIP_RE = re.compile(rf"(?:SKIPPING|Skipping)\s+({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline|\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline\b.*\bSKIPPED\b", re.IGNORECASE)
+PIPELINE_INVOKE_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+pipeline\b.*\b(invoking|invoked|already running|recently invoked|will poll|waiting for .*completion)\b", re.IGNORECASE)
+PIPELINE_URL_RE = re.compile(rf"\b({PIPELINE_KIND_PATTERN})(?:\s+\w+)*\s+Pipeline:\s+(https?://\S+)", re.IGNORECASE)
 
 
 
@@ -69,9 +71,24 @@ def _ps_hashtable_literal(values: dict[str, str]) -> str:
     return "@{" + ";".join(entries) + "}"
 
 def _pipeline_substep_name(kind: str) -> str:
-    normalized = kind.upper() if kind.upper() == "OMOP" else kind.capitalize()
-    return f"{normalized} Pipeline"
+    normalized = kind.strip()
+    sidecar_match = re.match(r"Sidecar Pipeline:\s*(.+)", normalized, re.IGNORECASE)
+    if sidecar_match:
+        return f"Sidecar Pipeline: {sidecar_match.group(1).strip()}"
+    lowered = normalized.lower()
+    if "omop" in lowered:
+        return "OMOP Pipeline"
+    if "cma" in lowered:
+        return "CMA Pipeline"
+    if "clinical" in lowered:
+        return "Clinical Pipeline"
+    if "imaging" in lowered:
+        return "Imaging Pipeline"
+    return normalized
 
+
+def is_hds_pipeline_substep(step_name: str) -> bool:
+    return step_name in HDS_PIPELINE_SUBSTEPS or step_name.startswith("Sidecar Pipeline:")
 
 def _pipeline_status(raw: str) -> str:
     status = raw.lower()
@@ -99,6 +116,8 @@ def _pipeline_status_from_detail(detail: str) -> str:
     if "timeout" in normalized or "did not complete" in normalized or "warn" in normalized:
         return "warning"
     if "completed" in normalized or "succeeded" in normalized or "success" in normalized:
+        return "succeeded"
+    if "invoked" in normalized or "already running" in normalized:
         return "succeeded"
     return "warning"
 
@@ -276,6 +295,12 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
             params.append(f"-ClaimEventRatePerMinute {config['claim_event_rate_per_minute']}")
         if config.get("dicom_toolkit_path"):
             params.append(f"-DicomToolkitPath {_ps_single_quoted(config['dicom_toolkit_path'])}")
+        if config.get("capacity_subscription_id"):
+            params.append(f"-CapacitySubscriptionId {_ps_single_quoted(config['capacity_subscription_id'])}")
+        if config.get("capacity_resource_group"):
+            params.append(f"-CapacityResourceGroup {_ps_single_quoted(config['capacity_resource_group'])}")
+        if config.get("capacity_name"):
+            params.append(f"-CapacityName {_ps_single_quoted(config['capacity_name'])}")
         if config.get("skip_base_infra"):
             params.append("-SkipBaseInfra")
         if config.get("skip_fhir"):
@@ -360,6 +385,12 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         args += ["-ClaimEventRatePerMinute", str(config["claim_event_rate_per_minute"])]
     if config.get("dicom_toolkit_path"):
         args += ["-DicomToolkitPath", config["dicom_toolkit_path"]]
+    if config.get("capacity_subscription_id"):
+        args += ["-CapacitySubscriptionId", config["capacity_subscription_id"]]
+    if config.get("capacity_resource_group"):
+        args += ["-CapacityResourceGroup", config["capacity_resource_group"]]
+    if config.get("capacity_name"):
+        args += ["-CapacityName", config["capacity_name"]]
 
     if config.get("skip_base_infra"):
         args.append("-SkipBaseInfra")
@@ -456,6 +487,20 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     current_phase = 0
     current_phase_label = ""
     current_pipeline_name = ""
+    current_step_title = ["PowerShell deployment"]
+    last_output_at = [time.monotonic()]
+    heartbeat_stop = threading.Event()
+
+    def emit_quiet_heartbeat() -> None:
+        while not heartbeat_stop.wait(30):
+            if process.poll() is not None:
+                return
+            quiet_for = time.monotonic() - last_output_at[0]
+            if quiet_for < 30:
+                continue
+            label = current_step_title[0] or current_phase_label or "PowerShell deployment"
+            logger.info("Still running %s — waiting for PowerShell output (%.0fs quiet)", label, quiet_for)
+
 
     env_dict = {**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     if instance_id:
@@ -477,7 +522,12 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     if pid_callback:
         pid_callback(process.pid)
 
+    heartbeat_thread = threading.Thread(target=emit_quiet_heartbeat, daemon=True)
+    heartbeat_thread.start()
+
+
     for line in process.stdout:
+        last_output_at[0] = time.monotonic()
         line = line.rstrip()
         if not line:
             continue
@@ -498,6 +548,7 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
         if banner_match:
             step_num = banner_match.group(1)
             step_title = banner_match.group(2).strip()
+            current_step_title[0] = step_title
             if step_callback:
                 step_callback("step_start", step_title, "", "")
             logger.info(line)
@@ -592,14 +643,14 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
             is_success = "\u2713" in line or "\u00fb" in line  # ✓ or û
             if is_success:
                 event = "step_succeeded"
-            elif step_name in HDS_PIPELINE_SUBSTEPS:
+            elif is_hds_pipeline_substep(step_name):
                 # HDS pipeline sub-step failures are warnings, not hard failures
                 event = "step_warning"
             else:
                 event = "step_failed"
             if step_callback:
                 step_callback(event, step_name, "", duration)
-            if step_name in HDS_PIPELINE_SUBSTEPS:
+            if is_hds_pipeline_substep(step_name):
                 _emit_substep(step_callback, step_name, "succeeded" if is_success else _pipeline_status_from_detail(line), line.strip(), duration)
             if is_success:
                 logger.info(line)
@@ -632,5 +683,7 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
             logger.info(line)
 
     process.wait()
+    heartbeat_stop.set()
+    heartbeat_thread.join(timeout=1)
     logger.info("PowerShell exited with code %d", process.returncode)
     return process.returncode

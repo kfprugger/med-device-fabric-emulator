@@ -51,6 +51,8 @@ param(
     [string]$ClinicalPipelineName = "healthcare1_msft_clinical_data_foundation_ingestion",
     [string]$OmopPipelineName = "healthcare1_msft_omop_analytics",
     [string]$CmaPipelineName = "healthcare1_msft_cma",
+    [string[]]$OptionalSidecarPipelineNames = @(),
+    [string[]]$OptionalSidecarPipelineNamePatterns = @('sdoh','social.?determinant','claim','claims','cclf'),
 
     [switch]$RequireClinicalFhirData,
     [switch]$RequireImagingDicomData
@@ -197,6 +199,90 @@ function Invoke-FabricApiRequest {
         try { $parsed = $content | ConvertFrom-Json -Depth 50 } catch { $parsed = $content }
     }
     return [pscustomobject]@{ Response = $parsed; StatusCode = $sc; Headers = $raw.Headers; RawContent = $content }
+}
+
+function Invoke-OptionalDataPipelineNonBlocking {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$PipelineName,
+        [object]$Pipeline,
+        [Parameter(Mandatory)][hashtable]$FabricHeaders,
+        [Parameter(Mandatory)][string]$StepName,
+        [string]$SkipReason = 'not deployed'
+    )
+
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    $invoked = $false
+    $alreadyRunning = $false
+    $status = 'SKIPPED'
+
+    if (-not $Pipeline) {
+        Write-Log "─── ${StepName}: SKIPPING optional pipeline '$PipelineName' ($SkipReason) ───" 'INFO'
+        $timer.Stop()
+        Record-Step -Name $StepName -Status $status -Seconds $timer.Elapsed.TotalSeconds
+        return [pscustomobject]@{ Name = $PipelineName; Id = $null; Status = $status; Invoked = $false; AlreadyRunning = $false }
+    }
+
+    $pipelineId = [string]$Pipeline.id
+    Write-Log "─── ${StepName}: Running optional pipeline '$PipelineName' (non-blocking) ───" 'INFO'
+    Write-Log "  Found '$PipelineName' (ID: $pipelineId)" 'INFO'
+    $runUri = "$FabricManagementEndpoint/v1/workspaces/$WorkspaceId/items/$pipelineId/jobs/Pipeline/instances"
+
+    try {
+        Invoke-FabricApiRequest -Method Post -Uri $runUri -Headers $FabricHeaders -Description "Run optional pipeline '$PipelineName'"
+        Write-Log "  Optional pipeline '$PipelineName' invoked successfully (non-blocking)." 'INFO'
+        $invoked = $true
+        $status = 'INVOKED'
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
+            Write-Log "  Optional pipeline '$PipelineName' is already running or recently invoked (non-blocking)." 'WARN'
+            $alreadyRunning = $true
+            $status = 'ALREADY RUNNING'
+        } else {
+            Write-Log "  ⚠ Could not invoke optional pipeline '$PipelineName': $errMsg" 'WARN'
+            $status = 'WARN'
+        }
+    }
+
+    $timer.Stop()
+    Record-Step -Name $StepName -Status $status -Seconds $timer.Elapsed.TotalSeconds
+    return [pscustomobject]@{ Name = $PipelineName; Id = $pipelineId; Status = $status; Invoked = $invoked; AlreadyRunning = $alreadyRunning }
+}
+
+function Resolve-OptionalSidecarPipelines {
+    param(
+        [Parameter(Mandatory)][object[]]$Pipelines,
+        [string[]]$Names = @(),
+        [string[]]$Patterns = @(),
+        [string[]]$ExcludedNames = @()
+    )
+
+    $resolved = @()
+    $seen = @{}
+    foreach ($name in @($Names)) {
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        $pipeline = $Pipelines | Where-Object { $_.displayName -eq $name } | Select-Object -First 1
+        if ($pipeline -and -not $seen.ContainsKey([string]$pipeline.id)) {
+            $resolved += $pipeline
+            $seen[[string]$pipeline.id] = $true
+        }
+    }
+
+    foreach ($pipeline in @($Pipelines)) {
+        $displayName = [string]$pipeline.displayName
+        if ([string]::IsNullOrWhiteSpace($displayName) -or $displayName -in $ExcludedNames) { continue }
+        foreach ($pattern in @($Patterns)) {
+            if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
+            if ($displayName -match $pattern -and -not $seen.ContainsKey([string]$pipeline.id)) {
+                $resolved += $pipeline
+                $seen[[string]$pipeline.id] = $true
+                break
+            }
+        }
+    }
+
+    return @($resolved)
 }
 
 function Invoke-LakehouseScalarQuery {
@@ -1263,10 +1349,27 @@ $imagingId = if ($imagingPipeline) { [string]$imagingPipeline.id } else { $null 
 $cmaPipeline = $pipelines | Where-Object { $_.displayName -eq $CmaPipelineName } | Select-Object -First 1
 $cmaId = if ($cmaPipeline) { [string]$cmaPipeline.id } else { $null }
 if ($cmaPipeline) {
-    Write-Log "  Detected optional CMA pipeline '$CmaPipelineName' (ID: $cmaId). It will be invoked after OMOP completes." 'INFO'
+    Write-Log "  Detected optional CMA pipeline '$CmaPipelineName' (ID: $cmaId). It will be invoked after Clinical/Silver readiness, before Imaging and OMOP." 'INFO'
 } else {
     Write-Log "  Optional CMA pipeline '$CmaPipelineName' not found; no CMA follow-up action will run." 'INFO'
 }
+
+$excludedPipelineNames = @($ClinicalPipelineName, $ImagingPipelineName, $OmopPipelineName, $CmaPipelineName)
+$optionalSidecarPipelines = Resolve-OptionalSidecarPipelines -Pipelines $pipelines -Names $OptionalSidecarPipelineNames -Patterns $OptionalSidecarPipelineNamePatterns -ExcludedNames $excludedPipelineNames
+$optionalSidecarResults = @()
+if ($optionalSidecarPipelines.Count -gt 0) {
+    Write-Log "  Detected $($optionalSidecarPipelines.Count) optional HDS sidecar pipeline(s) from the live Fabric workspace; invoking non-blocking before waiting on the core Clinical → Imaging → OMOP sequence. Sidecars may no-op or warn if source data is absent." 'INFO'
+    foreach ($sidecarPipeline in $optionalSidecarPipelines) {
+        $sidecarName = [string]$sidecarPipeline.displayName
+        $optionalSidecarResults += Invoke-OptionalDataPipelineNonBlocking -WorkspaceId $workspaceId -PipelineName $sidecarName -Pipeline $sidecarPipeline -FabricHeaders $fabHeaders -StepName "Sidecar Pipeline: $sidecarName"
+    }
+} else {
+    Write-Log '  No optional HDS sidecar pipelines matched the configured names/patterns in the live workspace.' 'INFO'
+}
+
+$cmaInvoked = $false
+$cmaAlreadyRunning = $false
+$cmaResult = $null
 
 
 $clinInvoked = $false
@@ -1387,6 +1490,24 @@ if ($clinInvoked) {
     }
 } else {
     $step9bTimer.Stop()
+}
+
+# ── Step 9c: Optional CMA follow-up (non-blocking) ──
+# Care Management Analytics reads Silver inputs. If deployed, launch it as soon
+# as Clinical/Silver readiness has passed; do not wait for Imaging or OMOP.
+if (-not $cmaPipeline) {
+    $cmaResult = Invoke-OptionalDataPipelineNonBlocking -WorkspaceId $workspaceId -PipelineName $CmaPipelineName -Pipeline $null -FabricHeaders $fabHeaders -StepName 'CMA Pipeline' -SkipReason 'not deployed'
+} elseif (-not $clinicalCompleted) {
+    $cmaTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Log '─── Step 9c: SKIPPING CMA pipeline (Clinical/Silver readiness did not complete) ───' 'WARN'
+    Write-Log '  CMA is a non-blocking Silver consumer and must start only after Clinical/Silver readiness passes.' 'WARN'
+    $cmaTimer.Stop()
+    Record-Step -Name 'CMA Pipeline' -Status 'SKIPPED' -Seconds $cmaTimer.Elapsed.TotalSeconds
+    $cmaResult = [pscustomobject]@{ Name = $CmaPipelineName; Id = $cmaId; Status = 'SKIPPED'; Invoked = $false; AlreadyRunning = $false }
+} else {
+    $cmaResult = Invoke-OptionalDataPipelineNonBlocking -WorkspaceId $workspaceId -PipelineName $CmaPipelineName -Pipeline $cmaPipeline -FabricHeaders $fabHeaders -StepName 'CMA Pipeline'
+    $cmaInvoked = [bool]$cmaResult.Invoked
+    $cmaAlreadyRunning = [bool]$cmaResult.AlreadyRunning
 }
 
 $imgInvoked = $false
@@ -1628,45 +1749,6 @@ if (-not $omopPipeline) {
 }
 } # end: if ($imgCompleted) — OMOP only runs after imaging completes
 
-# ── Step 10b: Optional CMA follow-up (non-blocking) ──
-# Care Management Analytics is optional in HDS. If deployed, launch it only after
-# the blocking HDS sequence has completed; never fail the deployment on CMA.
-$step10bTimer = [System.Diagnostics.Stopwatch]::StartNew()
-$cmaInvoked = $false
-$cmaAlreadyRunning = $false
-if (-not $cmaPipeline) {
-    Write-Log "─── Step 10b: SKIPPING CMA pipeline ('$CmaPipelineName' not deployed) ───" 'INFO'
-    $step10bTimer.Stop()
-    Record-Step -Name 'CMA Pipeline' -Status 'SKIPPED' -Seconds $step10bTimer.Elapsed.TotalSeconds
-} elseif (-not (Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -or -not $omopCompleted) {
-    Write-Log '─── Step 10b: SKIPPING CMA pipeline (OMOP did not complete) ───' 'WARN'
-    Write-Log "  CMA is a non-blocking follow-up and must start after the last blocking HDS pipeline completes." 'WARN'
-    $step10bTimer.Stop()
-    Record-Step -Name 'CMA Pipeline' -Status 'SKIPPED' -Seconds $step10bTimer.Elapsed.TotalSeconds
-} else {
-    Write-Log '─── Step 10b: Running optional CMA pipeline (non-blocking) ───' 'INFO'
-    Write-Log "  Found '$CmaPipelineName' (ID: $cmaId)" 'INFO'
-    $cmaRunUri = "$FabricManagementEndpoint/v1/workspaces/$workspaceId/items/$cmaId/jobs/Pipeline/instances"
-    try {
-        Invoke-FabricApiRequest -Method Post -Uri $cmaRunUri -Headers $fabHeaders -Description "Run optional pipeline '$CmaPipelineName'"
-        Write-Log '  CMA pipeline invoked successfully (non-blocking).' 'INFO'
-        $cmaInvoked = $true
-        $step10bTimer.Stop()
-        Record-Step -Name 'CMA Pipeline' -Status 'INVOKED' -Seconds $step10bTimer.Elapsed.TotalSeconds
-    } catch {
-        $errMsg = $_.Exception.Message
-        if ($errMsg -match '409|already running|TooManyRequestsForJobs') {
-            Write-Log '  CMA pipeline is already running or recently invoked (non-blocking).' 'WARN'
-            $cmaAlreadyRunning = $true
-            $step10bTimer.Stop()
-            Record-Step -Name 'CMA Pipeline' -Status 'ALREADY RUNNING' -Seconds $step10bTimer.Elapsed.TotalSeconds
-        } else {
-            Write-Log "  ⚠ Could not invoke optional CMA pipeline: $errMsg" 'WARN'
-            $step10bTimer.Stop()
-            Record-Step -Name 'CMA Pipeline' -Status 'WARN' -Seconds $step10bTimer.Elapsed.TotalSeconds
-        }
-    }
-}
 
 # ── Summary ──
 $overallTimer.Stop()
@@ -1707,7 +1789,21 @@ Write-Host "    Lakehouse: $BronzeLakehouseName ($lakehouseId)" -ForegroundColor
 Write-Host "    Workspace: $FabricWorkspaceName ($workspaceId)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  The HDS pipeline sequence:" -ForegroundColor Cyan
-Write-Host "    1. Imaging with Clinical Foundation pipeline — $(if ($imgCompleted) { 'COMPLETED ✓' } else { 'IN PROGRESS / NOT COMPLETED' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
+Write-Host "    1. Optional SDoH/claims sidecars — $(if ($optionalSidecarResults.Count -gt 0) { 'INVOKED/RECORDED non-blocking' } else { 'NONE MATCHED' })" -ForegroundColor $(if ($optionalSidecarResults.Count -gt 0) { 'Green' } else { 'DarkGray' })
+Write-Host "    2. Clinical Foundation pipeline — $(if ($clinicalCompleted) { 'COMPLETED ✓' } else { 'IN PROGRESS / NOT COMPLETED' })" -ForegroundColor $(if ($clinicalCompleted) { 'Green' } else { 'Yellow' })
+if ($cmaPipeline) {
+    $cmaStatus = if ($cmaInvoked) {
+        'INVOKED ✓ after Clinical/Silver readiness (non-blocking)'
+    } elseif ($cmaAlreadyRunning) {
+        'ALREADY RUNNING ✓ after Clinical/Silver readiness (non-blocking)'
+    } elseif (-not $clinicalCompleted) {
+        'SKIPPED (waiting for Clinical/Silver readiness)'
+    } else {
+        'NOT INVOKED (non-blocking warning)'
+    }
+    Write-Host "    3. Care Management Analytics pipeline — $cmaStatus" -ForegroundColor $(if ($cmaInvoked -or $cmaAlreadyRunning) { 'Green' } else { 'Yellow' })
+}
+Write-Host "    4. Imaging with Clinical Foundation pipeline — $(if ($imgCompleted) { 'COMPLETED ✓' } else { 'IN PROGRESS / NOT COMPLETED' })" -ForegroundColor $(if ($imgCompleted) { 'Green' } else { 'Yellow' })
 if ($omopPipeline) {
     $omopStatus = if ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) {
         'COMPLETED ✓'
@@ -1718,19 +1814,7 @@ if ($omopPipeline) {
     } else {
         'SKIPPED (waiting for imaging)'
     }
-    Write-Host "    2. OMOP Analytics pipeline — $omopStatus" -ForegroundColor $(if ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) { 'Green' } else { 'Yellow' })
-}
-if ($cmaPipeline) {
-    $cmaStatus = if ($cmaInvoked) {
-        'INVOKED ✓ (non-blocking)'
-    } elseif ($cmaAlreadyRunning) {
-        'ALREADY RUNNING ✓ (non-blocking)'
-    } elseif ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) {
-        'NOT INVOKED (non-blocking warning)'
-    } else {
-        'SKIPPED (waiting for OMOP)'
-    }
-    Write-Host "    3. Care Management Analytics pipeline — $cmaStatus" -ForegroundColor $(if ($cmaInvoked -or $cmaAlreadyRunning) { 'Green' } else { 'Yellow' })
+    Write-Host "    5. OMOP Analytics pipeline — $omopStatus" -ForegroundColor $(if ((Get-Variable -Name omopCompleted -ErrorAction SilentlyContinue) -and $omopCompleted) { 'Green' } else { 'Yellow' })
 }
 Write-Host ""
 
@@ -1781,7 +1865,7 @@ if (-not $imgCompleted) {
     Write-Host "  └──────────────────────────────────────────────────────────────┘" -ForegroundColor Green
     Write-Host ""
     if ($cmaPipeline) {
-        $cmaMessage = if ($cmaInvoked) { 'CMA follow-up pipeline was invoked non-blocking.' } elseif ($cmaAlreadyRunning) { 'CMA follow-up pipeline was already running.' } else { 'CMA follow-up pipeline was not invoked; check warnings above.' }
+        $cmaMessage = if ($cmaInvoked) { 'CMA pipeline was invoked after Clinical/Silver readiness (non-blocking).' } elseif ($cmaAlreadyRunning) { 'CMA pipeline was already running after Clinical/Silver readiness.' } else { 'CMA pipeline was not invoked; check warnings above.' }
         Write-Host "  $cmaMessage" -ForegroundColor $(if ($cmaInvoked -or $cmaAlreadyRunning) { 'Green' } else { 'Yellow' })
         if ($cmaUrl) { Write-Host "  $cmaUrl" -ForegroundColor DarkCyan }
         Write-Host ""

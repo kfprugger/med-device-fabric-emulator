@@ -2,6 +2,11 @@
 
 ## [Unreleased] — May 28, 2026
 
+### Orchestrator UI, Startup, and HDS Pipeline Visibility
+- **Updated** HDS pipeline monitoring/docs to show the default order: optional SDoH/claims sidecars → Clinical → optional non-blocking CMA → Imaging → OMOP.
+- **Added** cheap `/api/live` and default `/api/health` liveness checks, with `/api/health?deep=1` reserved for auth/capacity readiness.
+- **Hardened** `Start-WebUI.ps1` startup with `-SelfTest`, session-scoped backend logs, fatal backend/frontend/proxy probes, and BrakeKat Edge/Profile 2 verification guidance.
+
 ### Deployment Bootstrap
 - **Added** automatic bootstrap for the companion `FabricDicomCohortingToolkit` repository. Deploy and UI preflight now resolve the default sibling path and clone the downstream repo when an imaging path executes the Phase 3 toolkit block.
 - **Updated** Orchestrator preflight argument threading so imaging validation can pass `-Phase2`/`-Phase3`, `-DicomToolkitPath`, and imaging skip state into `Preflight-Check.ps1`.

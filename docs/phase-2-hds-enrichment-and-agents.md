@@ -128,12 +128,13 @@ Creates 6 KQL external tables via OneLake shortcuts, connecting the Eventhouse t
 
 Creates the DICOM OneLake shortcut and triggers HDS pipelines:
 1. **DICOM shortcut** — ADLS Gen2 `dicom-output` → Bronze Lakehouse `/Files/Ingest/Imaging/DICOM/DICOM-HDS/`
-2. **Clinical pipeline** — flows FHIR clinical data into Silver tables
-3. **Imaging pipeline** — flows DICOM metadata into Silver imaging tables after clinical completes
-4. **OMOP pipeline** — populates Gold OMOP CDM v5.4 tables from Silver data
-5. **CMA pipeline** — if Care Management Analytics was included in the HDS deployment, invokes `healthcare1_msft_cma` as a non-blocking follow-up after OMOP completes
+2. **Optional SDoH/claims sidecar pipelines** — discovered from live Fabric DataPipeline items and invoked best-effort/non-blocking if deployed; sidecar pipelines may no-op or fail non-blocking when their source data is absent
+3. **Clinical pipeline** — flows FHIR clinical data into Silver tables
+4. **CMA pipeline** — if Care Management Analytics was included in the HDS deployment, invokes `healthcare1_msft_cma` as a non-blocking Silver consumer after Clinical/Silver readiness passes; it no longer waits for OMOP
+5. **Imaging pipeline** — flows DICOM metadata into Silver imaging tables after clinical completes
+6. **OMOP pipeline** — populates Gold OMOP CDM v5.4 tables from Silver data after Clinical and Imaging complete
 
-> **Pipeline order matters:** Clinical → Imaging → OMOP run sequentially. Optional CMA starts only after OMOP completes and does not block the deployment result.
+> **Pipeline order matters:** the default deployment monitor order is optional SDoH/claims sidecars → Clinical → optional CMA → Imaging → OMOP. Sidecars start best-effort before the Clinical wait when matching live pipeline names are deployed. CMA starts after Clinical/Silver readiness and does not block Imaging, OMOP, or the deployment result.
 
 ```powershell
 # Standalone Phase 2

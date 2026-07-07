@@ -145,11 +145,11 @@ const MOCK_PHASES: MockPhase[] = [
     logs: [
       { delayPct: 0, level: "info", message: "Creating DICOM shortcut → ADLS Gen2 dicom-output/…" },
       { delayPct: 15, level: "success", message: "DICOM shortcut DICOM-HDS created" },
-      { delayPct: 30, level: "info", message: "Triggering pipeline: healthcare1_msft_imaging_with_clinical_foundation_ingestion…" },
-      { delayPct: 50, level: "success", message: "Pipeline triggered: imaging_with_clinical" },
-      { delayPct: 60, level: "info", message: "Triggering pipeline: healthcare1_msft_omop_ingestion…" },
-      { delayPct: 80, level: "success", message: "Pipeline triggered: omop_ingestion" },
-      { delayPct: 95, level: "success", message: "All HDS pipelines triggered" },
+      { delayPct: 30, level: "info", message: "Triggering optional SDoH/claims sidecar pipelines (best-effort/non-blocking)…" },
+      { delayPct: 42, level: "success", message: "Clinical pipeline completed — Silver readiness passed" },
+      { delayPct: 52, level: "success", message: "CMA pipeline invoked after Clinical/Silver readiness (non-blocking)" },
+      { delayPct: 72, level: "success", message: "Imaging pipeline completed after Clinical" },
+      { delayPct: 92, level: "success", message: "OMOP pipeline completed after Clinical + Imaging" },
     ],
   },
   // ── Phase 3 ──

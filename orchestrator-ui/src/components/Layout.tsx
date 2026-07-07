@@ -235,7 +235,7 @@ export function Layout() {
   const styles = useStyles();
   const navigate = useNavigate();
   const location = useLocation();
-  const { selectedSubscription, subscriptions, capacities, authContext, authContextLoading } = useAppState();
+  const { selectedSubscription, subscriptions, capacities, authContext, authContextLoading, liveStatus, liveStatusLoading } = useAppState();
 
   const selectedSubscriptionInfo = subscriptions.find((subscription) => subscription.id === selectedSubscription);
   const selectedSubscriptionLabel =
@@ -253,14 +253,18 @@ export function Layout() {
     : authContext?.pwsh.loggedIn
       ? authContext.pwsh.user
       : authContext?.pwsh.error || "Not logged in";
+  const backendOnline = liveStatus?.backend === "online";
+  const databaseOk = liveStatus?.database === "ok";
   const contextReady = !!authContext?.ready;
   const contextAligned = !!authContext?.aligned.subscription && !!authContext?.aligned.tenant;
   const activeCapacityCount = capacities.filter((capacity) => capacity.state === "Active").length;
-  const healthText = authContextLoading
-    ? "Checking app health"
-    : contextReady && contextAligned
-      ? `Frontend online · Backend online · ${activeCapacityCount} active capacit${activeCapacityCount === 1 ? "y" : "ies"}`
-      : "Backend reachable · context needs attention";
+  const healthText = liveStatusLoading
+    ? "Checking backend liveness"
+    : backendOnline && databaseOk && contextReady && contextAligned
+      ? `Backend live · DB ok · ${activeCapacityCount} active capacit${activeCapacityCount === 1 ? "y" : "ies"}`
+      : backendOnline && databaseOk
+        ? "Backend live · auth/capacity need attention"
+        : "Backend or DB needs attention";
   const isDarkTheme = typeof window !== "undefined" && window.localStorage.getItem("orchestrator-theme") === "dark";
   const toggleTheme = () => {
     if (typeof window === "undefined") return;
@@ -408,13 +412,15 @@ export function Layout() {
 
             <details title="Open app health details">
               <summary style={{ cursor: "pointer", listStyle: "none" }}>
-                <Badge size="small" color={contextReady && contextAligned ? "success" : authContextLoading ? "informative" : "warning"}>
+                <Badge size="small" color={backendOnline && databaseOk && contextReady && contextAligned ? "success" : liveStatusLoading ? "informative" : "warning"}>
                   {healthText}
                 </Badge>
               </summary>
               <div style={{ position: "absolute", right: 24, marginTop: 8, padding: 12, background: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, boxShadow: tokens.shadow16, zIndex: 50, display: "grid", gap: 4, minWidth: 280 }}>
                 <Text size={200}>Frontend: online</Text>
-                <Text size={200}>Backend: online</Text>
+                <Text size={200}>Backend liveness: {liveStatusLoading ? "checking" : backendOnline ? "online" : "not confirmed"}</Text>
+                <Text size={200}>Database: {liveStatusLoading ? "checking" : liveStatus?.database || "unknown"}</Text>
+                <Text size={200}>Auth readiness: {authContextLoading ? "checking" : contextReady && contextAligned ? "ready" : "needs attention"}</Text>
                 <Text size={200}>Azure CLI: {cliLabel}</Text>
                 <Text size={200}>Az PowerShell: {pwshLabel}</Text>
                 <Text size={200}>Fabric capacities active: {activeCapacityCount}</Text>

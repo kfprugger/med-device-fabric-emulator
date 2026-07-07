@@ -232,6 +232,19 @@ export interface AuthContext {
   issues: string[];
 }
 
+export interface LiveStatus {
+  status: "ok" | "warning" | string;
+  backend: string;
+  database: string;
+  deployments: number;
+  checkedAt: string;
+}
+
+export interface HealthStatus extends LiveStatus {
+  auth?: AuthContext;
+  capacities?: { total: number; active: number; items: FabricCapacity[] };
+}
+
 export interface Subscription {
   id: string;
   name: string;
@@ -363,8 +376,12 @@ export async function continuePhase7(instanceId: string): Promise<{ instanceId: 
   return requestJson(`${API_BASE}/deploy/${encodeURIComponent(instanceId)}/continue-phase7`, { method: "POST", timeoutMs: 30000 });
 }
 
-export async function getHealth(): Promise<Record<string, unknown>> {
-  return requestJson(`${API_BASE}/health`, { timeoutMs: 30000, retry: 1 });
+export async function getLive(): Promise<LiveStatus> {
+  return requestJson(`${API_BASE}/live`, { timeoutMs: 5000, retry: 1 });
+}
+
+export async function getHealth(deep = true): Promise<HealthStatus> {
+  return requestJson(`${API_BASE}/health${deep ? "?deep=1" : ""}`, { timeoutMs: 30000, retry: 1 });
 }
 
 export async function listDeployments(signal?: AbortSignal): Promise<DeploymentSummary[]> {

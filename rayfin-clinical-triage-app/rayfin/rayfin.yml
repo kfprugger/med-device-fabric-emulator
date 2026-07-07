@@ -15,6 +15,7 @@ services:
       - http://localhost:5173
       - https://tough-bolt-f41e8d694c-westus2.webapp.fabricapps.net
       - https://rich-heath-ac8cddda24-westus2.webapp.fabricapps.net
+      - https://rusty-knoll-fb007fbed9-westus2.webapp.fabricapps.net
     fabric:
       enabled: true
   data:

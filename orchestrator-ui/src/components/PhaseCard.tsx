@@ -247,8 +247,8 @@ const PHASE_TOOLTIPS: Record<string, string> = {
   "Phase 1: DICOM Loader": "TCIA download, patient-preserving re-tagging, ADLS upload, and FHIR ImagingStudy creation",
   "Phase 2: Fabric RTI": "Masimo Eventhouse, KQL database/functions, Eventstream topology, dashboard, and FHIR $export",
   "Phase 2: Fabric RTI (auto)": "Post-HDS bronze shortcuts, KQL shortcuts, enriched alerts, and Clinical Alerts Map",
-  "Phase 3: HDS Deployment Detection": "Manual HDS deployment detection, notebook cleanup, and resume gate",
-  "Phase 3: DICOM Shortcut + HDS Pipelines": "DICOM shortcut, clinical/imaging/OMOP pipeline triggers, and row-count gates",
+  "Phase 3: HDS Deployment Detection": "HDS deployment gate: detect Bronze/Silver HDS assets, clean workspace notebooks, then resume automated RTI enrichment.",
+  "Phase 3: DICOM Shortcut + HDS Pipelines": "DICOM shortcut; optional SDoH/claims sidecars; Clinical → CMA → Imaging → OMOP safe ordering; and row-count gates",
   "Phase 4: Imaging & Reporting": "Cohorting Agent, OHIF DICOM Viewer, Direct Lake imaging report, and proxy/index validation",
   "Phase 4: Ontology": "DeviceAssociation table, ClinicalDeviceOntology, DevicePayerOntology, and agent binding",
   "Phase 4: Ontology-Aware Data Agents": "Patient 360 + Clinical Triage agents bound to ClinicalDeviceOntology",
@@ -256,6 +256,20 @@ const PHASE_TOOLTIPS: Record<string, string> = {
   "Phase 6: CMS Quality & Claims": "Claims star schema, quality measures, Star Ratings, HCC risk, and Power BI report",
   "Phase 7: Payer RTI & Ops": "Claim stream, payer scoring, activator, HealthcareOpsAgent, and graph agent",
 };
+
+function defaultSubStepsForPhase(phaseName: string): PhaseSubStep[] {
+  const canonical = canonicalPhaseName(phaseName);
+  if (!canonical.includes("dicom shortcut") || !canonical.includes("hds pipeline")) {
+    return [];
+  }
+  return [
+    { name: "Optional SDoH/claims sidecars", status: "pending", detail: "Discovered from live Fabric DataPipeline items and invoked best-effort before the Clinical wait.", updatedAt: "" },
+    { name: "Clinical Pipeline", status: "pending", detail: "Blocking Clinical/Silver readiness gate.", updatedAt: "" },
+    { name: "CMA Pipeline", status: "pending", detail: "Optional non-blocking Silver consumer after Clinical/Silver readiness; does not wait for OMOP.", updatedAt: "" },
+    { name: "Imaging Pipeline", status: "pending", detail: "Blocking imaging pipeline after Clinical completes.", updatedAt: "" },
+    { name: "OMOP Pipeline", status: "pending", detail: "Blocking Gold OMOP pipeline after Clinical and Imaging complete.", updatedAt: "" },
+  ];
+}
 
 function formatLogTime(iso: string): string {
   try {
@@ -291,7 +305,8 @@ export function PhaseCard({ phase, logs = [], defaultExpanded, autoScroll = true
   const reducedMotion = useReducedMotion();
   const tooltip = getPhaseTooltip(phase.phase);
   const isActive = phase.status === "running" || phase.status === "waiting_for_input";
-  const subSteps = phase.subSteps ?? [];
+  const reportedSubSteps = phase.subSteps ?? [];
+  const subSteps = reportedSubSteps.length > 0 ? reportedSubSteps : defaultSubStepsForPhase(phase.phase);
   const actionSubSteps = subSteps.filter(isActionSubStep);
   const hasWarnings = (phase.warnings?.length ?? 0) > 0 || actionSubSteps.length > 0;
   const [expanded, setExpanded] = useState(defaultExpanded ?? isActive);

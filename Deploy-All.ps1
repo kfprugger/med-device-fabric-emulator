@@ -46,6 +46,10 @@ param (
 
     # ── Fabric ──
     [Parameter(Mandatory)][string]$FabricWorkspaceName,
+    [string]$CapacitySubscriptionId = "",
+    [string]$CapacityResourceGroup = "",
+    [string]$CapacityName = "",
+
 
     # ── Fabric Phase 2 (post-HDS) ──
     [string]$SilverLakehouseId = "",
@@ -134,6 +138,37 @@ function Get-CachedAccessToken {
     }
     $script:AccessTokenCache[$key] = @{ Token = $token; ExpiresOn = $tokenObj.ExpiresOn }
     return $token
+}
+
+function Test-FabricPaidFsku {
+    param([AllowNull()][string]$Sku)
+    if ([string]::IsNullOrWhiteSpace($Sku)) { return $false }
+    $normalized = $Sku.ToUpperInvariant()
+    return $normalized.StartsWith("F") -and -not $normalized.StartsWith("FT") -and $normalized -ne "PP3"
+}
+
+function Resolve-SelectedFabricCapacity {
+    param(
+        [Parameter(Mandatory)]$Capacities,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $matches = @($Capacities.value | Where-Object { $_.displayName -eq $Name -or $_.name -eq $Name })
+    if ($matches.Count -eq 0) {
+        throw "Selected Fabric capacity '$Name' was not returned by Fabric. Refresh the UI capacity list and try again."
+    }
+
+    $activePaidMatches = @($matches | Where-Object { $_.state -eq "Active" -and (Test-FabricPaidFsku -Sku $_.sku) })
+    if ($activePaidMatches.Count -eq 0) {
+        $seen = ($matches | ForEach-Object { "$($_.displayName) [$($_.sku), $($_.state)]" }) -join ", "
+        throw "Selected Fabric capacity '$Name' is not an active paid F-SKU. Seen: $seen"
+    }
+
+    if ($activePaidMatches.Count -gt 1) {
+        Write-Host "  ⚠ Multiple active paid Fabric capacities named '$Name' were returned by Fabric; using the first match." -ForegroundColor Yellow
+    }
+
+    return $activePaidMatches | Select-Object -First 1
 }
 
 # Validate conditionally-required parameters
@@ -374,27 +409,39 @@ function Test-Prerequisites {
         }
         $fabHeaders = @{ "Authorization" = "Bearer $fabToken" }
         $caps = Invoke-RestMethod -Uri "https://api.fabric.microsoft.com/v1/capacities" -Headers $fabHeaders
-        $allPaidCaps = $caps.value | Where-Object { $_.sku -like "F*" -and $_.sku -ne "FT1" -and $_.sku -ne "PP3" }
 
-        if ($allPaidCaps.Count -gt 0) {
-            $activePaidCaps = $allPaidCaps | Where-Object { $_.state -eq "Active" }
-            if ($activePaidCaps.Count -gt 0) {
-                $cap = $activePaidCaps | Select-Object -First 1
-                Write-Host "  ✓ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku))" -ForegroundColor Green
-            } else {
-                $cap = $allPaidCaps | Select-Object -First 1
-                $failures += "Fabric capacity '$($cap.displayName)' ($($cap.sku)) is currently paused ($($cap.state)). Please resume it before deploying."
-                Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — currently paused ($($cap.state))" -ForegroundColor Red
+        if (-not [string]::IsNullOrWhiteSpace($CapacityName)) {
+            try {
+                $cap = Resolve-SelectedFabricCapacity -Capacities $caps -Name $CapacityName
+                $scope = if ($CapacitySubscriptionId -or $CapacityResourceGroup) { " [$CapacitySubscriptionId/$CapacityResourceGroup]" } else { "" }
+                Write-Host "  ✓ Selected Fabric capacity: $($cap.displayName) (SKU: $($cap.sku), State: $($cap.state))$scope" -ForegroundColor Green
+            } catch {
+                $failures += $_.Exception.Message
+                Write-Host "  ✗ Selected Fabric capacity '$CapacityName' is not usable: $($_.Exception.Message)" -ForegroundColor Red
             }
         } else {
-            $activeTrialCaps = $caps.value | Where-Object { $_.sku -eq "FT1" -and $_.state -eq "Active" }
-            if ($activeTrialCaps.Count -gt 0) {
-                $cap = $activeTrialCaps | Select-Object -First 1
-                $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
-                Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — trial not supported" -ForegroundColor Red
+            $allPaidCaps = $caps.value | Where-Object { Test-FabricPaidFsku -Sku $_.sku }
+
+            if ($allPaidCaps.Count -gt 0) {
+                $activePaidCaps = $allPaidCaps | Where-Object { $_.state -eq "Active" }
+                if ($activePaidCaps.Count -gt 0) {
+                    $cap = $activePaidCaps | Select-Object -First 1
+                    Write-Host "  ✓ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku))" -ForegroundColor Green
+                } else {
+                    $cap = $allPaidCaps | Select-Object -First 1
+                    $failures += "Fabric capacity '$($cap.displayName)' ($($cap.sku)) is currently paused ($($cap.state)). Please resume it before deploying."
+                    Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — currently paused ($($cap.state))" -ForegroundColor Red
+                }
             } else {
-                $failures += "No Fabric capacity found. Please create a paid F-SKU (F2+) at https://app.fabric.microsoft.com"
-                Write-Host "  ✗ No Fabric capacity found" -ForegroundColor Red
+                $activeTrialCaps = $caps.value | Where-Object { $_.sku -like "FT*" -and $_.state -eq "Active" }
+                if ($activeTrialCaps.Count -gt 0) {
+                    $cap = $activeTrialCaps | Select-Object -First 1
+                    $failures += "Trial capacity ($($cap.sku)) cannot deploy Healthcare Data Solutions. A paid F-SKU (F2+) is required."
+                    Write-Host "  ✗ Fabric capacity: $($cap.displayName) (SKU: $($cap.sku)) — trial not supported" -ForegroundColor Red
+                } else {
+                    $failures += "No active paid Fabric capacity found. Please create or resume a paid F-SKU (F2+) at https://app.fabric.microsoft.com"
+                    Write-Host "  ✗ No active paid Fabric capacity found" -ForegroundColor Red
+                }
             }
         }
     } catch {
@@ -1181,28 +1228,60 @@ if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7) {
             Write-Host "  ✓ Workspace created: $FabricWorkspaceName ($($script:fabricWorkspaceId))" -ForegroundColor Green
         }
 
-        # Ensure capacity is assigned
+        # Ensure the workspace is assigned to the selected paid Fabric capacity.
+        $selectedCapacitySpecified = -not [string]::IsNullOrWhiteSpace($CapacityName)
         $wsDetail = Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)" -Headers $fabHeaders
-        if (-not $wsDetail.capacityId) {
-            Write-Host "  Searching for an active Fabric capacity..." -ForegroundColor Yellow
-            $caps = Invoke-RestMethod -Uri "$fabBase/capacities" -Headers $fabHeaders
-            $activeCap = $caps.value | Where-Object {
-                $_.state -eq "Active" -and $_.sku -ne "PP3"
-            } | Sort-Object -Property @{Expression={if ($_.sku -like "F*" -and $_.sku -ne "FT1") { 0 } else { 1 }}} | Select-Object -First 1
+        $targetCap = $null
 
-            if ($activeCap) {
-                if ($activeCap.sku -eq "FT1") {
-                    throw "Only a trial capacity (FT1) is available. Healthcare Data Solutions requires a paid F-SKU (F2+). Provision a paid capacity at https://portal.azure.com"
+        if ($selectedCapacitySpecified -or -not $wsDetail.capacityId) {
+            if ($selectedCapacitySpecified) {
+                Write-Host "  Resolving selected Fabric capacity '$CapacityName'..." -ForegroundColor White
+            } else {
+                Write-Host "  Searching for an active paid Fabric capacity..." -ForegroundColor Yellow
+            }
+
+            $caps = Invoke-RestMethod -Uri "$fabBase/capacities" -Headers $fabHeaders
+            $activePaidCaps = $caps.value | Where-Object {
+                $_.state -eq "Active" -and $_.sku -like "F*" -and $_.sku -notlike "FT*" -and $_.sku -ne "PP3"
+            }
+
+            if ($selectedCapacitySpecified) {
+                $targetCap = $activePaidCaps | Where-Object {
+                    $_.displayName -eq $CapacityName -or $_.name -eq $CapacityName
+                } | Select-Object -First 1
+                if (-not $targetCap) {
+                    $selectedCapacityRef = $CapacityName
+                    if (-not [string]::IsNullOrWhiteSpace($CapacityResourceGroup)) { $selectedCapacityRef = "$CapacityResourceGroup/$selectedCapacityRef" }
+                    if (-not [string]::IsNullOrWhiteSpace($CapacitySubscriptionId)) { $selectedCapacityRef = "$CapacitySubscriptionId/$selectedCapacityRef" }
+                    throw "Selected Fabric capacity '$selectedCapacityRef' was not found as an active paid F-SKU capacity. Select a running paid F-SKU capacity; trial FT capacities are not supported."
                 }
-                Write-Host "  Assigning capacity: $($activeCap.displayName) (SKU: $($activeCap.sku))..." -ForegroundColor White
+            } else {
+                $targetCap = $activePaidCaps | Select-Object -First 1
+                if (-not $targetCap) {
+                    throw "No active paid Fabric F-SKU capacity found. Provision or resume a paid F-SKU (F2+) at https://portal.azure.com; trial FT capacities are not supported."
+                }
+            }
+        }
+
+        if ($selectedCapacitySpecified) {
+            if ($wsDetail.capacityId -ne $targetCap.id) {
+                $capacityVerb = if ($wsDetail.capacityId) { "Reassigning" } else { "Assigning" }
+                Write-Host "  $capacityVerb workspace to selected capacity: $($targetCap.displayName) (SKU: $($targetCap.sku))..." -ForegroundColor White
                 Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)/assignToCapacity" `
                     -Headers $fabHeaders -Method POST `
-                    -Body (@{ capacityId = $activeCap.id } | ConvertTo-Json) | Out-Null
+                    -Body (@{ capacityId = $targetCap.id } | ConvertTo-Json) | Out-Null
                 Start-Sleep -Seconds 5
-                Write-Host "  ✓ Capacity assigned" -ForegroundColor Green
+                Write-Host "  ✓ Selected capacity assigned" -ForegroundColor Green
             } else {
-                throw "No active Fabric capacity found. Provision a paid F-SKU (F2+) at https://portal.azure.com"
+                Write-Host "  ✓ Workspace already assigned to selected capacity: $CapacityName" -ForegroundColor Green
             }
+        } elseif (-not $wsDetail.capacityId) {
+            Write-Host "  Assigning capacity: $($targetCap.displayName) (SKU: $($targetCap.sku))..." -ForegroundColor White
+            Invoke-RestMethod -Uri "$fabBase/workspaces/$($script:fabricWorkspaceId)/assignToCapacity" `
+                -Headers $fabHeaders -Method POST `
+                -Body (@{ capacityId = $targetCap.id } | ConvertTo-Json) | Out-Null
+            Start-Sleep -Seconds 5
+            Write-Host "  ✓ Capacity assigned" -ForegroundColor Green
         } else {
             Write-Host "  ✓ Capacity already assigned" -ForegroundColor Green
         }

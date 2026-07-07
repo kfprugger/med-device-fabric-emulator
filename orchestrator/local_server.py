@@ -25,6 +25,7 @@ import time
 import threading
 import uuid
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -37,16 +38,20 @@ sys.path.insert(0, str(Path(__file__).parent))
 from shared.policy_tags import normalize_policy_tags
 from shared.teardown_scan import live_fabric_workspaces_for_teardown
 
+LOG_DIR = Path(__file__).parent
+LOG_SESSION_ID = re.sub(r"[^A-Za-z0-9_.-]", "_", os.environ.get("ORCHESTRATOR_LOG_SESSION", "").strip())
+SESSION_LOG_FILE = LOG_DIR / f"orchestrator-session-{LOG_SESSION_ID}.log" if LOG_SESSION_ID else None
+LOG_HANDLERS: list[logging.Handler] = [
+    logging.StreamHandler(),
+    logging.FileHandler(LOG_DIR / "orchestrator.log", encoding="utf-8"),
+]
+if SESSION_LOG_FILE is not None:
+    LOG_HANDLERS.append(logging.FileHandler(SESSION_LOG_FILE, encoding="utf-8"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(
-            Path(__file__).parent / "orchestrator.log",
-            encoding="utf-8",
-        ),
-    ],
+    handlers=LOG_HANDLERS,
 )
 logger = logging.getLogger("local_server")
 
@@ -202,7 +207,25 @@ def _az_run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     defaults.update(kwargs)
     return subprocess.run(args, **defaults)
 
-app = FastAPI(title="Med Device Deployment Orchestrator — Local Dev")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan hook for startup background tasks."""
+    _install_asyncio_crash_diagnostics()
+    if SESSION_LOG_FILE is not None:
+        logger.info("Session scoped log active: %s", SESSION_LOG_FILE)
+
+    async def run_reconciliation():
+        try:
+            await asyncio.to_thread(reconcile_interrupted_teardowns)
+        except Exception:
+            logger.exception("Interrupted teardown reconciliation failed")
+
+    _create_logged_task(run_reconciliation(), name="startup-interrupted-teardown-reconciliation")
+    yield
+
+
+app = FastAPI(title="Med Device Deployment Orchestrator — Local Dev", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -237,7 +260,7 @@ async def _global_exception_handler(request: Request, exc: Exception):
 from shared.database import (
     save_deployment, get_deployment, list_deployments as db_list_deployments,
     delete_deployment as db_delete_deployment, clear_all_deployments as db_clear_all,
-    mark_stale_as_terminated, migrate_from_json,
+    mark_stale_as_terminated, migrate_from_json, get_db,
     get_locks, set_lock, remove_lock,
     get_form_history, add_form_history,
     get_dismissed_teardowns, dismiss_teardown,
@@ -475,18 +498,6 @@ def save_state():
     for inst_id, dep in deployments.items():
         save_deployment(inst_id, dep)
 
-
-@app.on_event("startup")
-async def schedule_interrupted_teardown_reconciliation():
-    """Reconcile interrupted teardowns after Uvicorn is already accepting requests."""
-    _install_asyncio_crash_diagnostics()
-    async def run_reconciliation():
-        try:
-            await asyncio.to_thread(reconcile_interrupted_teardowns)
-        except Exception:
-            logger.exception("Interrupted teardown reconciliation failed")
-
-    _create_logged_task(run_reconciliation(), name="startup-interrupted-teardown-reconciliation")
 
 
 def _get_auth_context_sync() -> dict:
@@ -1815,18 +1826,46 @@ async def get_auth_context(force: bool = False):
     return result
 
 
+def _get_live_status() -> dict:
+    database_status = "ok"
+    try:
+        get_db().execute("SELECT 1").fetchone()
+    except Exception as exc:
+        database_status = "error"
+        logger.warning("Backend liveness database check failed: %s", exc)
+
+    return {
+        "status": "ok" if database_status == "ok" else "warning",
+        "backend": "online",
+        "database": database_status,
+        "deployments": len(deployments),
+        "checkedAt": now_iso(),
+    }
+
+
+@app.get("/api/live")
+async def get_live():
+    """Cheap liveness probe: no Azure auth, Fabric calls, or capacity scans."""
+    return _get_live_status()
+
+
 @app.get("/api/health")
-async def get_health():
+async def get_health(deep: bool = False):
+    if not deep:
+        return _get_live_status()
+
+    live = _get_live_status()
     auth = await asyncio.get_event_loop().run_in_executor(None, _get_auth_context_sync)
     capacities = await list_capacities(force=True)
     active_caps = [cap for cap in capacities if cap.get("state") == "Active"] if isinstance(capacities, list) else []
+    healthy = auth.get("ready") and live.get("database") == "ok"
     return {
-        "status": "ok" if auth.get("ready") else "warning",
-        "backend": "online",
-        "database": "ok",
+        "status": "ok" if healthy else "warning",
+        "backend": live["backend"],
+        "database": live["database"],
         "auth": auth,
         "capacities": {"total": len(capacities) if isinstance(capacities, list) else 0, "active": len(active_caps), "items": capacities},
-        "deployments": len(deployments),
+        "deployments": live["deployments"],
         "checkedAt": now_iso(),
     }
 
@@ -2138,13 +2177,50 @@ async def get_status(instance_id: str):
     return deployments[instance_id]
 
 
+def _normalize_phase_label_for_logs(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    normalized = _re.sub(r"^(phase\s*\d+:|\d+[a-z]?\.\s*[^:]+:)", "", normalized).strip()
+    normalized = _re.sub(r"\s*\((auto|manual|resume)\)\s*", " ", normalized).strip()
+    normalized = _re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    if normalized == "hds deployment gate":
+        return "hds deployment detection"
+    return normalized
+
+
+def _phase_log_matches(entry_phase: str, requested_phase: str) -> bool:
+    if not requested_phase:
+        return True
+    if (entry_phase or "") == requested_phase:
+        return True
+
+    entry = _normalize_phase_label_for_logs(entry_phase)
+    requested = _normalize_phase_label_for_logs(requested_phase)
+    if not entry or not requested:
+        return False
+    if entry == requested:
+        return True
+    if entry in requested or requested in entry:
+        return True
+
+    aliases = {
+        "fabric rti enrichment": ("fabric rti auto", "fabric rti phase 2", "rti phase 2"),
+        "hds deployment detection": ("hds deployment gate", "hds guidance", "healthcare data solutions"),
+        "dicom shortcut hds pipelines": ("hds pipeline", "pipeline triggers", "row gates"),
+    }
+    for canonical, variants in aliases.items():
+        labels = (canonical, *variants)
+        if any(label in entry for label in labels) and any(label in requested for label in labels):
+            return True
+    return False
+
+
 @app.get("/api/deploy/{instance_id}/logs")
 async def get_phase_logs(instance_id: str, phase: str = ""):
     """Return logs for a specific phase from the per-deployment log file.
 
     Query params:
-      phase — exact phase name to filter (e.g. "PHASE 2: FABRIC RTI")
-              If empty, returns all logs.
+      phase — phase name to filter. Canonical UI card names and backend
+              PowerShell step names are both accepted.
     """
     log_file = Path(__file__).parent / "logs" / f"{instance_id}.jsonl"
     if not log_file.exists():
@@ -2158,7 +2234,7 @@ async def get_phase_logs(instance_id: str, phase: str = ""):
                 if not line:
                     continue
                 entry = json.loads(line)
-                if not phase or entry.get("phase", "") == phase:
+                if _phase_log_matches(str(entry.get("phase", "")), phase):
                     logs.append(entry)
     except Exception:
         pass
@@ -2243,7 +2319,7 @@ async def stream_phase_logs(instance_id: str, phase: str = ""):
                         continue
                     try:
                         entry = json.loads(line)
-                        if not phase or entry.get("phase", "") == phase:
+                        if _phase_log_matches(str(entry.get("phase", "")), phase):
                             yield f"data: {json.dumps(entry)}\n\n"
                     except Exception:
                         pass
@@ -2263,7 +2339,7 @@ async def stream_phase_logs(instance_id: str, phase: str = ""):
                             continue
                         try:
                             entry = json.loads(line)
-                            if not phase or entry.get("phase", "") == phase:
+                            if _phase_log_matches(str(entry.get("phase", "")), phase):
                                 yield f"data: {json.dumps(entry)}\n\n"
                         except Exception:
                             pass

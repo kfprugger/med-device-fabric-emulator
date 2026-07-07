@@ -474,9 +474,9 @@ const ALL_PHASES: PhaseInfo[] = [
   { id: "phase_1_fhir", phase: "1c. Data Fabric Foundation: FHIR Service + Synthea + Loader", status: "pending", milestone: 1 },
   { id: "phase_1_dicom", phase: "1d. Data Fabric Foundation: DICOM Loader + ImagingStudy linkage", status: "pending", milestone: 1 },
   { id: "phase_2_rti_ingest", phase: "2a. Active Patient Telemetry: Fabric RTI Ingest", status: "pending", milestone: 2 },
-  { id: "phase_2_rti_enrichment", phase: "2b. Active Patient Telemetry: Fabric RTI Enrichment", status: "pending", milestone: 2 },
-  { id: "phase_3_hds_detection", phase: "3a. HDS Bridge + Row Gates: HDS Deployment Detection", status: "pending", milestone: 3 },
-  { id: "phase_3_hds_pipelines", phase: "3b. HDS Bridge + Row Gates: DICOM Shortcut + HDS Pipelines", status: "pending", milestone: 3 },
+  { id: "phase_3_hds_detection", phase: "2b. Active Patient Telemetry: HDS Deployment Gate", status: "pending", milestone: 2 },
+  { id: "phase_2_rti_enrichment", phase: "2c. Active Patient Telemetry: Fabric RTI Enrichment", status: "pending", milestone: 2 },
+  { id: "phase_3_hds_pipelines", phase: "3a. HDS Bridge + Row Gates: DICOM Shortcut + HDS Pipelines", status: "pending", milestone: 3 },
   { id: "phase_4_imaging", phase: "4a. Semantic Intelligence & UX: Custom SWA Viewer & Direct Lake", status: "pending", milestone: 4 },
   { id: "phase_4_ontology", phase: "4b. Semantic Intelligence & UX: Clinical Device Ontology", status: "pending", milestone: 4 },
   { id: "phase_4_agents", phase: "4c. Semantic Intelligence & UX: Conversational Data Agents", status: "pending", milestone: 4 },
@@ -1096,8 +1096,8 @@ export function PhaseMonitor() {
 
   const MILESTONES: MilestoneDef[] = [
     { label: "1. Data Fabric Foundation", shortLabel: "Foundation", phaseIndices: [0, 1, 2, 3], namePatterns: ["Fabric Workspace", "Base Azure Infrastructure", "FHIR", "Shared HDS Infrastructure", "DICOM Loader", "ImagingStudy"], position: 8, endWeight: 34, phaseNumber: 1 },
-    { label: "2. Active Patient Telemetry", shortLabel: "Telemetry", phaseIndices: [4, 5], namePatterns: ["Fabric RTI", "Fabric RTI (auto)", "Telemetry", "Eventhouse", "Eventstream", "RTI Phase 2", "Enrichment"], position: 24, endWeight: 46, phaseNumber: 2 },
-    { label: "3. HDS Bridge + Row Gates", shortLabel: "HDS Bridge", phaseIndices: [6, 7], namePatterns: ["HDS Deployment", "HDS Detection", "HDS Guidance", "Healthcare Data Solutions", "DICOM Shortcut", "HDS Pipelines", "Pipeline Triggers", "Row Gates"], position: 40, endWeight: 57, phaseNumber: 3 },
+    { label: "2. Active Patient Telemetry", shortLabel: "Telemetry", phaseIndices: [4, 5, 6], namePatterns: ["Fabric RTI", "Fabric RTI (auto)", "Telemetry", "Eventhouse", "Eventstream", "RTI Phase 2", "Enrichment", "HDS Deployment", "HDS Detection", "HDS Guidance", "Healthcare Data Solutions"], position: 24, endWeight: 46, phaseNumber: 2 },
+    { label: "3. HDS Bridge + Row Gates", shortLabel: "HDS Bridge", phaseIndices: [7], namePatterns: ["DICOM Shortcut", "HDS Pipelines", "Pipeline Triggers", "Row Gates"], position: 40, endWeight: 57, phaseNumber: 3 },
     { label: "4. Semantic Intelligence & UX", shortLabel: "Semantic UX", phaseIndices: [8, 9, 10], namePatterns: ["Imaging", "Cohorting", "DICOM Viewer", "Direct Lake", "Ontology", "DeviceAssociation", "Data Agent", "Conversational"], position: 56, endWeight: 74, phaseNumber: 4 },
     { label: "5. Bedside Alerting & Action", shortLabel: "Alerts", phaseIndices: [11], namePatterns: ["Activator", "Reflex"], position: 75, endWeight: 77, phaseNumber: 5 },
     { label: "6. Population Health & Quality", shortLabel: "Quality", phaseIndices: [12], namePatterns: ["Quality", "Claims", "CMS", "Scorecard", "PDC", "Adherence", "HCC", "RAF", "Readmission", "Utilization", "PMPM", "Star Rating"], position: 92, endWeight: 89, phaseNumber: 6 },

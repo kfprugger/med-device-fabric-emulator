@@ -20,7 +20,8 @@
 
 param(
     [switch]$Stop,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$SelfTest
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,6 +35,12 @@ if (-not (Test-Path $VenvPython)) {
 $BackendScript = Join-Path $BackendDir "local_server.py"
 $BackendPort = 7071
 $FrontendPort = 5173
+$BackendBaseUrl = "http://127.0.0.1:$BackendPort"
+$FrontendBaseUrl = "http://127.0.0.1:$FrontendPort"
+$SessionId = Get-Date -Format "yyyyMMdd-HHmmss"
+$BackendSessionLog = Join-Path $BackendDir "orchestrator-session-$SessionId.log"
+
+
 
 # Prefer Joey's isolated BrakeKat Azure CLI profile for this repo. The backend
 # launches PowerShell deployment scripts and Azure CLI scans; letting it inherit
@@ -91,6 +98,33 @@ function Test-PortListening {
     } else {
         $lsofOut = (lsof -i :$Port -s TCP:LISTEN 2>/dev/null)
         return -not [string]::IsNullOrEmpty($lsofOut)
+    }
+}
+
+function Test-HttpEndpoint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [int]$TimeoutSeconds = 3,
+        [switch]$Quiet
+    )
+
+    try {
+        $response = Invoke-WebRequest -Method Get -Uri $Uri -UseBasicParsing -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+        $ok = [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 400
+        if (-not $Quiet) {
+            if ($ok) {
+                Write-Host "  ✓ $Label HTTP probe passed ($($response.StatusCode)): $Uri" -ForegroundColor Green
+            } else {
+                Write-Host "  ⚠ $Label HTTP probe returned $($response.StatusCode): $Uri" -ForegroundColor Yellow
+            }
+        }
+        return $ok
+    } catch {
+        if (-not $Quiet) {
+            Write-Host "  ⚠ $Label HTTP probe failed: $Uri — $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        return $false
     }
 }
 
@@ -167,6 +201,93 @@ function Stop-PortProcess {
     return $true
 }
 
+function Assert-SelfTest {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw "Self-test failed: $Message" }
+}
+
+function Start-TestHttpResponder {
+    $readyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("start-webui-selftest-{0}.ready" -f ([guid]::NewGuid().ToString("N")))
+    $job = Start-Job -ArgumentList $readyPath -ScriptBlock {
+        param([string]$ReadyPath)
+        $ErrorActionPreference = 'Stop'
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), 0)
+        $client = $null
+        $listener.Start()
+        $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+        Set-Content -LiteralPath $ReadyPath -Value $port -Encoding ASCII
+        try {
+            $client = $listener.AcceptTcpClient()
+            $stream = $client.GetStream()
+            $buffer = New-Object byte[] 1024
+            [void]$stream.Read($buffer, 0, $buffer.Length)
+            $body = "ok"
+            $response = "HTTP/1.1 200 OK`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n$body"
+            $bytes = [System.Text.Encoding]::ASCII.GetBytes($response)
+            $stream.Write($bytes, 0, $bytes.Length)
+        } finally {
+            if ($null -ne $client) { $client.Close() }
+            $listener.Stop()
+        }
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    while (-not (Test-Path -LiteralPath $readyPath)) {
+        if ($job.State -ne 'Running') {
+            $jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue | Out-String
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+            throw "Self-test responder failed to start: $($job.State). $jobOutput"
+        }
+        if ([DateTime]::UtcNow -gt $deadline) {
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+            throw "Self-test responder did not become ready"
+        }
+        Start-Sleep -Milliseconds 50
+    }
+
+    try {
+        $port = [int]((Get-Content -LiteralPath $readyPath -Raw).Trim())
+    } catch {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+        throw "Self-test responder did not publish a valid port"
+    }
+
+    return [pscustomobject]@{ Port = $port; Job = $job; ReadyPath = $readyPath }
+}
+
+function Invoke-StartWebUiSelfTest {
+    Assert-SelfTest ($BackendBaseUrl -eq "http://127.0.0.1:$BackendPort") "BackendBaseUrl must use IPv4 loopback"
+    Assert-SelfTest ($FrontendBaseUrl -eq "http://127.0.0.1:$FrontendPort") "FrontendBaseUrl must use IPv4 loopback"
+
+    $server = Start-TestHttpResponder
+    try {
+        Assert-SelfTest (Test-HttpEndpoint -Uri "http://127.0.0.1:$($server.Port)/" -Label "Self-test HTTP 200" -Quiet) "Test-HttpEndpoint should return true for HTTP 200"
+        $completedJob = Wait-Job -Job $server.Job -Timeout 2
+        Assert-SelfTest ($null -ne $completedJob) "Self-test HTTP responder job did not complete"
+        Assert-SelfTest ($server.Job.State -eq "Completed") "Self-test HTTP responder job ended in state $($server.Job.State)"
+    } finally {
+        Remove-Item -LiteralPath $server.ReadyPath -Force -ErrorAction SilentlyContinue
+        Remove-Job -Job $server.Job -Force -ErrorAction SilentlyContinue
+    }
+
+    $closedListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), 0)
+    $closedListener.Start()
+    $closedPort = ([System.Net.IPEndPoint]$closedListener.LocalEndpoint).Port
+    $closedListener.Stop()
+    Assert-SelfTest (-not (Test-HttpEndpoint -Uri "http://127.0.0.1:$closedPort/" -Label "Self-test closed port" -TimeoutSeconds 1 -Quiet)) "Test-HttpEndpoint should return false for refused connections"
+
+    Write-Host "  ✓ Start-WebUI helper self-test passed" -ForegroundColor Green
+}
+
+if ($SelfTest) {
+    Invoke-StartWebUiSelfTest
+    exit 0
+}
+
 # ── Stop mode ──────────────────────────────────────────────────────────
 
 if ($Stop) {
@@ -230,6 +351,8 @@ if ($backendBlocked -or $frontendBlocked) {
     exit 1
 }
 
+$env:ORCHESTRATOR_LOG_SESSION = $SessionId
+
 # ── Start backend ─────────────────────────────────────────────────────
 
 Write-Host ""
@@ -242,17 +365,14 @@ $backendProc = Start-DetachedProcess `
     -StandardOutputPath (Join-Path $BackendDir "backend-stdout.log") `
     -StandardErrorPath (Join-Path $BackendDir "backend-stderr.log")
 
-# Wait for backend to come up (max 10 seconds)
+# Wait for backend HTTP liveness to come up (max 15 seconds)
 $waited = 0
 $backendReady = $false
-while ($waited -lt 10) {
+$backendProbeUri = "$BackendBaseUrl/api/live"
+$backendFallbackProbeUri = "$BackendBaseUrl/openapi.json"
+while ($waited -lt 15) {
     Start-Sleep -Milliseconds 500
     $waited += 0.5
-    $isListening = Test-PortListening -Port $BackendPort
-    if ($isListening) {
-        $backendReady = $true
-        break
-    }
     if ($backendProc.HasExited) {
         Write-Host "  ✗ Backend process exited immediately (exit code: $($backendProc.ExitCode))" -ForegroundColor Red
         Show-RecentLog -Path (Join-Path $BackendDir "backend-stderr.log")
@@ -261,13 +381,26 @@ while ($waited -lt 10) {
         Write-Host "    Check: $BackendDir\backend-crash-dump.log" -ForegroundColor DarkGray
         exit 1
     }
+    if (Test-PortListening -Port $BackendPort) {
+        if (Test-HttpEndpoint -Uri $backendProbeUri -Label "Backend liveness" -Quiet) {
+            $backendReady = $true
+            break
+        }
+        if (Test-HttpEndpoint -Uri $backendFallbackProbeUri -Label "Backend OpenAPI" -Quiet) {
+            $backendProbeUri = $backendFallbackProbeUri
+            $backendReady = $true
+            break
+        }
+    }
 }
 
 if ($backendReady) {
-    Write-Host "  ✓ Backend running — http://localhost:$BackendPort (PID $($backendProc.Id))" -ForegroundColor Green
+    Write-Host "  ✓ Backend HTTP ready — $backendProbeUri (PID $($backendProc.Id))" -ForegroundColor Green
 } else {
-    Write-Host "  ⚠ Backend started but port $BackendPort not yet listening after ${waited}s" -ForegroundColor Yellow
+    Write-Host "  ⚠ Backend process started but HTTP probe did not pass after ${waited}s" -ForegroundColor Yellow
     Write-Host "    PID: $($backendProc.Id) — check backend-stderr.log" -ForegroundColor DarkGray
+    Show-RecentLog -Path (Join-Path $BackendDir "backend-stderr.log") -Tail 25
+    exit 1
 }
 
 # ── Start frontend ────────────────────────────────────────────────────
@@ -282,29 +415,45 @@ $frontendProc = Start-DetachedProcess `
     -StandardOutputPath (Join-Path $FrontendDir "frontend-stdout.log") `
     -StandardErrorPath (Join-Path $FrontendDir "frontend-stderr.log")
 
-# Wait for frontend to come up (max 15 seconds)
+# Wait for frontend HTTP endpoint to come up (max 15 seconds)
 $waited = 0
 $frontendReady = $false
+$frontendProbeUri = "$FrontendBaseUrl/"
 while ($waited -lt 15) {
     Start-Sleep -Milliseconds 500
     $waited += 0.5
-    $isListening = Test-PortListening -Port $FrontendPort
-    if ($isListening) {
-        $frontendReady = $true
-        break
-    }
     if ($frontendProc.HasExited) {
         Write-Host "  ✗ Frontend process exited immediately (exit code: $($frontendProc.ExitCode))" -ForegroundColor Red
+        Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stderr.log")
         Write-Host "    Check: $FrontendDir\frontend-stderr.log" -ForegroundColor DarkGray
         exit 1
+    }
+    if ((Test-PortListening -Port $FrontendPort) -and (Test-HttpEndpoint -Uri $frontendProbeUri -Label "Frontend" -Quiet)) {
+        $frontendReady = $true
+        break
     }
 }
 
 if ($frontendReady) {
-    Write-Host "  ✓ Frontend running — http://localhost:$FrontendPort (PID $($frontendProc.Id))" -ForegroundColor Green
+    Write-Host "  ✓ Frontend HTTP ready — $frontendProbeUri (PID $($frontendProc.Id))" -ForegroundColor Green
 } else {
-    Write-Host "  ⚠ Frontend started but port $FrontendPort not yet listening after ${waited}s" -ForegroundColor Yellow
+    Write-Host "  ⚠ Frontend process started but HTTP probe did not pass after ${waited}s" -ForegroundColor Yellow
     Write-Host "    PID: $($frontendProc.Id) — check frontend-stderr.log" -ForegroundColor DarkGray
+    Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stderr.log") -Tail 25
+    exit 1
+}
+
+$proxyReady = $false
+if ($backendReady -and $frontendReady) {
+    $proxyUri = "$FrontendBaseUrl/api/live"
+    $proxyReady = Test-HttpEndpoint -Uri $proxyUri -Label "Frontend API proxy" -Quiet
+    if ($proxyReady) {
+        Write-Host "  ✓ Frontend API proxy verified — $proxyUri" -ForegroundColor Green
+    } else {
+        Write-Host "  ✗ Frontend API proxy did not respond at $proxyUri" -ForegroundColor Red
+        Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stderr.log") -Tail 25
+        exit 1
+    }
 }
 
 try { $backendProc.Refresh() } catch { }
@@ -321,13 +470,14 @@ Write-Host ""
 Write-Host "  ┌─────────────────────────────────────────────────────────┐" -ForegroundColor DarkCyan
 Write-Host "  │  Orchestrator UI                                       │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
-Write-Host "  │  Frontend:  http://localhost:$FrontendPort                      │" -ForegroundColor DarkCyan
-Write-Host "  │  Backend:   http://localhost:$BackendPort                       │" -ForegroundColor DarkCyan
+Write-Host "  │  Frontend:  $FrontendBaseUrl                      │" -ForegroundColor DarkCyan
+Write-Host "  │  Backend:   $BackendBaseUrl                       │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
 Write-Host "  │  Logs:                                                 │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator\orchestrator.log                       │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator\backend-stderr.log                     │" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator\backend-crash-dump.log                 │" -ForegroundColor DarkCyan
+Write-Host "  │    orchestrator\$([System.IO.Path]::GetFileName($BackendSessionLog).PadRight(33))│" -ForegroundColor DarkCyan
 Write-Host "  │    orchestrator-ui\frontend-stderr.log                 │" -ForegroundColor DarkCyan
 Write-Host "  │                                                        │" -ForegroundColor DarkCyan
 Write-Host "  │  Stop:  .\Start-WebUI.ps1 -Stop                       │" -ForegroundColor DarkCyan

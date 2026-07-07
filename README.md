@@ -282,7 +282,7 @@ flowchart TB
 | 3 | `deploy-fabric-rti.ps1` | 1 | Eventhouse, Eventstream, KQL, dashboard, FHIR $export |
 | 4 | **Manual** (Fabric portal) | — | Deploy HDS + add scipy + run pipelines |
 | 5 | `deploy-fabric-rti.ps1 -Phase2` | 2 | Silver shortcuts, enriched alerts, alerts map |
-| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS clinical/imaging/OMOP pipelines, then optional non-blocking CMA |
+| 5b | `phase-2/storage-access-trusted-workspace.ps1` | 2 | DICOM shortcut + HDS pipeline order: optional SDoH/claims sidecars → Clinical → optional non-blocking CMA → Imaging → OMOP |
 | 6 | `phase-2/deploy-data-agents.ps1` | 2 | Patient 360 + Clinical Triage agents |
 | 7 | FabricDicomCohortingToolkit | 3 | Cohorting Agent, DICOM Viewer, reporting notebook, PBI report; auto-cloned as sibling repo if missing |
 | 8 | `phase-4/deploy-ontology.ps1` | 4 | ClinicalDeviceOntology (9 entity types, 5 relationships) |
@@ -424,25 +424,33 @@ These cloud permissions and settings must be configured prior to running the dep
 
 The Orchestrator UI is a browser-based deployment dashboard that handles the entire lifecycle — wizard-driven deploys, real-time phase monitoring, parallel teardowns, resource scanning, lock protection, and deployment history. A background resource scan fires the moment the UI loads, so every tab has its data ready before you click.
 
-**1. Start everything with one command:**
+**1. Start everything from PowerShell 7 (`pwsh`):**
 
 ```powershell
-.\Start-WebUI.ps1
+pwsh -NoProfile -File ./Start-WebUI.ps1
 ```
+
+Do not launch the orchestrator helper scripts from Windows PowerShell 5.1; `Start-WebUI.ps1` and `Stop-WebUI.ps1` expect PowerShell 7+ (`pwsh`) so the backend/frontend process handling and cross-platform paths behave consistently.
 
 That's it. `Start-WebUI.ps1` will:
+- Prefer Joey's isolated BrakeKat Azure CLI profile when present (`AZURE_CONFIG_DIR=$HOME/.azure-isolated/BrakeKat`).
 - Run `setup-prereqs.ps1 -CheckOnly` to verify PowerShell, Azure CLI, Python, Node.js, venv, and npm dependencies are all in place (use `-InstallPrereqs` to auto-install anything missing).
-- Start the FastAPI backend on port **7071** (activating the venv for you).
-- Start the Vite frontend on port **5173**.
+- Start the FastAPI backend on **127.0.0.1:7071** (activating the venv for you) and write both the shared `orchestrator.log` and a session-scoped `orchestrator-session-<timestamp>.log`.
+- Start the Vite frontend on **127.0.0.1:5173**.
 - Detect and offer to reclaim ports already in use.
+- Treat startup probes as fatal: backend `/api/live` (fallback `/openapi.json`), frontend `/`, and the frontend `/api/live` proxy must respond before the script reports success.
 
-To stop everything later:
+For a quick helper-only check without starting the full UI, run `pwsh -NoProfile -File ./Start-WebUI.ps1 -SelfTest`; it validates IPv4 loopback URLs and the HTTP probe helper's success/failure behavior.
+
+The local API separates cheap liveness from deeper readiness: `/api/live` and default `/api/health` only check backend/database liveness, while `/api/health?deep=1` adds auth and Fabric capacity readiness. The UI header drilldown mirrors that split so a slow Azure/Fabric scan does not block basic app startup.
+
+To stop everything later, use PowerShell 7 as well:
 
 ```powershell
-.\Stop-WebUI.ps1 -Force
+pwsh -NoProfile -File ./Stop-WebUI.ps1 -Force
 ```
 
-**2. Open the UI:** Navigate to [http://localhost:5173](http://localhost:5173).
+**2. Open the UI:** Navigate to [http://127.0.0.1:5173](http://127.0.0.1:5173). For BrakeKat tenant verification on Joey's machine, use the **Edge - Work - Brakekat** app / Microsoft Edge **Profile 2**.
 
 **3. Deploy:**
 - Click the **Deploy** tab.
@@ -493,7 +501,7 @@ For DevOps, automation, and advanced CI/CD scripting pipelines, the entire platf
 | **Bypass Base Azure Infra** | `.\Deploy-All.ps1 -SkipBaseInfra [other params]` | Reuses existing base Azure container registries and oximeter resources |
 | **Rebuild Container Images** | `.\Deploy-All.ps1 -RebuildContainers [other params]` | Rebuilds and pushes fresh Docker images to Azure Container Registry |
 | **Run Specific Stage / Phase** | `.\Deploy-All.ps1 -Phase2 [other params]` or `-Phase3`, `-Phase4` | Executes targeted deployment steps (e.g., agents, ontology, or cohorting) |
-| **Quick Start Orchestrator Web UI** | `.\Start-WebUI.ps1` | Launches both backend API (7071) and React dashboard (5173) |
+| **Quick Start Orchestrator Web UI** | `pwsh -NoProfile -File ./Start-WebUI.ps1` (`-SelfTest` for helper checks; stop with `pwsh -NoProfile -File ./Stop-WebUI.ps1 -Force`) | Launches backend API (7071) and React dashboard (5173), verifies `/api/live` liveness/proxy probes, and writes session-scoped backend logs |
 | **Teardown Platform Infrastructure** | `.\Teardown-All.ps1 -FabricWorkspaceName "ws-med" -ResourceGroupName "rg-med" -Force` | Performs teardown of workspace managed identities, cloud resources, and RG |
 
 <details>
