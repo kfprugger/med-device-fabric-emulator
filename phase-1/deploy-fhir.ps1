@@ -57,6 +57,35 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 # (which runs pwsh with -NonInteractive — any prompt = infinite hang). See #fix-2.
 $null = az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors 2>$null
 
+function ConvertTo-StrictIntFromCliOutput {
+    param(
+        [AllowNull()]$Value,
+        [Parameter(Mandatory)][string]$Label,
+        [switch]$EmptyAsZero
+    )
+
+    $lines = @()
+    foreach ($item in @($Value)) {
+        if ($null -eq $item) { continue }
+        $lines += [regex]::Split("$item", "`r?`n")
+    }
+
+    foreach ($line in $lines) {
+        $trimmed = "$line".Trim()
+        if ($trimmed -match '^-?\d+$') {
+            return [int]$trimmed
+        }
+    }
+
+    $nonEmptyLines = @($lines | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    if ($EmptyAsZero -and $nonEmptyLines.Count -eq 0) { return 0 }
+
+    $preview = (($nonEmptyLines | Select-Object -First 3) -join " | ")
+    if (-not $preview) { $preview = "<empty>" }
+    throw "Azure CLI did not return a numeric value for $Label. Output: $preview"
+}
+
+
 
 $script:DeploymentSubscriptionId = $null
 try {
@@ -1103,10 +1132,11 @@ if ($UseCachedSynthea) {
     Write-Host ""
     Write-Host "  Verifying Synthea blobs in storage..." -ForegroundColor DarkGray
     try {
-        $syntheaBlobCount = az storage blob list --container-name $containerName `
+        $syntheaBlobCountRaw = az storage blob list --container-name $containerName `
             --account-name $storageAccountName --auth-mode login `
             --query "length(@)" -o tsv 2>$null
-        if ($syntheaBlobCount -and [int]$syntheaBlobCount -gt 0) {
+        $syntheaBlobCount = ConvertTo-StrictIntFromCliOutput -Value $syntheaBlobCountRaw -Label "Synthea blob count"
+        if ($syntheaBlobCount -gt 0) {
             Write-Host "  ✓ Verified: $syntheaBlobCount Synthea blobs in '$containerName' container" -ForegroundColor Green
         } else {
             Write-Host "  ⚠ Synthea reported success but NO blobs found in '$containerName'!" -ForegroundColor Red
@@ -1302,8 +1332,9 @@ if ($doDicom) {
 Write-Host ""
 Write-Host "--- PRE-FLIGHT: Device Association Check ---" -ForegroundColor Cyan
 try {
-    $blobCheck = az storage blob show --account-name $storageAccountName --container-name synthea-output --name "device-associations.json" --auth-mode login --query "properties.contentLength" -o tsv 2>$null
-    if ($blobCheck -and [int]$blobCheck -gt 10) {
+    $blobCheckRaw = az storage blob show --account-name $storageAccountName --container-name synthea-output --name "device-associations.json" --auth-mode login --query "properties.contentLength" -o tsv 2>$null
+    $blobCheck = ConvertTo-StrictIntFromCliOutput -Value $blobCheckRaw -Label "device-associations.json content length"
+    if ($blobCheck -gt 10) {
         Write-Host "  ✓ device-associations.json found in blob ($blobCheck bytes)" -ForegroundColor Green
     } else {
         Write-Host "  ⚠ device-associations.json not found — DICOM loader will fall back to FHIR search" -ForegroundColor Yellow
@@ -1457,17 +1488,19 @@ az container logs --resource-group $ResourceGroupName --name dicom-loader-job 2>
     Write-Host ""
     Write-Host "  Verifying DICOM blobs in storage..." -ForegroundColor DarkGray
     try {
-        $dicomBlobCount = az storage blob list --container-name "dicom-output" `
+        $dicomBlobCountRaw = az storage blob list --container-name "dicom-output" `
             --account-name $storageAccountName --auth-mode login `
             --query "length(@)" -o tsv 2>$null
-        if ($dicomBlobCount -and [int]$dicomBlobCount -gt 0) {
+        $dicomBlobCount = ConvertTo-StrictIntFromCliOutput -Value $dicomBlobCountRaw -Label "DICOM blob count" -EmptyAsZero
+        if ($dicomBlobCount -gt 0) {
             Write-Host "  ✓ Verified: $dicomBlobCount DICOM blobs in 'dicom-output' container" -ForegroundColor Green
         } else {
             # Try filesystem API for HNS-enabled accounts
-            $dicomFiles = az storage fs file list --file-system "dicom-output" `
+            $dicomFilesRaw = az storage fs file list --file-system "dicom-output" `
                 --account-name $storageAccountName --auth-mode login `
                 --query "length(@)" -o tsv 2>$null
-            if ($dicomFiles -and [int]$dicomFiles -gt 0) {
+            $dicomFiles = ConvertTo-StrictIntFromCliOutput -Value $dicomFilesRaw -Label "DICOM filesystem file count" -EmptyAsZero
+            if ($dicomFiles -gt 0) {
                 Write-Host "  ✓ Verified: $dicomFiles DICOM files in 'dicom-output' filesystem" -ForegroundColor Green
             } else {
                 Write-Host "  ⚠ DICOM Loader reported success but NO blobs found in 'dicom-output'!" -ForegroundColor Red
