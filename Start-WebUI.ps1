@@ -331,7 +331,7 @@ if ($venvVersion -match "(\d+)\.(\d+)\.(\d+)") {
 & $VenvPython -c "import fastapi, uvicorn, pydantic" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  ✗ Backend Python dependencies are missing from orchestrator/.venv" -ForegroundColor Red
-    Write-Host "    Fix: & '$VenvPython' -m pip install -r '$(Join-Path $BackendDir "requirements.txt")'" -ForegroundColor DarkGray
+    Write-Host "    Fix: & '$VenvPython' -m pip install --no-cache-dir --only-binary cryptography -r '$(Join-Path $BackendDir "requirements.txt")'" -ForegroundColor DarkGray
     exit 1
 }
 

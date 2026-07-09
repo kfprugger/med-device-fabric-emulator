@@ -374,10 +374,11 @@ if ($hasPython) {
                 Write-Host "  ✗ pip upgrade failed" -ForegroundColor Red
                 $fail++
             } else {
-                & $venvPython -m pip install -r $requirementsPath
+                & $venvPython -m pip install --no-cache-dir --only-binary cryptography -r $requirementsPath
                 if ($LASTEXITCODE -ne 0) {
                     Write-Host "  ✗ Python dependency install failed" -ForegroundColor Red
-                    Write-Host "    Retry: $venvPython -m pip install -r $requirementsPath" -ForegroundColor DarkGray
+                    Write-Host "    Retry: $venvPython -m pip install --no-cache-dir --only-binary cryptography -r $requirementsPath" -ForegroundColor DarkGray
+                    Write-Host "    If cryptography still tries to build from source, install Visual Studio Build Tools with the C++ workload or use Windows x64 Python under emulation." -ForegroundColor DarkGray
                     $fail++
                 } else {
                     & $venvPython -c "import fastapi, uvicorn, pydantic"
@@ -398,7 +399,7 @@ if ($hasPython) {
                 $pass++
             } else {
                 Write-Host "  ✗ Python dependencies missing from orchestrator/.venv" -ForegroundColor Red
-                Write-Host "    Fix: $venvPython -m pip install -r $requirementsPath" -ForegroundColor DarkGray
+                Write-Host "    Fix: $venvPython -m pip install --no-cache-dir --only-binary cryptography -r $requirementsPath" -ForegroundColor DarkGray
                 $fail++
             }
         }
