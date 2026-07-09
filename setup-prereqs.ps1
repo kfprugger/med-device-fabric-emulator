@@ -187,34 +187,59 @@ $pythonCandidates = if ($isWin) {
     )
 }
 
-foreach ($candidate in $pythonCandidates) {
-    if (-not (Get-Command $candidate.File -ErrorAction SilentlyContinue)) { continue }
-    $candidateArgs = @($candidate.Args)
-    $candidateLabel = ($candidate.File + " " + ($candidateArgs -join " ")).Trim()
-    $pyVer = & $candidate.File @candidateArgs --version 2>&1
-    if ($LASTEXITCODE -ne 0) { continue }
-    if ($pyVer -match "(\d+)\.(\d+)\.(\d+)") {
-        $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-        if ($major -eq 3 -and $minor -ge 10 -and $minor -le 13) {
-            Write-Host "  ✓ Python $($Matches[0]) via $candidateLabel" -ForegroundColor Green
-            $pass++
-            $hasPython = $true
-            $pythonFile = $candidate.File
-            $pythonArgs = $candidateArgs
-            $pythonLabel = $candidateLabel
-            break
+function Select-SupportedPython {
+    foreach ($candidate in $pythonCandidates) {
+        if (-not (Get-Command $candidate.File -ErrorAction SilentlyContinue)) { continue }
+        $candidateArgs = @($candidate.Args)
+        $candidateLabel = ($candidate.File + " " + ($candidateArgs -join " ")).Trim()
+        $pyVer = & $candidate.File @candidateArgs --version 2>&1
+        if ($LASTEXITCODE -ne 0) { continue }
+        if ($pyVer -match "(\d+)\.(\d+)\.(\d+)") {
+            $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+            if ($major -eq 3 -and $minor -ge 10 -and $minor -le 13) {
+                Write-Host "  ✓ Python $($Matches[0]) via $candidateLabel" -ForegroundColor Green
+                $script:pass++
+                $script:hasPython = $true
+                $script:pythonFile = $candidate.File
+                $script:pythonArgs = $candidateArgs
+                $script:pythonLabel = $candidateLabel
+                return $true
+            }
+            if ($major -eq 3 -and $minor -ge 14) {
+                Write-Host "  ⚠ Python $($Matches[0]) via $candidateLabel is too new for this repo's Windows native dependencies" -ForegroundColor Yellow
+                $script:warn++
+            }
         }
-        if ($major -eq 3 -and $minor -ge 14) {
-            Write-Host "  ⚠ Python $($Matches[0]) via $candidateLabel is too new for this repo's Windows native dependencies" -ForegroundColor Yellow
-            $warn++
+    }
+    return $false
+}
+
+Select-SupportedPython | Out-Null
+
+if (-not $hasPython -and $isWin -and -not $CheckOnly) {
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd) {
+        Write-Host "  ⚙ Installing Python 3.13 with winget..." -ForegroundColor Yellow
+        winget install --id Python.Python.3.13 -e --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -eq 0) {
+            $installed++
+            # The Python launcher may be available immediately even if PATH is not refreshed.
+            Select-SupportedPython | Out-Null
+        } else {
+            Write-Host "  ✗ Python 3.13 winget install failed" -ForegroundColor Red
+            $fail++
         }
+    } else {
+        Write-Host "  ✗ Python 3.10-3.13 — not found and winget is unavailable" -ForegroundColor Red
+        Write-Host "    Install: https://www.python.org/downloads/windows/" -ForegroundColor DarkGray
+        $fail++
     }
 }
 
 if (-not $hasPython) {
     Write-Host "  ✗ Python 3.10-3.13 — not found" -ForegroundColor Red
     Write-Host "    Python 3.14+ is not supported here yet: cryptography may build from source and require Visual Studio C++ link.exe on Windows ARM64." -ForegroundColor DarkGray
-    Write-Host "    Install: winget install Python.Python.3.13" -ForegroundColor DarkGray
+    Write-Host "    Install: winget install --id Python.Python.3.13 -e --accept-package-agreements --accept-source-agreements" -ForegroundColor DarkGray
     $fail++
 }
 
