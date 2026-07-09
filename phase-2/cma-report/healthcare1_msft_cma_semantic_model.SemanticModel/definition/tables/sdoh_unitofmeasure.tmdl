@@ -1,0 +1,70 @@
+table sdoh_unitofmeasure
+	lineageTag: 41c1509d-37c6-47ba-9662-990968de7426
+
+	column description
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 66ad1beb-0ae8-4c0a-9b1b-c4ce5abaf4e8
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column abbreviation
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: c9978bd0-df90-4732-bad4-725a1e487a85
+		summarizeBy: none
+		sourceColumn: abbreviation
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: da4fa2ba-ba60-4e44-aff6-8b5c9d48a5aa
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 1fc7e4c0-ace4-4ca3-955b-f9519a57c1a8
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: cd02bd6f-bb1f-44a1-895c-06e5f6b7f94a
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column unit_of_measure_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: a7e96324-1180-4140-93c9-0a00f20b0895
+		summarizeBy: none
+		sourceColumn: unit_of_measure_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition sdoh_unitofmeasure = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_sdoh_unitofmeasure = Source{[Schema="dbo",Item="sdoh_unitofmeasure"]}[Data]
+				in
+				    dbo_sdoh_unitofmeasure
+
+	annotation PBI_ResultType = Table
+

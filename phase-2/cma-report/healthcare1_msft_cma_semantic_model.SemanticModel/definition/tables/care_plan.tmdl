@@ -1,0 +1,179 @@
+table care_plan
+	lineageTag: 9bab279e-6090-4ecb-b598-44ef79c3233e
+
+	column description
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9629a33b-e450-474b-b3e4-7770bb39191e
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_start_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 49dadddc-11eb-46a1-a26d-f27d5062ff44
+		summarizeBy: none
+		sourceColumn: period_start_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 5cc88433-d00f-4797-af22-b3f0623052b1
+		summarizeBy: none
+		sourceColumn: period_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 44d6cc6b-5b9c-412b-8966-2ebd50123656
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_end_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3d9ab9fa-d951-4e62-83a5-89270ee893c2
+		summarizeBy: none
+		sourceColumn: period_end_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	column status
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a6e8320e-f72b-41ce-b6f9-4d8f620b6f85
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_end_date_year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: bee7f1a4-7651-4a61-a8b2-3acd3cdbe595
+		summarizeBy: sum
+		sourceColumn: period_end_date_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_end_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 4377d1f8-aa8e-4544-9672-80e2d9d14d59
+		summarizeBy: none
+		sourceColumn: period_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column category_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: dbd295e1-5b44-4585-8173-968c14232ead
+		summarizeBy: none
+		sourceColumn: category_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_start_date_year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: bac491d0-224e-4b1c-a1e0-cce774375f72
+		summarizeBy: sum
+		sourceColumn: period_start_date_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_start_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: e779bd9f-ebcf-4bf9-a39b-9e1d0c09e14e
+		summarizeBy: none
+		sourceColumn: period_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5f19c0e2-bfe9-46c2-9594-578da83937e5
+		summarizeBy: sum
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column period_start_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 6e9cee91-67fe-440d-b551-48764bc8e507
+		summarizeBy: none
+		sourceColumn: period_start_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	column category_code
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a16aa93d-d2a4-472a-b371-9d8a42e38f7d
+		summarizeBy: none
+		sourceColumn: category_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: b85c140f-1fbd-4bbd-8207-15aacc0acab9
+		summarizeBy: none
+		sourceColumn: care_plan_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 325f44e7-b707-4340-9388-778f9afc74f2
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column title
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: c9695c1c-e7da-4376-93d0-b030fef528dd
+		summarizeBy: none
+		sourceColumn: title
+
+		annotation SummarizationSetBy = Automatic
+
+	partition care_plan = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_care_plan = Source{[Schema="dbo",Item="care_plan"]}[Data]
+				in
+				    dbo_care_plan
+
+	annotation PBI_ResultType = Table
+

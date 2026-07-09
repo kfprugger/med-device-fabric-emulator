@@ -1,0 +1,165 @@
+table social_determinant
+	lineageTag: 6188f92e-cc3a-4279-9339-8adbdcd29358
+
+	measure rehospitalization_nonmetro =
+			
+			CALCULATE(
+			    SUMX(
+			        social_determinant,
+			        IF( social_determinant[name] = "LTC_AVG_OBS_REHOSP_RATE", social_determinant[value_as_number], 0 )
+			    ),
+			    -- Filter to include only counties where the nonmetro indicator equals 1
+			    FILTER(
+			        ALL(zip_to_fips_mapping),
+			        CALCULATE(
+			            MAX( social_determinant[value_as_number] ),
+			            social_determinant[name] = "Nonmetro2013"
+			        ) = 1
+			    )
+			)
+		formatString: 0
+		lineageTag: 7cec53f7-02e1-4dce-87bf-9a0b38951647
+
+	column description
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 07d76902-ee34-4dd0-8add-546cad35a1da
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_JSON
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 7a18f6b0-0c81-4d37-b2fc-6916bc74bb03
+		summarizeBy: none
+		sourceColumn: location_JSON
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a8ea904c-1886-4350-baaa-d761931cf18c
+		summarizeBy: none
+		sourceColumn: location_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column category_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: ea50575b-db85-4f2e-961e-5878aaa154ec
+		summarizeBy: none
+		sourceColumn: category_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9e4698f6-a321-424c-b881-7be6843e4dd7
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column sdoh_datasetmetadata_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 63f83e43-0647-4944-ad59-0941161130f8
+		summarizeBy: sum
+		sourceColumn: sdoh_datasetmetadata_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: efe2d3bc-6c92-4720-8382-dc3e9c9aea7f
+		summarizeBy: none
+		sourceColumn: value
+
+		annotation SummarizationSetBy = Automatic
+
+	column harmonization_key
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 76804b4c-3f0d-4fba-a185-6e29587b3b4b
+		summarizeBy: none
+		sourceColumn: harmonization_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column value_as_number
+		dataType: double
+		formatString: 0.00
+		sourceProviderType: decimal(18, 8)
+		lineageTag: f9d8bc74-ac23-48e4-a921-5ae3fbe7de2e
+		summarizeBy: none
+		sourceColumn: value_as_number
+
+		annotation SummarizationSetBy = User
+
+	column unit_of_measure_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 03e2a017-b3f1-4388-b29c-9e744c594539
+		summarizeBy: none
+		sourceColumn: unit_of_measure_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 46726ede-45f1-4c7c-bfa5-243a71f9175d
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 1065c37a-c53b-47b4-a028-854ca0b126af
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_type
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d04f414c-ad10-4dfb-a592-74c128b3d4c0
+		summarizeBy: none
+		sourceColumn: location_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column social_determinant_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c7ea32cd-dc7d-4c59-a379-9ff8945d68c2
+		summarizeBy: sum
+		sourceColumn: social_determinant_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition social_determinant = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_social_determinant = Source{[Schema="dbo",Item="social_determinant"]}[Data]
+				in
+				    dbo_social_determinant
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,54 @@
+table care_plan_goal
+	lineageTag: bdfb7e2c-9bbe-4bd7-b928-9f1a16e058af
+
+	column care_plan_goal_id
+		dataType: string
+		isNullable: false
+		sourceProviderType: varchar(8000)
+		lineageTag: 3c1cca8f-315b-41d1-8ad2-7393d762ba0d
+		summarizeBy: none
+		sourceColumn: care_plan_goal_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_id
+		dataType: string
+		isNullable: false
+		sourceProviderType: varchar(8000)
+		lineageTag: a3ddb3df-e84f-4383-83a7-df1c2868ec3a
+		summarizeBy: none
+		sourceColumn: care_plan_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column goal_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a8c18e4d-c906-4e1b-b400-5446e225b32f
+		summarizeBy: none
+		sourceColumn: goal_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column goal_idOrig
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: bf2651b1-ba0b-4338-b88d-d126fc3e037f
+		summarizeBy: none
+		sourceColumn: goal_idOrig
+
+		annotation SummarizationSetBy = Automatic
+
+	partition care_plan_goal = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_care_plan_goal = Source{[Schema="dbo",Item="care_plan_goal"]}[Data]
+				in
+				    dbo_care_plan_goal
+
+	annotation PBI_ResultType = Exception
+
+	annotation PBI_NavigationStepName = Navigation
+

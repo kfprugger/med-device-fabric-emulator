@@ -1,0 +1,316 @@
+table measurement
+	lineageTag: daa7cf66-f9e9-4542-a915-dabc475f4f49
+
+	measure count_high_Hemoglobin_A1c =
+			
+			CALCULATE(
+			    DISTINCTCOUNT(Measurement[person_id]),
+			    Measurement[measurement_text_source_value] = "Hemoglobin A1c/Hemoglobin.total in Blood",
+			    Measurement[value_as_number] >= 0.8
+			)
+		formatString: 0
+		lineageTag: 99dbb97b-9a37-405a-96e5-20c7ad485b89
+
+	measure count_low_Hemoglobin_A1c =
+			
+			CALCULATE(
+			    DISTINCTCOUNT(Measurement[person_id]),
+			    Measurement[measurement_text_source_value] = "Hemoglobin A1c/Hemoglobin.total in Blood",
+			    Measurement[value_as_number] < 0.8
+			)
+		formatString: 0
+		lineageTag: 3255d5ba-d60a-401e-b5aa-44a82ac6a561
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: b46c9c27-4b63-4f5b-8644-e2060543cedb
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column meas_event_field_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d8973968-7c3b-43be-86c4-4bd318023915
+		summarizeBy: sum
+		sourceColumn: meas_event_field_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_time
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: de587bd0-681e-4d22-8763-507658da47ad
+		summarizeBy: none
+		sourceColumn: measurement_time
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: b2ce92c8-64d5-48da-a44a-9ffc1c562b77
+		summarizeBy: none
+		sourceColumn: measurement_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_concept_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d0f780a0-5438-4ea1-9efb-0b30dce0d34c
+		summarizeBy: none
+		sourceColumn: measurement_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 4c54cdf8-0f2b-4851-b2e8-c2f2fc250715
+		summarizeBy: sum
+		sourceColumn: measurement_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column range_high
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 2cbf7b5d-f7af-454f-b72e-09f86309de4e
+		summarizeBy: sum
+		sourceColumn: range_high
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column visit_detail_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 0df7a464-070b-41b7-acc4-09180ce39131
+		summarizeBy: sum
+		sourceColumn: visit_detail_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column unit_source_concept_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 0e5910ed-635f-4668-8a2e-2864b851476c
+		summarizeBy: none
+		sourceColumn: unit_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_event_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: ecec806a-b751-4339-a518-ff48088285a3
+		summarizeBy: sum
+		sourceColumn: measurement_event_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: 4986ae91-3e5e-4404-bd40-2a2b1fb08dbd
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 6a3cd753-81cd-418a-a489-9adf8390ad28
+		summarizeBy: none
+		sourceColumn: measurement_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column value_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 8372a85d-0a5d-40f6-9f17-0dc523d09b75
+		summarizeBy: none
+		sourceColumn: value_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_text_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: b02b9d02-7133-40a3-94b5-be2d313512e7
+		summarizeBy: none
+		sourceColumn: measurement_text_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 30a24a50-522e-4b86-b0a5-dea7e2c79997
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: bf2a822b-b1eb-4719-8a9a-e7efb08f96e2
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2f509c47-4904-403b-a11c-9b0f25c57c84
+		summarizeBy: none
+		sourceColumn: measurement_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 4df6e1e5-fbce-4aac-9192-1548dea2eb83
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_type_concept_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 89b26ac0-9b46-496c-b859-79e0ebd715b6
+		summarizeBy: none
+		sourceColumn: measurement_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column value_as_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 0d0744bf-f46c-4310-906c-c138b7b13106
+		summarizeBy: sum
+		sourceColumn: value_as_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column range_low
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 2e425b1b-b837-4ec4-9b39-15048bd1f9bb
+		summarizeBy: sum
+		sourceColumn: range_low
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column value_as_number
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: ae340b64-c39d-42e0-bc6f-0523791bc6c2
+		summarizeBy: sum
+		sourceColumn: value_as_number
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column unit_concept_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 46f2479b-20e6-4fcb-a11b-3ae1cf166cb1
+		summarizeBy: none
+		sourceColumn: unit_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceRecordId
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 47447c9c-5928-40f2-9abb-e3264ddbc724
+		summarizeBy: none
+		sourceColumn: msftSourceRecordId
+
+		annotation SummarizationSetBy = Automatic
+
+	column measurement_source_concept_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 476df7a4-184d-4c57-b94e-404c526b9c17
+		summarizeBy: none
+		sourceColumn: measurement_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column unit_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 92a142b0-a114-492b-9896-09672e17de98
+		summarizeBy: none
+		sourceColumn: unit_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftSourceTableName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: b55e9186-dd4c-47b8-a52e-c094b5422438
+		summarizeBy: none
+		sourceColumn: msftSourceTableName
+
+		annotation SummarizationSetBy = Automatic
+
+	column msftModifiedDatetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 9406df2c-a614-407c-b123-9e4fa5ae4660
+		summarizeBy: none
+		sourceColumn: msftModifiedDatetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column operator_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: be4b8b39-66b8-482d-961d-a1ce9a551829
+		summarizeBy: sum
+		sourceColumn: operator_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition measurement = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_measurement = Source{[Schema="dbo",Item="measurement"]}[Data]
+				in
+				    dbo_measurement
+
+	annotation PBI_ResultType = Table
+

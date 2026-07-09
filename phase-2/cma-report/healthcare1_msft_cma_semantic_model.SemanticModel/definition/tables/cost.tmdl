@@ -1,0 +1,349 @@
+table cost
+	lineageTag: 7c1f8a16-f6d3-460d-a947-c575d4eafcd3
+
+	measure cost_gender_female = COALESCE(CALCULATE(SUM(cost[total_charge]), 'person'[gender_source_value] = "female"),0)
+		lineageTag: fb5ca3b2-ebbb-4ffa-a986-436c64952905
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure cost_gender_male = COALESCE(CALCULATE(SUM(cost[total_charge]), 'person'[gender_source_value] = "male"),0)
+		lineageTag: bc04aa66-e948-4268-a991-323aa6b71dac
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure cost_gender_unknown = COALESCE(CALCULATE(SUM(cost[total_charge]), 'person'[gender_source_value] = "unknown"),0)
+		lineageTag: 29f34903-44fd-4a73-a692-7128c326ee09
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure TotalCostByCondition =
+			CALCULATE(
+			    SUM('cost'[total_charge])
+			)
+		lineageTag: 6d7b84a1-0491-41bb-a485-93f26b86b4d5
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column revenue_code_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3e86cab1-4374-4cbc-b85b-a3155ee013f9
+		summarizeBy: none
+		sourceColumn: revenue_code_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column drg_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3bae08ed-0808-406c-920b-88c157a05361
+		summarizeBy: none
+		sourceColumn: drg_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column cost_domain_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3a6befcb-48f1-4e68-ac8b-0b3b9ed7849d
+		summarizeBy: none
+		sourceColumn: cost_domain_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column drg_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6c2ff919-e760-4f24-abf4-ae01586b114a
+		summarizeBy: sum
+		sourceColumn: drg_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column paid_dispensing_fee
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 732d5dd5-4d93-47f3-a6f8-c66688126495
+		summarizeBy: sum
+		sourceColumn: paid_dispensing_fee
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column cost_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7638f6b0-19ce-450a-8d92-95a33b1dbf75
+		summarizeBy: sum
+		sourceColumn: cost_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column paid_patient_copay
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 538033b4-1489-4be4-8c04-9ca1bc7b64d4
+		summarizeBy: sum
+		sourceColumn: paid_patient_copay
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 8383a48d-07da-4260-8e51-f1c7e8d6cb08
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column payer_plan_period_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 52d8a960-9543-4351-89b0-35e14a905942
+		summarizeBy: sum
+		sourceColumn: payer_plan_period_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column paid_by_payer
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 0d3947ba-f29c-4b50-90d3-08276a135056
+		summarizeBy: sum
+		sourceColumn: paid_by_payer
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column amount_allowed
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: f42f0f2a-7ebd-4496-b010-c4f690940c72
+		summarizeBy: sum
+		sourceColumn: amount_allowed
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column paid_patient_deductible
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 8d4ac6f4-8507-45c4-89ad-36da4caef31c
+		summarizeBy: sum
+		sourceColumn: paid_patient_deductible
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column paid_ingredient_cost
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 3a13dca4-d8a2-4c47-815d-ed9dec801b29
+		summarizeBy: sum
+		sourceColumn: paid_ingredient_cost
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column paid_by_patient
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 83041a10-147c-4b4a-9436-b631cec454eb
+		summarizeBy: sum
+		sourceColumn: paid_by_patient
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 5850b1c2-74b9-4f00-85bb-41f70a1c6b3b
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column total_charge
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 5049947e-0112-4e99-b2d5-e602cad95d88
+		summarizeBy: sum
+		sourceColumn: total_charge
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column total_paid
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: a2ef9e7c-2680-4b3e-81a0-2fb55710f59d
+		summarizeBy: sum
+		sourceColumn: total_paid
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column paid_patient_coinsurance
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: ae7e850b-dce3-4d68-8e1f-ff07120fdd5b
+		summarizeBy: sum
+		sourceColumn: paid_patient_coinsurance
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 2920f129-4894-477f-b39a-de5cee89be08
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column cost_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5e86ce8d-5f37-4a26-9141-92980b32f90f
+		summarizeBy: sum
+		sourceColumn: cost_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column total_cost
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 5cef399e-bcfa-4965-8030-ba5e45446415
+		summarizeBy: sum
+		sourceColumn: total_cost
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column revenue_code_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 981e5914-cff9-4cc0-955f-cd91f870f7bd
+		summarizeBy: sum
+		sourceColumn: revenue_code_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column paid_by_primary
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 3e175c07-657e-49d4-b71c-512a23b1bb0a
+		summarizeBy: sum
+		sourceColumn: paid_by_primary
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column cost_event_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: a5147166-d106-4cec-a277-71d863bc23ba
+		summarizeBy: sum
+		sourceColumn: cost_event_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column currency_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d068e2e6-81da-4a91-8dde-5bbe09c067dd
+		summarizeBy: sum
+		sourceColumn: currency_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column billable_period_start_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: aa907720-8d2f-46cb-8872-f53a9cc8a50b
+		summarizeBy: none
+		sourceColumn: billable_period_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column billable_period_end_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 8e7eb012-d30c-437f-a0df-ab6b7d3062e6
+		summarizeBy: none
+		sourceColumn: billable_period_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column bill_end_date_year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 94c99ae6-6fa4-43bf-8ddc-ba666ae7bace
+		summarizeBy: sum
+		sourceColumn: bill_end_date_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column bill_end_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 00cea2ff-f303-4e5a-8f9a-af03fcb7932e
+		summarizeBy: none
+		sourceColumn: bill_end_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	column bill_start_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 158e2921-4362-49dc-bca6-f34ace813da0
+		summarizeBy: none
+		sourceColumn: bill_start_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	partition cost = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_cost = Source{[Schema="dbo",Item="cost"]}[Data]
+				in
+				    dbo_cost
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navigation
+

@@ -1,0 +1,89 @@
+table sdoh_category
+	lineageTag: 7885a8c2-ef12-4381-bf2d-64079416e941
+
+	column subcategory_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: e793cce2-8959-4e28-b0c4-bfd01159c16d
+		summarizeBy: none
+		sourceColumn: subcategory_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column subcategory_description
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: bbed36b6-abc5-4b41-81e1-1d6988708589
+		summarizeBy: none
+		sourceColumn: subcategory_description
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 39c2fa7d-d9a4-4bf9-839a-aff0738b083f
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column category_description
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a4074fb5-55dc-4864-b92c-75458eee5ad8
+		summarizeBy: none
+		sourceColumn: category_description
+
+		annotation SummarizationSetBy = Automatic
+
+	column category_name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 375b960c-f058-4783-9b41-1683dee11936
+		summarizeBy: none
+		sourceColumn: category_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: c6468aa3-e58f-4870-b4e1-3858c9722a04
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column subcategory_name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2734e162-e3b1-495b-9064-fb51c532dfdc
+		summarizeBy: none
+		sourceColumn: subcategory_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column category_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 1307ce64-e8af-4924-9758-92b1e292485d
+		summarizeBy: none
+		sourceColumn: category_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition sdoh_category = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_sdoh_category = Source{[Schema="dbo",Item="sdoh_category"]}[Data]
+				in
+				    dbo_sdoh_category
+
+	annotation PBI_ResultType = Table
+

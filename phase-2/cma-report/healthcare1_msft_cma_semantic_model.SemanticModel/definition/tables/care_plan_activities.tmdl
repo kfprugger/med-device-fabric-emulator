@@ -1,0 +1,110 @@
+table care_plan_activities
+	lineageTag: ab643da7-54be-446b-b40a-ec03c4cf4677
+
+	column daily_amount_value
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 35cd5d75-c2ac-4559-a1c2-a9a3ef8b4af1
+		summarizeBy: sum
+		sourceColumn: daily_amount_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 5f96e6e1-e687-477c-9a4e-c7cf834a7474
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column status
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 22233b9a-fcff-462d-80ed-244f349947ae
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column kind
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 43b14f9b-f9c0-4891-84fc-f5574def0ca0
+		summarizeBy: none
+		sourceColumn: kind
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: f9fce7fe-8b9e-4920-aef1-c6739f65e0f8
+		summarizeBy: none
+		sourceColumn: care_plan_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column quantity_value
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: cbd5bd63-83c0-4424-8b1f-a11861c4c0fc
+		summarizeBy: sum
+		sourceColumn: quantity_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 8cc20b12-9a18-4fa8-9cc3-63183f48ca05
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column type_code
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: ef0319e3-cf79-4149-bfa5-76241d223100
+		summarizeBy: none
+		sourceColumn: type_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_activity_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 747b974b-0320-47fa-a16f-675515bc3220
+		summarizeBy: none
+		sourceColumn: care_plan_activity_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column type_text
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 2604359b-70d5-40db-b2c3-16d0eae39dfc
+		summarizeBy: none
+		sourceColumn: type_text
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	partition care_plan_activities = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_care_plan_activities = Source{[Schema="dbo",Item="care_plan_activities"]}[Data]
+				in
+				    dbo_care_plan_activities
+
+	annotation PBI_ResultType = Table
+

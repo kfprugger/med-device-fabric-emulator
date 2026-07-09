@@ -1,0 +1,69 @@
+table care_plan_addresses
+	lineageTag: e968f3cb-13b2-483c-80cb-030b2867cbd5
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: c8b1e213-8597-4f6c-8827-d3f01ba5b90d
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e9cdbd2a-b2dc-49dd-9540-6e27ce78642a
+		summarizeBy: none
+		sourceColumn: condition_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_idOrig
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: ec13d650-a933-4190-a71a-080e7856770b
+		summarizeBy: none
+		sourceColumn: condition_idOrig
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 7652cac9-2d80-4577-92c3-56af7d245307
+		summarizeBy: none
+		sourceColumn: care_plan_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: a84cebe3-f917-47e6-a72e-3bfd539a3b9f
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_plan_addresses_id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: ed2c805d-3639-4dfd-bf98-33105f8b87e7
+		summarizeBy: none
+		sourceColumn: care_plan_addresses_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition care_plan_addresses = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_care_plan_addresses = Source{[Schema="dbo",Item="care_plan_addresses"]}[Data]
+				in
+				    dbo_care_plan_addresses
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,312 @@
+table visit_occurrence
+	lineageTag: 13133338-1eb6-4df9-b7a3-9fd6454d1335
+
+	measure VisitCountByAgeGroup =
+			
+			CALCULATE(
+			    COUNT(visit_occurrence[visit_occurrence_id]),
+			    ALL(person),
+			    VALUES(person[AgeGroup])
+			)
+		formatString: 0
+		lineageTag: 305c9db6-2fda-42a5-91f3-2406501d54c3
+
+	column discharged_to_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a2378bcd-5068-4d5d-a05f-971c10289902
+		summarizeBy: none
+		sourceColumn: discharged_to_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: bc8e00ec-3397-4820-9f42-836d75ba545f
+		summarizeBy: none
+		sourceColumn: visit_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column visit_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 88e79ee9-3de1-49db-98b9-721fd7107236
+		summarizeBy: sum
+		sourceColumn: visit_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 0d8d501e-0e4a-4368-aee7-fdaf28465bb1
+		summarizeBy: sum
+		sourceColumn: visit_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 99f10ff4-a1dd-4e46-983e-746fc32b3308
+		summarizeBy: none
+		sourceColumn: visit_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d8978f4f-0662-4a77-a890-0674aace4a9e
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 772667ed-5cf2-43d9-8455-79e4e0fc7bc0
+		summarizeBy: none
+		sourceColumn: visit_start_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column admitted_from_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d73cd4bd-94ea-493a-8b7d-4bc87046b511
+		summarizeBy: sum
+		sourceColumn: admitted_from_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 77ff5353-e587-41f4-ac5c-438d5d81da39
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 98fa4459-eeb4-407b-a624-d7e3d5d87207
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 8c7bf7f9-6e17-4668-bd50-10be595451e0
+		summarizeBy: sum
+		sourceColumn: visit_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2ffa3a9b-21c4-4874-b918-25108a2e9c71
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column admitted_from_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 54cdb8d4-b6ec-4c71-8a21-fb57da75e8e5
+		summarizeBy: none
+		sourceColumn: admitted_from_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_site_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 36d3ca96-c577-478f-8c4b-1a1a078b1eab
+		summarizeBy: sum
+		sourceColumn: care_site_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column discharged_to_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 19d8754b-6696-428b-873a-dc8b51ef5afa
+		summarizeBy: sum
+		sourceColumn: discharged_to_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: eacd343c-dd9f-490d-8dde-c6bd0650c084
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: cca869b7-5278-48ab-8fe5-634aa6762f0b
+		summarizeBy: none
+		sourceColumn: visit_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column preceding_visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 21a12cb6-4e04-479b-90ec-71a252cba327
+		summarizeBy: sum
+		sourceColumn: preceding_visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: f1137296-88e0-402c-9d03-3ad8ebd2f0fd
+		summarizeBy: none
+		sourceColumn: visit_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column visit_start_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d88a9f86-0e06-41cf-b033-6726f6a707ef
+		summarizeBy: none
+		sourceColumn: visit_start_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_date_year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: e913ca45-cdfc-4692-aa32-5948527a9814
+		summarizeBy: sum
+		sourceColumn: visit_end_date_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_length_of_stay_minutes
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c7226084-4013-4e1b-90b3-2603d4052424
+		summarizeBy: sum
+		sourceColumn: visit_length_of_stay_minutes
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_date_year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7a582f22-e645-41ec-9a81-8997db50d765
+		summarizeBy: sum
+		sourceColumn: visit_start_date_year
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_date_quarter
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d35606b2-0857-4b81-9936-692ba03980c0
+		summarizeBy: none
+		sourceColumn: visit_end_date_quarter
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_start_date_month
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 3293f0ca-5b24-4ed7-b15f-aa1c5a1df699
+		summarizeBy: sum
+		sourceColumn: visit_start_date_month
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_end_date_month
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 2f4a666b-b09d-4f4d-8e35-0252e4189639
+		summarizeBy: sum
+		sourceColumn: visit_end_date_month
+
+		annotation SummarizationSetBy = Automatic
+
+	column servicetype_to_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 6f7e5b5b-4027-4e8b-aba2-96c5a8e13c51
+		summarizeBy: none
+		sourceColumn: servicetype_to_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column readmission
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		sourceProviderType: bit
+		lineageTag: e2e856a2-842c-45bc-a3ed-62fa13707474
+		summarizeBy: none
+		sourceColumn: readmission
+
+		annotation SummarizationSetBy = Automatic
+
+	column servicetype_to_display_text
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2443c1ab-b966-48bb-ba82-d369c5ecb121
+		summarizeBy: none
+		sourceColumn: servicetype_to_display_text
+
+		annotation SummarizationSetBy = Automatic
+
+	partition visit_occurrence = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_visit_occurrence = Source{[Schema="dbo",Item="visit_occurrence"]}[Data]
+				in
+				    dbo_visit_occurrence
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navigation
+

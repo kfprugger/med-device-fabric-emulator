@@ -241,6 +241,27 @@ class FabricClient:
             endpoint += "?updateMetadata=true"
         return self.call("POST", endpoint, definition)
 
+    def get_item_definition(
+        self,
+        workspace_id: str,
+        item_id: str,
+    ) -> dict[str, Any]:
+        """Fetch a Fabric item definition, including getDefinition LRO result payloads."""
+        url = f"{self.api_base}/workspaces/{workspace_id}/items/{item_id}/getDefinition"
+        resp = requests.post(url, headers=self._headers(), json={}, timeout=120)
+        if resp.status_code == 200:
+            data = resp.json() if resp.content else {}
+            return data["definition"]
+        if resp.status_code == 202:
+            self._poll_lro(resp)
+            result_url = f"{resp.headers['Location']}/result"
+            result_resp = requests.get(result_url, headers=self._headers(), timeout=120)
+            result_resp.raise_for_status()
+            return result_resp.json()["definition"]
+
+        resp.raise_for_status()
+        raise RuntimeError(f"Unexpected getDefinition response for item {item_id}")
+
     def delete_item(self, workspace_id: str, item_id: str) -> None:
         """Delete an item."""
         self.call("DELETE", f"/workspaces/{workspace_id}/items/{item_id}")

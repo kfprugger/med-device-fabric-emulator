@@ -1,0 +1,95 @@
+cultureInfo en-IN
+
+	linguisticMetadata =
+			{
+			  "Version": "1.0.0",
+			  "Language": "en-US",
+			  "Entities": {
+			    "condition_occurrence.patientcountbycondition": {
+			      "Binding": {
+			        "ConceptualEntity": "condition_occurrence",
+			        "ConceptualProperty": "PatientCountByCondition"
+			      },
+			      "State": "Generated"
+			    },
+			    "condition_occurrence.condition_text_source_value": {
+			      "Binding": {
+			        "ConceptualEntity": "condition_occurrence",
+			        "ConceptualProperty": "condition_text_source_value"
+			      },
+			      "State": "Generated"
+			    },
+			    "person.patientsbyagegroup": {
+			      "Binding": {
+			        "ConceptualEntity": "person",
+			        "ConceptualProperty": "PatientsByAgeGroup"
+			      },
+			      "State": "Generated"
+			    },
+			    "person.count_gender_female": {
+			      "Binding": {
+			        "ConceptualEntity": "person",
+			        "ConceptualProperty": "count_gender_female"
+			      },
+			      "State": "Generated"
+			    },
+			    "person.count_gender_male": {
+			      "Binding": {
+			        "ConceptualEntity": "person",
+			        "ConceptualProperty": "count_gender_male"
+			      },
+			      "State": "Generated"
+			    },
+			    "person.count_gender_unkown": {
+			      "Binding": {
+			        "ConceptualEntity": "person",
+			        "ConceptualProperty": "count_gender_unkown"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.bill_end_date_quarter": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "bill_end_date_quarter"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.bill_end_date_year": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "bill_end_date_year"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.cost_gender_female": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "cost_gender_female"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.cost_gender_male": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "cost_gender_male"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.cost_gender_unknown": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "cost_gender_unknown"
+			      },
+			      "State": "Generated"
+			    },
+			    "cost.totalcostbycondition": {
+			      "Binding": {
+			        "ConceptualEntity": "cost",
+			        "ConceptualProperty": "TotalCostByCondition"
+			      },
+			      "State": "Generated"
+			    }
+			  }
+			}
+		contentType: json
+

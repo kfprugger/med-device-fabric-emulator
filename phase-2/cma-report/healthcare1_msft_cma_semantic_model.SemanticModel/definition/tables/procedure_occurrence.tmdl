@@ -1,0 +1,195 @@
+table procedure_occurrence
+	lineageTag: fa11d662-b37f-449c-bfe9-798d4e5ea854
+
+	column procedure_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: e5a7bee0-d7e9-4204-9edc-5d3595df3c48
+		summarizeBy: none
+		sourceColumn: procedure_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: d967be5a-248f-47b0-9301-23f534cfea40
+		summarizeBy: none
+		sourceColumn: procedure_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column modifier_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7fbde4fe-8866-41d1-a9e4-237448deebc4
+		summarizeBy: sum
+		sourceColumn: modifier_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 7316912d-3805-4bea-9cda-974ef15ea507
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6331f673-dc4d-499c-9fa7-78d55a5bbf52
+		summarizeBy: sum
+		sourceColumn: procedure_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 86cea8ff-25a6-49f2-9c8b-1819ee3d1d5a
+		summarizeBy: none
+		sourceColumn: procedure_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column quantity
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 65a3d92d-6836-4696-8213-294fc7f5953c
+		summarizeBy: sum
+		sourceColumn: quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 22eab7d6-840d-4789-84b9-f2a5b48e1115
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6e3f9482-d3dc-4084-a87e-486a063e3f4d
+		summarizeBy: sum
+		sourceColumn: procedure_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 79a80172-8447-437d-99c2-a6626d33c2d2
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 45bb3336-ee90-4a29-bd65-ef7ea84a1c6d
+		summarizeBy: sum
+		sourceColumn: procedure_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: ad228387-099f-4537-bd7a-26abaf0259b7
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 57076418-ee63-430f-ab44-e5fd60ba1a73
+		summarizeBy: sum
+		sourceColumn: procedure_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column modifier_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3718b456-bd10-4f90-8df5-28adcfc19dbf
+		summarizeBy: none
+		sourceColumn: modifier_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column procedure_end_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 07ebf943-5aad-4a8f-a6e6-c56d1e062578
+		summarizeBy: none
+		sourceColumn: procedure_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column procedure_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 2116de66-d41b-421f-ab3e-5605449c75a6
+		summarizeBy: none
+		sourceColumn: procedure_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_detail_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5f9947e6-4a72-40e1-914a-d9990199cfc4
+		summarizeBy: sum
+		sourceColumn: visit_detail_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: aa987201-b210-4c38-8687-9cd0b13d33a6
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition procedure_occurrence = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_procedure_occurrence = Source{[Schema="dbo",Item="procedure_occurrence"]}[Data]
+				in
+				    dbo_procedure_occurrence
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,182 @@
+table location
+	lineageTag: 7b2fb6a9-25e2-46fd-a512-a05ca8e719cd
+
+	column county
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: f4e196f2-09c6-479d-958b-96da1d0c93fa
+		summarizeBy: none
+		sourceColumn: county
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 6870c61d-094d-4631-972e-b14eab51190a
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column longitude
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: ba4b8a34-62af-42f6-871a-b97a962372eb
+		summarizeBy: sum
+		sourceColumn: longitude
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column latitude
+		dataType: double
+		sourceProviderType: decimal(18, 8)
+		lineageTag: 565eff7d-c8aa-4f8d-9e10-81da99c4972f
+		summarizeBy: sum
+		sourceColumn: latitude
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column city
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d34f2663-666a-4820-b87d-45a344312343
+		summarizeBy: none
+		sourceColumn: city
+
+		annotation SummarizationSetBy = Automatic
+
+	column state
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 4968b59f-604f-43e9-89f9-db9b6dd48e2c
+		summarizeBy: none
+		sourceColumn: state
+
+		annotation SummarizationSetBy = Automatic
+
+	column country_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: ba70bfb2-44a4-4151-bb0a-a03f7d39e1ef
+		summarizeBy: sum
+		sourceColumn: country_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6f540793-f1f4-4657-b755-804ccf62d69b
+		summarizeBy: none
+		sourceColumn: location_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column address_1
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d433834b-7e85-43bc-a195-352d9b04f55c
+		summarizeBy: none
+		sourceColumn: address_1
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 341d508c-d2b8-45ea-914b-54db5946c35b
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 47688d82-d781-4b37-a44a-ed42a761110c
+		summarizeBy: none
+		sourceColumn: location_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column country_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: e5015c85-2a14-4f16-b414-e0da336b38e4
+		summarizeBy: none
+		sourceColumn: country_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column address_2
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: af2d3993-4f08-4934-87e6-9e3db12be4ea
+		summarizeBy: none
+		sourceColumn: address_2
+
+		annotation SummarizationSetBy = Automatic
+
+	column zip
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2aef7bdd-c9e2-4c3d-8c12-e840e8632e98
+		summarizeBy: none
+		sourceColumn: zip
+
+		annotation SummarizationSetBy = Automatic
+
+	column country
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 0acfdd61-9df2-45c8-b9db-022ab0560918
+		summarizeBy: none
+		sourceColumn: country
+
+		annotation SummarizationSetBy = Automatic
+
+	hierarchy 'state Hierarchy'
+		lineageTag: 6329ac95-e644-453d-a399-69eec5e37a65
+
+		level state
+			lineageTag: 678fe3a5-f7df-4927-8adc-17c4029d8585
+			column: state
+
+		level city
+			lineageTag: 4f7b0d5e-83b3-43b8-9426-69dd39edbb9c
+			column: city
+
+		level county
+			lineageTag: f5cc8faf-40ef-4dec-8dcf-b077d9bf8d7c
+			column: county
+
+		level zip
+			lineageTag: 603a33c1-f045-49e0-985d-e7daebe814cf
+			column: zip
+
+	hierarchy 'address_1 Hierarchy'
+		lineageTag: bd9396de-28cb-47e0-a1d6-e1ffd357bfe6
+
+		level address_1
+			lineageTag: bfbd2809-7fae-4b1b-b60d-7f9f3e91c31d
+			column: address_1
+
+	partition location = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_location = Source{[Schema="dbo",Item="location"]}[Data]
+				in
+				    dbo_location
+
+	annotation PBI_ResultType = Table
+

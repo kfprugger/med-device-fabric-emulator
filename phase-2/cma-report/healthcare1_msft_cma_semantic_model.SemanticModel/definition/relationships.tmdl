@@ -1,0 +1,87 @@
+relationship 1a43fae6-1215-b648-c134-b985814900e1
+	crossFilteringBehavior: bothDirections
+	fromColumn: location.location_id
+	toColumn: person.location_id
+
+relationship dd632c48-3414-6f89-145a-6dcf24ebae6b
+	crossFilteringBehavior: bothDirections
+	fromColumn: procedure_occurrence.person_id
+	toColumn: person.person_id
+
+relationship 73317908-5c2c-ce40-192d-8d177ec33567
+	crossFilteringBehavior: bothDirections
+	fromColumn: cost.person_id
+	toColumn: person.person_id
+
+relationship 7446364c-1e9b-6b6b-62ea-baf26f780926
+	crossFilteringBehavior: bothDirections
+	fromColumn: condition_occurrence.person_id
+	toColumn: person.person_id
+
+relationship 94b58dc4-62a6-b61d-4c43-e7f69d0105dc
+	crossFilteringBehavior: bothDirections
+	fromColumn: visit_occurrence.person_id
+	toColumn: person.person_id
+
+relationship bb403b31-8d8e-c7d4-70d2-a7b3a745f0a1
+	crossFilteringBehavior: bothDirections
+	fromColumn: measurement.person_id
+	toColumn: person.person_id
+
+relationship 3d7a5b19-1b9d-4463-0fc4-2e20db4422d8
+	isActive: false
+	crossFilteringBehavior: bothDirections
+	fromColumn: care_plan.person_id
+	toColumn: person.person_id
+
+relationship 47f3ef3c-375b-ac39-4b03-68cfcb8bf02f
+	crossFilteringBehavior: bothDirections
+	fromColumn: care_plan_activities.care_plan_id
+	toColumn: care_plan.care_plan_id
+
+relationship 4c4a212a-eec0-f350-d3b3-8f35eb86b654
+	crossFilteringBehavior: bothDirections
+	fromColumn: care_plan_addresses.care_plan_id
+	toColumn: care_plan.care_plan_id
+
+relationship 16ddcee0-fbe2-5603-1b16-8bfea26fad8f
+	crossFilteringBehavior: bothDirections
+	fromColumn: care_plan_goal.care_plan_id
+	toColumn: care_plan.care_plan_id
+
+relationship aa00068b-0bd6-3e88-5387-1a096b9fc069
+	crossFilteringBehavior: bothDirections
+	fromColumn: location.zip
+	toColumn: patient_location_zip.zip
+
+relationship 664506eb-0386-30cd-0f23-9f117778e8ac
+	crossFilteringBehavior: bothDirections
+	fromColumn: social_determinant.location_value
+	toColumn: sdoh_fips.fips_code
+
+relationship 79a50e93-1e3b-5d28-57d1-5fcf1011ee56
+	crossFilteringBehavior: bothDirections
+	fromColumn: social_determinant.name
+	toColumn: sdoh_datasetmetadata.sdoh_datasetmetadata_id
+
+relationship 355339ba-d6f1-e885-374f-fbf76c3a332c
+	crossFilteringBehavior: bothDirections
+	fromColumn: social_determinant.category_id
+	toColumn: sdoh_category.subcategory_id
+
+relationship 501377df-6c5d-e309-34e2-542e46071ef9
+	crossFilteringBehavior: bothDirections
+	relyOnReferentialIntegrity
+	fromColumn: social_determinant.unit_of_measure_id
+	toColumn: sdoh_unitofmeasure.unit_of_measure_id
+
+relationship 288eeec4-18c8-bfa5-a332-ef9f0d8c58c7
+	crossFilteringBehavior: bothDirections
+	fromColumn: zip_to_fips_mapping.zip
+	toColumn: patient_location_zip.zip
+
+relationship b97ec95a-7658-d23b-236d-14e1a7dc732c
+	crossFilteringBehavior: bothDirections
+	fromColumn: zip_to_fips_mapping.countyFips
+	toColumn: sdoh_fips.fips_code
+

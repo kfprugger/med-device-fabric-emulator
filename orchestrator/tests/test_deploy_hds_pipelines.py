@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import json
+
 import importlib
 import sys
 import types
@@ -16,16 +19,37 @@ class FakeFabricClient:
     def __init__(
         self,
         pipeline_ids_by_name: dict[str, str],
-        statuses_by_name: dict[str, str] | None = None,
+        statuses_by_name: dict[str, str | list[str]] | None = None,
         post_errors_by_name: dict[str, Exception] | None = None,
+        item_ids_by_type_and_name: dict[tuple[str, str], str] | None = None,
+        definitions_by_item_id: dict[str, dict] | None = None,
     ) -> None:
         self.pipeline_ids_by_name = pipeline_ids_by_name
         self.pipeline_names_by_id = {
             pipeline_id: pipeline_name
             for pipeline_name, pipeline_id in pipeline_ids_by_name.items()
         }
-        self.statuses_by_name = statuses_by_name or {}
+        self.statuses_by_name = {
+            name: list(status) if isinstance(status, list) else [status]
+            for name, status in (statuses_by_name or {}).items()
+        }
         self.post_errors_by_name = post_errors_by_name or {}
+        self.item_ids_by_type_and_name = {
+            ("DataPipeline", pipeline_name): pipeline_id
+            for pipeline_name, pipeline_id in pipeline_ids_by_name.items()
+        }
+        self.item_ids_by_type_and_name.update(item_ids_by_type_and_name or {})
+        self.item_names_by_id = {
+            item_id: display_name
+            for (
+                _item_type,
+                display_name,
+            ), item_id in self.item_ids_by_type_and_name.items()
+        }
+        self.definitions_by_item_id = definitions_by_item_id or {}
+        self.update_definition_calls: list[dict] = []
+        self.get_definition_calls: list[dict] = []
+        self.create_item_calls: list[dict] = []
         self.events: list[tuple[str, str | int]] = []
 
     def find_lakehouse(self, workspace_id: str, name: str) -> dict[str, str] | None:
@@ -35,21 +59,23 @@ class FakeFabricClient:
         return None
 
     def find_item(
-        self, workspace_id: str, pipeline_name: str, item_type: str
+        self, workspace_id: str, display_name: str, item_type: str
     ) -> dict[str, str] | None:
         assert workspace_id == WORKSPACE_ID
-        assert item_type == "DataPipeline"
-        pipeline_id = self.pipeline_ids_by_name.get(pipeline_name)
-        if pipeline_id is None:
+        item_id = self.item_ids_by_type_and_name.get((item_type, display_name))
+        if item_id is None:
             return None
-        return {"id": pipeline_id, "displayName": pipeline_name}
+        return {"id": item_id, "displayName": display_name, "type": item_type}
 
     def list_items(self, workspace_id: str, item_type: str) -> list[dict[str, str]]:
         assert workspace_id == WORKSPACE_ID
-        assert item_type == "DataPipeline"
         return [
-            {"id": pipeline_id, "displayName": pipeline_name}
-            for pipeline_name, pipeline_id in self.pipeline_ids_by_name.items()
+            {"id": item_id, "displayName": display_name, "type": item_type}
+            for (
+                stored_type,
+                display_name,
+            ), item_id in self.item_ids_by_type_and_name.items()
+            if stored_type == item_type
         ]
 
     def call(
@@ -71,9 +97,49 @@ class FakeFabricClient:
             return {"value": []}
 
         if method == "GET":
-            return {"value": [{"status": self.statuses_by_name[pipeline_name]}]}
+            statuses = self.statuses_by_name.get(pipeline_name, ["Failed"])
+            status = statuses.pop(0) if len(statuses) > 1 else statuses[0]
+            return {"value": [{"status": status}]}
 
         raise AssertionError(f"unexpected Fabric API method: {method}")
+
+    def update_item_definition(
+        self, workspace_id: str, item_id: str, definition: dict
+    ) -> dict:
+        assert workspace_id == WORKSPACE_ID
+        display_name = self.item_names_by_id[item_id]
+        self.events.append(("UPDATE_DEFINITION", display_name))
+        self.update_definition_calls.append(
+            {"workspace_id": workspace_id, "item_id": item_id, "definition": definition}
+        )
+        return {}
+
+    def get_item_definition(self, workspace_id: str, item_id: str) -> dict:
+        assert workspace_id == WORKSPACE_ID
+        display_name = self.item_names_by_id[item_id]
+        self.events.append(("GET_DEFINITION", display_name))
+        self.get_definition_calls.append(
+            {"workspace_id": workspace_id, "item_id": item_id}
+        )
+        return self.definitions_by_item_id[item_id]
+
+    def create_item(
+        self, workspace_id: str, display_name: str, item_type: str, definition: dict
+    ) -> dict[str, str]:
+        assert workspace_id == WORKSPACE_ID
+        item_id = f"created-{display_name}"
+        self.item_ids_by_type_and_name[(item_type, display_name)] = item_id
+        self.item_names_by_id[item_id] = display_name
+        self.events.append(("CREATE_ITEM", display_name))
+        self.create_item_calls.append(
+            {
+                "workspace_id": workspace_id,
+                "display_name": display_name,
+                "item_type": item_type,
+                "definition": definition,
+            }
+        )
+        return {"id": item_id}
 
 
 class DeployHdsCmaTests(unittest.TestCase):
@@ -128,11 +194,11 @@ class DeployHdsCmaTests(unittest.TestCase):
         self.addCleanup(sleep_patcher.stop)
         self.addCleanup(client_patcher.stop)
 
-    def run_activity(self) -> dict:
-        return self.deploy_hds.run(
-            {"fabric_api_base": "https://fabric.test/v1"},
-            {"fabric_workspace_id": WORKSPACE_ID},
-        )
+    def run_activity(self, workspace_name: str | None = None) -> dict:
+        config = {"fabric_api_base": "https://fabric.test/v1"}
+        if workspace_name is not None:
+            config["fabric_workspace_name"] = workspace_name
+        return self.deploy_hds.run(config, {"fabric_workspace_id": WORKSPACE_ID})
 
     def pipeline_ids(self, include_cma: bool) -> dict[str, str]:
         ids = {
@@ -151,6 +217,64 @@ class DeployHdsCmaTests(unittest.TestCase):
             for pipeline_name in self.deploy_hds.CORE_HDS_PIPELINE_NAMES
         }
 
+    def completed_statuses(self, include_cma: bool) -> dict[str, str]:
+        statuses = self.completed_core_statuses()
+        if include_cma:
+            statuses[self.deploy_hds.CMA_PIPELINE_NAME] = "Completed"
+        return statuses
+
+    def cma_item_ids(self, include_report: bool = True) -> dict[tuple[str, str], str]:
+        item_ids = {
+            (
+                "SemanticModel",
+                self.deploy_hds.CMA_SEMANTIC_MODEL_NAME,
+            ): "semantic-model-id"
+        }
+        if include_report:
+            item_ids[("Report", self.deploy_hds.CMA_REPORT_NAMES[0])] = "report-id"
+        return item_ids
+
+    def cma_report_definition(self, connection_string: str) -> dict:
+        pbir = {
+            "version": "4.0",
+            "datasetReference": {
+                "byConnection": {"connectionString": connection_string}
+            },
+        }
+        return {
+            "format": "PBIR-Legacy",
+            "parts": [
+                {
+                    "path": "definition.pbir",
+                    "payload": base64.b64encode(json.dumps(pbir).encode("utf-8")).decode(
+                        "ascii"
+                    ),
+                    "payloadType": "InlineBase64",
+                }
+            ],
+        }
+
+    def decoded_definition_part(self, definition: dict, path: str) -> bytes:
+        matches = [part for part in definition["parts"] if part["path"] == path]
+        self.assertEqual(len(matches), 1)
+        return base64.b64decode(matches[0]["payload"])
+
+    def update_definition_for(self, fake_client: FakeFabricClient, item_id: str) -> dict:
+        matches = [
+            call
+            for call in fake_client.update_definition_calls
+            if call["item_id"] == item_id
+        ]
+        self.assertEqual(len(matches), 1)
+        return matches[0]["definition"]["definition"]
+
+    def event_indexes(
+        self, fake_client: FakeFabricClient, event: tuple[str, str | int]
+    ) -> list[int]:
+        return [
+            index for index, recorded in enumerate(fake_client.events) if recorded == event
+        ]
+
     def posted_pipelines(self, fake_client: FakeFabricClient) -> list[str | int]:
         return [
             pipeline_name
@@ -163,7 +287,7 @@ class DeployHdsCmaTests(unittest.TestCase):
     ) -> None:
         fake_client = FakeFabricClient(
             pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
-            statuses_by_name=self.completed_core_statuses(),
+            statuses_by_name=self.completed_statuses(include_cma=True),
         )
         self.install_fake_client(fake_client)
 
@@ -198,10 +322,99 @@ class DeployHdsCmaTests(unittest.TestCase):
             [clinical_name, cma_name, imaging_name, omop_name],
         )
 
+
+    def test_cma_finalization_waits_after_core_then_overwrites_model_and_rebinds_report(
+        self,
+    ) -> None:
+        cma_name = self.deploy_hds.CMA_PIPELINE_NAME
+        semantic_model_name = self.deploy_hds.CMA_SEMANTIC_MODEL_NAME
+        report_name = self.deploy_hds.CMA_REPORT_NAMES[0]
+        workspace_name = "Healthcare One Workspace"
+        statuses = self.completed_core_statuses()
+        statuses[cma_name] = ["Running", "Completed"]
+        fake_client = FakeFabricClient(
+            pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
+            statuses_by_name=statuses,
+            item_ids_by_type_and_name=self.cma_item_ids(),
+            definitions_by_item_id={
+                "report-id": self.cma_report_definition(
+                    "Data Source=old;initial catalog=old;semanticmodelid=old"
+                )
+            },
+        )
+        self.install_fake_client(fake_client)
+
+        result = self.run_activity(workspace_name=workspace_name)
+
+        self.assertEqual(
+            result["cma_finalization"],
+            {
+                "pipeline_completion": "completed",
+                "semantic_model": "overwritten",
+                f"report:{report_name}": "rebound",
+            },
+        )
+        cma_get_indexes = self.event_indexes(fake_client, ("GET", cma_name))
+        self.assertEqual(len(cma_get_indexes), 2)
+        omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES[2]
+        self.assertLess(
+            fake_client.events.index(("GET", omop_name)), cma_get_indexes[0]
+        )
+        self.assertLess(
+            cma_get_indexes[-1],
+            fake_client.events.index(("UPDATE_DEFINITION", semantic_model_name)),
+        )
+        self.assertLess(
+            fake_client.events.index(("UPDATE_DEFINITION", semantic_model_name)),
+            fake_client.events.index(("UPDATE_DEFINITION", report_name)),
+        )
+
+        semantic_definition = self.update_definition_for(
+            fake_client, "semantic-model-id"
+        )
+        self.assertEqual(semantic_definition["format"], "TMDL")
+        expected_model = (
+            self.deploy_hds.CMA_ARTIFACT_DIR
+            / f"{semantic_model_name}.SemanticModel"
+            / "definition"
+            / "model.tmdl"
+        ).read_bytes()
+        self.assertEqual(
+            self.decoded_definition_part(semantic_definition, "definition/model.tmdl"),
+            expected_model,
+        )
+
+        report_definition = self.update_definition_for(fake_client, "report-id")
+        patched_pbir = json.loads(
+            self.decoded_definition_part(report_definition, "definition.pbir").decode(
+                "utf-8"
+            )
+        )
+        expected_connection_string = (
+            "Data Source=powerbi://api.powerbi.com/v1.0/myorg/"
+            f"{workspace_name};initial catalog={semantic_model_name};"
+            "integrated security=ClaimsToken;semanticmodelid=semantic-model-id"
+        )
+        self.assertEqual(
+            patched_pbir["datasetReference"]["byConnection"]["connectionString"],
+            expected_connection_string,
+        )
+        self.assertEqual(
+            fake_client.get_definition_calls,
+            [{"workspace_id": WORKSPACE_ID, "item_id": "report-id"}],
+        )
+        self.assertEqual(fake_client.create_item_calls, [])
+
     def test_absent_cma_is_recorded_not_deployed_without_extra_post(self) -> None:
         fake_client = FakeFabricClient(
             pipeline_ids_by_name=self.pipeline_ids(include_cma=False),
             statuses_by_name=self.completed_core_statuses(),
+            item_ids_by_type_and_name=self.cma_item_ids(),
+            definitions_by_item_id={
+                "report-id": self.cma_report_definition(
+                    "Data Source=old;initial catalog=old;semanticmodelid=old"
+                )
+            },
         )
         self.install_fake_client(fake_client)
 
@@ -215,11 +428,15 @@ class DeployHdsCmaTests(unittest.TestCase):
             self.posted_pipelines(fake_client),
             self.deploy_hds.CORE_HDS_PIPELINE_NAMES,
         )
+        self.assertEqual(result["cma_finalization"], {})
+        self.assertEqual(fake_client.update_definition_calls, [])
+        self.assertEqual(fake_client.get_definition_calls, [])
+        self.assertEqual(fake_client.create_item_calls, [])
 
     def test_omop_failure_does_not_suppress_cma_triggered_after_clinical(
         self,
     ) -> None:
-        statuses = self.completed_core_statuses()
+        statuses = self.completed_statuses(include_cma=True)
         clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES
         statuses[omop_name] = "Failed"
         fake_client = FakeFabricClient(
@@ -288,7 +505,7 @@ class DeployHdsCmaTests(unittest.TestCase):
                 claims_name: "pipeline-claims",
                 patient_outreach_name: "pipeline-patient-outreach",
             },
-            statuses_by_name=self.completed_core_statuses(),
+            statuses_by_name=self.completed_statuses(include_cma=True),
         )
         self.install_fake_client(fake_client)
 
@@ -324,7 +541,7 @@ class DeployHdsCmaTests(unittest.TestCase):
     def test_cma_trigger_failure_is_reported_as_non_blocking_warning(self) -> None:
         fake_client = FakeFabricClient(
             pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
-            statuses_by_name=self.completed_core_statuses(),
+            statuses_by_name=self.completed_statuses(include_cma=True),
             post_errors_by_name={
                 self.deploy_hds.CMA_PIPELINE_NAME: RuntimeError("cma unavailable")
             },

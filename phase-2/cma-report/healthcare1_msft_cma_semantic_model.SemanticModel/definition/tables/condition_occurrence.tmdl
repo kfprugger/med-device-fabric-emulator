@@ -1,0 +1,284 @@
+table condition_occurrence
+	lineageTag: b0668766-4a81-4bac-a7b4-2240b57bd7a4
+
+	measure PatientCountByCondition = ```
+			DISTINCTCOUNT(condition_occurrence[person_id])
+			
+			```
+		formatString: 0
+		lineageTag: d3602b6a-67b9-45cf-a2d8-dc2dc8f08765
+
+	measure count_diabetic = ```
+			
+			CALCULATE(
+			    DISTINCTCOUNT(condition_occurrence[person_id]),
+			    condition_occurrence[TypeOfDiabetes] IN {
+			        "Type I", "Type I - Predictive", 
+			        "Type II", "Type II - Predictive"
+			    }
+			)
+			```
+		formatString: 0
+		lineageTag: 33162db0-a9f4-4794-bd02-8d9fad31d9c7
+
+	measure count_non_diabetic = ```
+			
+			CALCULATE(
+			    DISTINCTCOUNT(condition_occurrence[person_id]),
+			    NOT(
+			        condition_occurrence[TypeOfDiabetes] IN {
+			            "Type I", "Type I - Predictive", 
+			            "Type II", "Type II - Predictive"
+			        }
+			    )
+			)
+			```
+		formatString: 0
+		lineageTag: e40c0401-60bd-40b1-888b-eeb691c82bb5
+
+	measure count_type_I =
+			
+			CALCULATE(
+			    DISTINCTCOUNT(condition_occurrence[person_id]),
+			    condition_occurrence[TypeOfDiabetes] = "Type I"
+			)
+		formatString: 0
+		lineageTag: 561453a2-1c33-4c93-8f83-31859afc08e7
+
+	measure count_type_II =
+			
+			CALCULATE(
+			    DISTINCTCOUNT(condition_occurrence[person_id]),
+			    condition_occurrence[TypeOfDiabetes] = "Type II"
+			)
+		formatString: 0
+		lineageTag: f54d1364-a5a0-4f9a-9e59-e8b0021142c8
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: f8bb8f8d-5fb7-4af0-9433-cf69548258b1
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: e51ed5e9-f7c6-4678-adfe-15411b22035b
+		summarizeBy: sum
+		sourceColumn: condition_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_start_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 7e6e9622-b41b-45c5-97ba-3882e83d655c
+		summarizeBy: none
+		sourceColumn: condition_start_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_start_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: 97688c41-cee4-49d3-ab0e-11f97c93f092
+		summarizeBy: none
+		sourceColumn: condition_start_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column condition_status_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 3af20bd0-b4f2-446a-a2da-b0f339550c17
+		summarizeBy: sum
+		sourceColumn: condition_status_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 8bd27587-b37d-46ff-8882-9446732a8a8c
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 9f04de2f-96ef-4a18-9523-5f4be8892abf
+		summarizeBy: sum
+		sourceColumn: visit_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column visit_detail_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 770c7f1e-a5d1-4565-a5bf-82845003be55
+		summarizeBy: sum
+		sourceColumn: visit_detail_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_type_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7375736c-cf10-4639-8449-5fa7b372fa19
+		summarizeBy: sum
+		sourceColumn: condition_type_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 32d4e6d2-6049-4eab-ab19-3056f6b694e0
+		summarizeBy: none
+		sourceColumn: condition_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 7ed64e8a-bc05-4466-8dfc-fbd00f113299
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_status_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 6930a878-0858-4272-bdfc-1eae10248a13
+		summarizeBy: none
+		sourceColumn: condition_status_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_end_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: ea12e4d0-0a09-47cd-bb24-119881e96aa4
+		summarizeBy: none
+		sourceColumn: condition_end_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column condition_occurrence_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: bb8559b2-1a39-49ce-9c5d-55db4c964371
+		summarizeBy: sum
+		sourceColumn: condition_occurrence_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column stop_reason
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 697daad2-f41a-452c-9eba-7b819bf2437e
+		summarizeBy: none
+		sourceColumn: stop_reason
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 3e15cc66-6d98-4705-837f-fbb9d437df98
+		summarizeBy: sum
+		sourceColumn: condition_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_end_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: f494a012-2067-4621-8c51-8fee1833a11d
+		summarizeBy: none
+		sourceColumn: condition_end_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 95129365-6d77-4474-aa2b-be172f7e912a
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column condition_text_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 7c9710ff-27b2-4db8-b13d-0e42138bbd55
+		summarizeBy: none
+		sourceColumn: condition_text_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column TypeOfDiabetes =
+			
+			SWITCH(
+			    TRUE(),
+			    condition_occurrence[condition_source_value] = "46635009", "Type I",
+			    condition_occurrence[condition_source_value] = "44054006", "Type II",
+			    "Non - Diabetic"
+			)
+		lineageTag: ca6f0030-2ae2-4cdb-901f-a1cfbb7325e0
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column DiabeticStatus =
+			
+			IF(
+			    'condition_occurrence'[TypeOfDiabetes] IN {
+			        "Type I", "Type I - Predictive",
+			        "Type II", "Type II - Predictive"
+			    },
+			    "Diabetic",
+			    "Non - Diabetic"
+			)
+		lineageTag: 0905635b-f3db-4a4f-b2ac-d6fd4e64258e
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition condition_occurrence = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_condition_occurrence = Source{[Schema="dbo",Item="condition_occurrence"]}[Data]
+				in
+				    dbo_condition_occurrence
+
+	annotation PBI_ResultType = Table
+

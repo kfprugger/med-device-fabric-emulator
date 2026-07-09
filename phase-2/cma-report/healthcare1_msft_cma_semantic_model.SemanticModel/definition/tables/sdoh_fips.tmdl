@@ -1,0 +1,51 @@
+table sdoh_fips
+	lineageTag: b8cd8ea7-070b-418a-8b7b-b4770fca43a1
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 722dbbaf-710f-4358-9694-00e69f0057a5
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column locationType
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 2fe28f8b-110a-4c27-828e-48ed13547b0c
+		summarizeBy: none
+		sourceColumn: locationType
+
+		annotation SummarizationSetBy = Automatic
+
+	column fips_code
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: d311db27-2cc0-4425-a7b3-01017bdc9e81
+		summarizeBy: none
+		sourceColumn: fips_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 9fd6ab05-6991-41ee-a42c-c8d0593b5978
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	partition sdoh_fips = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_sdoh_fips = Source{[Schema="dbo",Item="sdoh_fips"]}[Data]
+				in
+				    dbo_sdoh_fips
+
+	annotation PBI_ResultType = Exception
+

@@ -1,0 +1,76 @@
+table zip_to_fips_mapping
+	lineageTag: 4632787b-a0fd-4227-8402-0184e9b1263d
+
+	column zip
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 8a5ba175-6e65-4e2c-8804-183d92ccd586
+		summarizeBy: none
+		sourceColumn: zip
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: fcef94a3-c155-4399-9566-e884a8af57aa
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column countyFips
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 946c6891-ebf1-42d0-b7b9-ff0e1745ce69
+		summarizeBy: none
+		sourceColumn: countyFips
+
+		annotation SummarizationSetBy = Automatic
+
+	column id
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 16338fa7-0dac-445f-85e2-6d110a192a78
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 4f95a75c-38f2-488d-9a23-7d6d7a6d18bd
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column stateAbbreviation
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3e6500f1-d34d-46a9-add9-7b7854e12e6e
+		summarizeBy: none
+		sourceColumn: stateAbbreviation
+
+		annotation SummarizationSetBy = Automatic
+
+	column countyName
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 309856d9-2f8c-4bc1-b624-9b2f79b3d82c
+		summarizeBy: none
+		sourceColumn: countyName
+
+		annotation SummarizationSetBy = Automatic
+
+	partition zip_to_fips_mapping = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_zip_to_fips_mapping = Source{[Schema="dbo",Item="zip_to_fips_mapping"]}[Data]
+				in
+				    dbo_zip_to_fips_mapping
+

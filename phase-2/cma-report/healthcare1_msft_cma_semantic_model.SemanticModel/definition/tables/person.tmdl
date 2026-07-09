@@ -1,0 +1,276 @@
+table person
+	lineageTag: 80c69ce0-4629-4b58-b672-d3e43a98e850
+
+	measure count_gender_female = COALESCE(CALCULATE(COUNTROWS('person'), 'person'[gender_source_value] = "female"),0)
+		formatString: 0
+		lineageTag: 67865166-0308-4b9d-8001-cce5907d5ed0
+
+	measure count_gender_male = COALESCE(CALCULATE(COUNTROWS('person'), 'person'[gender_source_value] = "male"),0)
+		formatString: 0
+		lineageTag: eeb17f6b-cf38-4b89-881b-fe6d3cc6cced
+
+	measure count_gender_unkown = COALESCE(CALCULATE(COUNTROWS('person'), 'person'[gender_source_value] = "unknown"),0)
+		formatString: 0
+		lineageTag: 78f6baf1-c018-405d-9dca-5624e0a3f883
+
+	measure PatientsByAgeGroup =
+			CALCULATE(
+			    COUNT('person'[person_id]),
+			    ALLEXCEPT('person', 'person'[AgeGroup])
+			)
+		formatString: 0
+		lineageTag: ac322231-b1e9-428f-bbef-eac42c6cc010
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 022df35e-c442-4c4e-887d-c06272e6f826
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column birth_datetime
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: ccd3e823-34ac-46fe-8d8e-cf701c50e3cf
+		summarizeBy: none
+		sourceColumn: birth_datetime
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 4e0614cb-7fa7-4399-a7c6-479a84c71b1e
+		summarizeBy: none
+		sourceColumn: person_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 716256d1-a602-4e5b-ab5a-1d184b6f2d92
+		summarizeBy: sum
+		sourceColumn: race_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column person_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 39ce21a8-7135-4e3e-b0ad-6de23f3c906c
+		summarizeBy: none
+		sourceColumn: person_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 0f132009-e9ee-49e7-adcb-263ed0b89237
+		summarizeBy: none
+		sourceColumn: ethnicity_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: fbfd6be4-2f74-4236-bd5a-6a77d629ba86
+		summarizeBy: sum
+		sourceColumn: ethnicity_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column day_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 88abb25d-c224-484e-8c5f-70ea72426b22
+		summarizeBy: sum
+		sourceColumn: day_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_source_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5151bc1a-8c08-41b9-bd68-8e03447f2540
+		summarizeBy: sum
+		sourceColumn: ethnicity_source_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 53a45a61-b742-496b-a79a-34dde2b8a248
+		summarizeBy: sum
+		sourceColumn: race_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: f622da2d-e14d-4d22-a202-9bedd6bd76e5
+		summarizeBy: none
+		sourceColumn: location_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9beba4b7-4ea6-471a-a963-6f21a5d3d50b
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 49314698-3238-441a-b6da-a0fdc6153972
+		summarizeBy: none
+		sourceColumn: race_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column care_site_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 6238cecc-7de4-4762-b763-2e3ed7db5658
+		summarizeBy: sum
+		sourceColumn: care_site_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column year_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 7f0914dd-dc8d-4eec-b25e-d37ccc6e6059
+		summarizeBy: sum
+		sourceColumn: year_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_source_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 9cdadfd0-23d7-487c-ab82-a0a89a78664f
+		summarizeBy: none
+		sourceColumn: gender_source_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 2168a859-f2c1-4bef-b65a-e75bf361aea7
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column month_of_birth
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 18bcf16f-f651-4587-8264-3b51f3143305
+		summarizeBy: sum
+		sourceColumn: month_of_birth
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_source_concept_id
+		dataType: int64
+		isHidden
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5760c111-e581-40cd-a215-4c5ee18162f9
+		summarizeBy: sum
+		sourceColumn: gender_source_concept_id
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = Automatic
+
+	column gender_concept_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: be94db92-cf87-4adc-8d20-c66aab2212ba
+		summarizeBy: sum
+		sourceColumn: gender_concept_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column AgeGroup =
+			SWITCH(
+			    TRUE(),
+			    DATEDIFF(person[birth_datetime], TODAY(), YEAR) < 18, "Under 18",
+			    DATEDIFF(person[birth_datetime], TODAY(), YEAR) >= 18 && DATEDIFF(person[birth_datetime], TODAY(), YEAR) <= 35, "18-35",
+			    DATEDIFF(person[birth_datetime], TODAY(), YEAR) > 35 && DATEDIFF(person[birth_datetime], TODAY(), YEAR) <= 50, "36-50",
+			    DATEDIFF(person[birth_datetime], TODAY(), YEAR) > 50 && DATEDIFF(person[birth_datetime], TODAY(), YEAR) <= 65, "51-65",
+			    DATEDIFF(person[birth_datetime], TODAY(), YEAR) > 65, "Over 65",
+			    "Unknown"
+			)
+		lineageTag: 4058af01-e36b-45eb-8c1b-25dd732a2ab0
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	column race_source_display_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: fb604602-b516-4c0d-a31c-ed07e1168cb3
+		summarizeBy: none
+		sourceColumn: race_source_display_value
+
+		annotation SummarizationSetBy = Automatic
+
+	column ethnicity_source_display_value
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 3b09dd12-6f2a-47a9-848d-fc836c2e51f1
+		summarizeBy: none
+		sourceColumn: ethnicity_source_display_value
+
+		annotation SummarizationSetBy = Automatic
+
+	hierarchy 'care_site_id Hierarchy'
+		lineageTag: b0434ac1-bc18-4e6d-a46c-df4a2fce1049
+
+		level care_site_id
+			lineageTag: cf2939eb-8d81-4fc3-b0b2-2c472d8cbab2
+			column: care_site_id
+
+		level SourceModifiedOn
+			lineageTag: 20ece0cf-4543-4006-8a6c-f1a1d4506e7a
+			column: SourceModifiedOn
+
+	partition person = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_person = Source{[Schema="dbo",Item="person"]}[Data]
+				in
+				    dbo_person
+
+	annotation PBI_ResultType = Table
+

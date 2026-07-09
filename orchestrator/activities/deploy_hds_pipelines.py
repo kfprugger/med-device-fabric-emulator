@@ -7,8 +7,12 @@ Ports logic from phase-2/storage-access-trusted-workspace.ps1:
 
 from __future__ import annotations
 
+import base64
+import copy
+import json
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 from shared.fabric_client import FabricClient
@@ -18,14 +22,18 @@ logger = logging.getLogger(__name__)
 # Core HDS pipeline order is intentionally sequential: Clinical → Imaging → OMOP.
 # Optional SDoH/claims sidecars are discovered from live Fabric workspace pipeline
 # names and launched best-effort before the Clinical wait; they may no-op/fail
-# non-blocking if source data is absent. CMA is optional and launches
-# after Clinical/Silver readiness, before Imaging and OMOP.
+# non-blocking if source data is absent. CMA launches after Clinical/Silver
+# readiness, does not block Imaging/OMOP, then waits and refreshes the exported
+# CMA semantic model/report binding as the HDS finalization step.
 CORE_HDS_PIPELINE_NAMES = [
     "healthcare1_msft_clinical_data_foundation_ingestion",
     "healthcare1_msft_imaging_with_clinical_foundation_ingestion",
     "healthcare1_msft_omop_analytics",
 ]
 CMA_PIPELINE_NAME = "healthcare1_msft_cma"
+CMA_SEMANTIC_MODEL_NAME = "healthcare1_msft_cma_semantic_model"
+CMA_REPORT_NAMES = ("healthcare1_msft_cma_report",)
+CMA_ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "phase-2" / "cma-report"
 DEFAULT_SIDECAR_PIPELINE_PATTERNS = (
     "sdoh",
     "socialdeterminant",
@@ -186,6 +194,128 @@ def _trigger_optional_pipeline(
     return f"warning: {status}"
 
 
+def _item_definition_format(item_dir: Path) -> str:
+    if item_dir.name.endswith(".SemanticModel"):
+        return "TMDL"
+    if item_dir.name.endswith(".Report"):
+        return "PBIR-Legacy"
+    raise ValueError(f"Unsupported Fabric item artifact directory: {item_dir}")
+
+
+def _load_item_definition(item_dir: Path) -> dict[str, Any]:
+    if not item_dir.exists():
+        raise FileNotFoundError(f"Fabric item artifact directory not found: {item_dir}")
+
+    parts: list[dict[str, str]] = []
+    for path in sorted(p for p in item_dir.rglob("*") if p.is_file()):
+        rel_path = path.relative_to(item_dir).as_posix()
+        parts.append(
+            {
+                "path": rel_path,
+                "payload": base64.b64encode(path.read_bytes()).decode("ascii"),
+                "payloadType": "InlineBase64",
+            }
+        )
+
+    if not parts:
+        raise ValueError(f"Fabric item artifact directory is empty: {item_dir}")
+
+    return {"format": _item_definition_format(item_dir), "parts": parts}
+
+
+def _patch_report_definition_connection(
+    definition: dict[str, Any],
+    workspace_name: str,
+    semantic_model_name: str,
+    semantic_model_id: str,
+) -> dict[str, Any]:
+    patched = copy.deepcopy(definition)
+    connection_string = (
+        "Data Source=powerbi://api.powerbi.com/v1.0/myorg/"
+        f"{workspace_name};initial catalog={semantic_model_name};"
+        f"integrated security=ClaimsToken;semanticmodelid={semantic_model_id}"
+    )
+
+    for part in patched.get("parts", []):
+        if part.get("path") != "definition.pbir":
+            continue
+
+        payload = base64.b64decode(part["payload"]).decode("utf-8")
+        pbir = json.loads(payload)
+        pbir.setdefault("datasetReference", {}).setdefault("byConnection", {})[
+            "connectionString"
+        ] = connection_string
+        encoded = json.dumps(pbir, indent=2).encode("utf-8")
+        part["payload"] = base64.b64encode(encoded).decode("ascii")
+        part["payloadType"] = "InlineBase64"
+        return patched
+
+    raise ValueError("Report definition is missing definition.pbir")
+
+
+def _finalize_cma_semantic_model(
+    fabric: FabricClient,
+    workspace_id: str,
+    workspace_name: str,
+) -> dict[str, str]:
+    results: dict[str, str] = {}
+    semantic_model = fabric.find_item(
+        workspace_id, CMA_SEMANTIC_MODEL_NAME, "SemanticModel"
+    )
+    if not semantic_model:
+        results["semantic_model"] = "not_found"
+        logger.warning("CMA semantic model not found: %s", CMA_SEMANTIC_MODEL_NAME)
+        return results
+
+    semantic_model_id = str(semantic_model["id"])
+    semantic_model_dir = CMA_ARTIFACT_DIR / f"{CMA_SEMANTIC_MODEL_NAME}.SemanticModel"
+    semantic_model_definition = _load_item_definition(semantic_model_dir)
+    fabric.update_item_definition(
+        workspace_id,
+        semantic_model_id,
+        {"definition": semantic_model_definition},
+    )
+    results["semantic_model"] = "overwritten"
+    logger.info("CMA semantic model overwritten from exported artifact: %s", semantic_model_id)
+
+    for report_name in CMA_REPORT_NAMES:
+        report = fabric.find_item(workspace_id, report_name, "Report")
+        if report:
+            report_id = str(report["id"])
+            report_definition = fabric.get_item_definition(workspace_id, report_id)
+            action = "rebound"
+        else:
+            report_id = ""
+            report_dir = CMA_ARTIFACT_DIR / f"{report_name}.Report"
+            report_definition = _load_item_definition(report_dir)
+            action = "created"
+
+        patched_report_definition = _patch_report_definition_connection(
+            report_definition,
+            workspace_name,
+            CMA_SEMANTIC_MODEL_NAME,
+            semantic_model_id,
+        )
+        if report_id:
+            fabric.update_item_definition(
+                workspace_id,
+                report_id,
+                {"definition": patched_report_definition},
+            )
+        else:
+            created = fabric.create_item(
+                workspace_id,
+                report_name,
+                "Report",
+                patched_report_definition,
+            )
+            report_id = str((created or {}).get("id", ""))
+        results[f"report:{report_name}"] = action
+        logger.info("CMA report %s: %s (%s)", report_name, action, report_id)
+
+    return results
+
+
 def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
     """Execute Phase 3: DICOM Shortcut + HDS Pipelines.
 
@@ -241,6 +371,7 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
         )
 
     pipeline_results = {}
+    cma_finalization: dict[str, str] = {}
 
     clinical_name = CORE_HDS_PIPELINE_NAMES[0]
     clinical_pipeline = pipelines_by_name.get(clinical_name)
@@ -254,13 +385,15 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
         )
 
     cma_pipeline = pipelines_by_name.get(CMA_PIPELINE_NAME)
+    cma_trigger_status = ""
     if pipeline_results.get(clinical_name) == "completed":
-        non_blocking_followups[CMA_PIPELINE_NAME] = _trigger_optional_pipeline(
+        cma_trigger_status = _trigger_optional_pipeline(
             fabric,
             workspace_id,
             cma_pipeline,
             CMA_PIPELINE_NAME,
         )
+        non_blocking_followups[CMA_PIPELINE_NAME] = cma_trigger_status
     else:
         non_blocking_followups[CMA_PIPELINE_NAME] = "skipped_clinical_incomplete"
         logger.warning(
@@ -289,6 +422,30 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
         pipeline_results[pipeline_name] = pipeline_status
         prior_pipeline_completed = pipeline_status == "completed"
 
+    if cma_pipeline and cma_trigger_status in {
+        "triggered_non_blocking",
+        "already_running_non_blocking",
+    }:
+        cma_completion = _wait_for_pipeline_completion(
+            fabric, workspace_id, cma_pipeline, CMA_PIPELINE_NAME
+        )
+        cma_finalization["pipeline_completion"] = cma_completion
+        if cma_completion == "completed":
+            workspace_name = str(
+                config.get("fabric_workspace_name")
+                or resources.get("fabric_workspace_name")
+                or workspace_id
+            )
+            try:
+                cma_finalization.update(
+                    _finalize_cma_semantic_model(fabric, workspace_id, workspace_name)
+                )
+            except Exception as e:
+                logger.exception("CMA semantic model finalization failed")
+                cma_finalization["semantic_model"] = f"warning: {e}"
+        else:
+            cma_finalization["semantic_model"] = "skipped_cma_incomplete"
+
     duration = time.time() - start
 
     return {
@@ -300,4 +457,5 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
         },
         "pipeline_results": pipeline_results,
         "non_blocking_followups": non_blocking_followups,
+        "cma_finalization": cma_finalization,
     }

@@ -1,0 +1,73 @@
+table sdoh_datasetmetadata
+	lineageTag: bd1ab65e-7447-4c37-a4ed-4c62e148430d
+
+	column SourceTable
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 00ed143e-1e42-41b5-a74a-c50662a7fa4a
+		summarizeBy: none
+		sourceColumn: SourceTable
+
+		annotation SummarizationSetBy = Automatic
+
+	column sdoh_datasetmetadata_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c4078f2c-143a-4ecf-8c07-729af0aa8975
+		summarizeBy: none
+		sourceColumn: sdoh_datasetmetadata_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column publisher_name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: c8915623-1f90-4fdd-87d7-839b691ff34d
+		summarizeBy: none
+		sourceColumn: publisher_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column published_date
+		dataType: dateTime
+		formatString: Long Date
+		sourceProviderType: date
+		lineageTag: b3d5e3f9-1288-4c3d-abce-a7d0fb9074ce
+		summarizeBy: none
+		sourceColumn: published_date
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column SourceModifiedOn
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: datetime2
+		lineageTag: 3dbaf3e4-4cef-4f1d-b25f-fdb56cf71a44
+		summarizeBy: none
+		sourceColumn: SourceModifiedOn
+
+		annotation SummarizationSetBy = Automatic
+
+	column dataset_name
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: 1c271314-72f1-4a15-9899-7074791a9463
+		summarizeBy: none
+		sourceColumn: dataset_name
+
+		annotation SummarizationSetBy = Automatic
+
+	partition sdoh_datasetmetadata = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("nkhahdl5to4ezo6p5bg76flepa-knddbdlugufetk2sy3oxghm6ly.datawarehouse.fabric.microsoft.com", "healthcare1_msft_gold_cma"),
+				    dbo_sdoh_datasetmetadata = Source{[Schema="dbo",Item="sdoh_datasetmetadata"]}[Data]
+				in
+				    dbo_sdoh_datasetmetadata
+
+	annotation PBI_ResultType = Table
+

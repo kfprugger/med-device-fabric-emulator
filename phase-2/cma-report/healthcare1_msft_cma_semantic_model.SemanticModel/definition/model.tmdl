@@ -1,0 +1,39 @@
+model Model
+	culture: en-IN
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-IN
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation PBI_QueryOrder = ["cost","condition_occurrence","location","person","visit_occurrence","procedure_occurrence","measurement","care_plan","care_plan_activities","care_plan_addresses","care_plan_goal","patient_location_zip","sdoh_category","sdoh_datasetmetadata","sdoh_unitofmeasure","social_determinant","sdoh_fips","zip_to_fips_mapping"]
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBIDesktopVersion = 2.142.7616.1 (Main)+5bcff2d62d31e8c65f2b7afb79b341ec2d915a67
+
+annotation PBI_ProTooling = ["WebModelingEdit"]
+
+annotation __PBIService_Versioning_SaveVersion = 8abdfe7c-0f45-4cd0-826e-f13195024caf
+
+ref table cost
+ref table condition_occurrence
+ref table location
+ref table person
+ref table visit_occurrence
+ref table procedure_occurrence
+ref table measurement
+ref table care_plan
+ref table care_plan_activities
+ref table care_plan_addresses
+ref table care_plan_goal
+ref table patient_location_zip
+ref table sdoh_category
+ref table sdoh_datasetmetadata
+ref table sdoh_unitofmeasure
+ref table social_determinant
+ref table sdoh_fips
+ref table zip_to_fips_mapping
+
+ref cultureInfo en-IN
+
