@@ -314,6 +314,17 @@ if (-not (Test-Path $VenvPython)) {
     exit 1
 }
 
+$venvVersion = & $VenvPython --version 2>&1
+if ($venvVersion -match "(\d+)\.(\d+)\.(\d+)") {
+    $venvMajor = [int]$Matches[1]
+    $venvMinor = [int]$Matches[2]
+    if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le 13)) {
+        Write-Host "  ✗ Backend venv uses Python $($Matches[0]); use Python 3.10-3.13 for Windows native dependency wheels" -ForegroundColor Red
+        Write-Host "    Fix: Remove-Item -Recurse -Force .\orchestrator\.venv; .\setup-prereqs.ps1" -ForegroundColor DarkGray
+        exit 1
+    }
+}
+
 # The venv can exist while dependencies are missing if setup-prereqs.ps1 was
 # interrupted or an older version swallowed pip failures. Fail here with the
 # exact repair command instead of starting a backend that immediately crashes.

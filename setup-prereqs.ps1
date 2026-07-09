@@ -161,27 +161,60 @@ if ($azMod) {
     }
 }
 
-# ── 5. Python 3.10+ ──────────────────────────────────────────────────
+# ── 5. Python 3.10-3.13 ───────────────────────────────────────────────
 Write-Host ""
 Write-Host "  Checking Python + Node.js..." -ForegroundColor White
 $hasPython = $false
-try {
-    $pyVer = python --version 2>&1
+$pythonFile = $null
+$pythonArgs = @()
+$pythonLabel = $null
+$pythonCandidates = if ($isWin) {
+    @(
+        @{ File = "py"; Args = @("-3.13") },
+        @{ File = "py"; Args = @("-3.12") },
+        @{ File = "py"; Args = @("-3.11") },
+        @{ File = "py"; Args = @("-3.10") },
+        @{ File = "python"; Args = @() }
+    )
+} else {
+    @(
+        @{ File = "python3.13"; Args = @() },
+        @{ File = "python3.12"; Args = @() },
+        @{ File = "python3.11"; Args = @() },
+        @{ File = "python3.10"; Args = @() },
+        @{ File = "python3"; Args = @() },
+        @{ File = "python"; Args = @() }
+    )
+}
+
+foreach ($candidate in $pythonCandidates) {
+    if (-not (Get-Command $candidate.File -ErrorAction SilentlyContinue)) { continue }
+    $candidateArgs = @($candidate.Args)
+    $candidateLabel = ($candidate.File + " " + ($candidateArgs -join " ")).Trim()
+    $pyVer = & $candidate.File @candidateArgs --version 2>&1
+    if ($LASTEXITCODE -ne 0) { continue }
     if ($pyVer -match "(\d+)\.(\d+)\.(\d+)") {
         $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-        if ($major -ge 3 -and $minor -ge 10) {
-            Write-Host "  ✓ Python $($Matches[0])" -ForegroundColor Green
+        if ($major -eq 3 -and $minor -ge 10 -and $minor -le 13) {
+            Write-Host "  ✓ Python $($Matches[0]) via $candidateLabel" -ForegroundColor Green
             $pass++
             $hasPython = $true
-        } else {
-            Write-Host "  ✗ Python $($Matches[0]) — 3.10+ required" -ForegroundColor Red
-            Write-Host "    Install: https://python.org/downloads" -ForegroundColor DarkGray
-            $fail++
+            $pythonFile = $candidate.File
+            $pythonArgs = $candidateArgs
+            $pythonLabel = $candidateLabel
+            break
+        }
+        if ($major -eq 3 -and $minor -ge 14) {
+            Write-Host "  ⚠ Python $($Matches[0]) via $candidateLabel is too new for this repo's Windows native dependencies" -ForegroundColor Yellow
+            $warn++
         }
     }
-} catch {
-    Write-Host "  ✗ Python — not found" -ForegroundColor Red
-    Write-Host "    Install: https://python.org/downloads" -ForegroundColor DarkGray
+}
+
+if (-not $hasPython) {
+    Write-Host "  ✗ Python 3.10-3.13 — not found" -ForegroundColor Red
+    Write-Host "    Python 3.14+ is not supported here yet: cryptography may build from source and require Visual Studio C++ link.exe on Windows ARM64." -ForegroundColor DarkGray
+    Write-Host "    Install: winget install Python.Python.3.13" -ForegroundColor DarkGray
     $fail++
 }
 
@@ -250,19 +283,55 @@ $venvPath = Join-Path $ScriptDir "orchestrator/.venv"
 $requirementsPath = Join-Path $ScriptDir "orchestrator/requirements.txt"
 
 if ($hasPython) {
-    if (-not (Test-Path $venvPath)) {
-        if (-not $CheckOnly) {
-            Write-Host "  ⚙ Creating Python virtual environment..." -ForegroundColor Yellow
-            python -m venv $venvPath
+    $venvPython = if ($isWin) { Join-Path $venvPath "Scripts/python.exe" } else { Join-Path $venvPath "bin/python" }
+    $venvNeedsRecreate = $false
+
+    if (Test-Path $venvPython) {
+        $venvVer = & $venvPython --version 2>&1
+        if ($venvVer -match "(\d+)\.(\d+)\.(\d+)") {
+            $venvMajor = [int]$Matches[1]; $venvMinor = [int]$Matches[2]
+            if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le 13)) {
+                Write-Host "  ⚠ Existing venv uses Python $($Matches[0]); recreating with $pythonLabel" -ForegroundColor Yellow
+                $warn++
+                $venvNeedsRecreate = $true
+            } else {
+                Write-Host "  ✓ Python venv exists (orchestrator/.venv, Python $($Matches[0]))" -ForegroundColor Green
+                $pass++
+            }
+        } else {
+            Write-Host "  ⚠ Existing venv Python version unreadable; recreating with $pythonLabel" -ForegroundColor Yellow
+            $warn++
+            $venvNeedsRecreate = $true
+        }
+    } elseif (Test-Path $venvPath) {
+        Write-Host "  ⚠ Python venv folder exists but interpreter is missing; recreating with $pythonLabel" -ForegroundColor Yellow
+        $warn++
+        $venvNeedsRecreate = $true
+    }
+
+    if ($venvNeedsRecreate) {
+        if ($CheckOnly) {
+            Write-Host "  ✗ Python venv must be recreated" -ForegroundColor Red
+            Write-Host "    Fix: Remove-Item -Recurse -Force .\orchestrator\.venv; .\setup-prereqs.ps1" -ForegroundColor DarkGray
+            $fail++
+        } else {
+            Remove-Item -Recurse -Force $venvPath -ErrorAction SilentlyContinue
+        }
+    }
+
+    if (-not (Test-Path $venvPath) -and -not $CheckOnly) {
+        Write-Host "  ⚙ Creating Python virtual environment with $pythonLabel..." -ForegroundColor Yellow
+        & $pythonFile @pythonArgs -m venv $venvPath
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ✗ Python virtual environment creation failed" -ForegroundColor Red
+            $fail++
+        } else {
             $installed++
             Write-Host "  ✓ Virtual environment created at orchestrator/.venv" -ForegroundColor Green
-        } else {
-            Write-Host "  ✗ Python venv not created (orchestrator/.venv)" -ForegroundColor Yellow
-            $warn++
         }
-    } else {
-        Write-Host "  ✓ Python venv exists (orchestrator/.venv)" -ForegroundColor Green
-        $pass++
+    } elseif (-not (Test-Path $venvPath) -and $CheckOnly) {
+        Write-Host "  ✗ Python venv not created (orchestrator/.venv)" -ForegroundColor Yellow
+        $warn++
     }
 
     # Install/verify Python dependencies using the venv interpreter. Do not hide
