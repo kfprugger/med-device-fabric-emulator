@@ -314,6 +314,16 @@ if (-not (Test-Path $VenvPython)) {
     exit 1
 }
 
+# The venv can exist while dependencies are missing if setup-prereqs.ps1 was
+# interrupted or an older version swallowed pip failures. Fail here with the
+# exact repair command instead of starting a backend that immediately crashes.
+& $VenvPython -c "import fastapi, uvicorn, pydantic" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ✗ Backend Python dependencies are missing from orchestrator/.venv" -ForegroundColor Red
+    Write-Host "    Fix: & '$VenvPython' -m pip install -r '$(Join-Path $BackendDir "requirements.txt")'" -ForegroundColor DarkGray
+    exit 1
+}
+
 if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
     Write-Host "  ✗ Frontend dependencies not installed" -ForegroundColor Red
     Write-Host "    Run: cd orchestrator-ui && npm install" -ForegroundColor DarkGray

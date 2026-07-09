@@ -265,18 +265,48 @@ if ($hasPython) {
         $pass++
     }
 
-    # Install Python dependencies
+    # Install/verify Python dependencies using the venv interpreter. Do not hide
+    # pip failures: a partial/stale venv is worse than no venv because Start-WebUI
+    # will find it and then fail later with ModuleNotFoundError.
     if (Test-Path $venvPath) {
-        $pipExe = if ($isWin) { "$venvPath/Scripts/pip" } else { "$venvPath/bin/pip" }
-        if (-not $CheckOnly) {
+        $venvPython = if ($isWin) { Join-Path $venvPath "Scripts/python.exe" } else { Join-Path $venvPath "bin/python" }
+        if (-not (Test-Path $venvPython)) {
+            Write-Host "  ✗ Python venv interpreter missing at $venvPython" -ForegroundColor Red
+            $fail++
+        } elseif (-not $CheckOnly) {
             Write-Host "  ⚙ Installing Python dependencies..." -ForegroundColor Yellow
-            & $pipExe install -r $requirementsPath --quiet 2>$null
-            $installed++
-            Write-Host "  ✓ Python dependencies installed" -ForegroundColor Green
-            $pass++
+            & $venvPython -m pip install --upgrade pip
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  ✗ pip upgrade failed" -ForegroundColor Red
+                $fail++
+            } else {
+                & $venvPython -m pip install -r $requirementsPath
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "  ✗ Python dependency install failed" -ForegroundColor Red
+                    Write-Host "    Retry: $venvPython -m pip install -r $requirementsPath" -ForegroundColor DarkGray
+                    $fail++
+                } else {
+                    & $venvPython -c "import fastapi, uvicorn, pydantic"
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "  ✗ Python dependency verification failed (fastapi/uvicorn/pydantic import)" -ForegroundColor Red
+                        $fail++
+                    } else {
+                        $installed++
+                        Write-Host "  ✓ Python dependencies installed and verified" -ForegroundColor Green
+                        $pass++
+                    }
+                }
+            }
         } else {
-            Write-Host "  ⚠ Run pip install -r orchestrator/requirements.txt to install deps" -ForegroundColor Yellow
-            $warn++
+            & $venvPython -c "import fastapi, uvicorn, pydantic" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  ✓ Python dependencies present" -ForegroundColor Green
+                $pass++
+            } else {
+                Write-Host "  ✗ Python dependencies missing from orchestrator/.venv" -ForegroundColor Red
+                Write-Host "    Fix: $venvPython -m pip install -r $requirementsPath" -ForegroundColor DarkGray
+                $fail++
+            }
         }
     }
 }
