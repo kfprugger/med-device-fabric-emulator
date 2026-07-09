@@ -467,12 +467,32 @@ if ($frontendReady) {
 $proxyReady = $false
 if ($backendReady -and $frontendReady) {
     $proxyUri = "$FrontendBaseUrl/api/live"
-    $proxyReady = Test-HttpEndpoint -Uri $proxyUri -Label "Frontend API proxy" -Quiet
+    $waited = 0
+    while ($waited -lt 15) {
+        Start-Sleep -Milliseconds 500
+        $waited += 0.5
+        try { $frontendProc.Refresh() } catch { }
+        if ($frontendProc.HasExited) {
+            Write-Host "  ✗ Frontend exited while waiting for API proxy (exit code: $($frontendProc.ExitCode))" -ForegroundColor Red
+            Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stderr.log") -Tail 25
+            Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stdout.log") -Tail 25
+            exit 1
+        }
+        if (Test-HttpEndpoint -Uri $proxyUri -Label "Frontend API proxy" -TimeoutSeconds 5 -Quiet) {
+            $proxyReady = $true
+            break
+        }
+    }
+
     if ($proxyReady) {
         Write-Host "  ✓ Frontend API proxy verified — $proxyUri" -ForegroundColor Green
     } else {
-        Write-Host "  ✗ Frontend API proxy did not respond at $proxyUri" -ForegroundColor Red
+        Write-Host "  ✗ Frontend API proxy did not respond at $proxyUri after ${waited}s" -ForegroundColor Red
+        if (Test-HttpEndpoint -Uri $backendProbeUri -Label "Backend direct" -Quiet) {
+            Write-Host "    Backend direct probe still passes; the failure is isolated to the Vite proxy path." -ForegroundColor DarkGray
+        }
         Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stderr.log") -Tail 25
+        Show-RecentLog -Path (Join-Path $FrontendDir "frontend-stdout.log") -Tail 25
         exit 1
     }
 }
