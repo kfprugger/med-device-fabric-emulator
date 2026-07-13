@@ -20,9 +20,9 @@
     "@microsoft/rayfin-cli": "^1.33.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "^6.0.2",
     "typescript": "^5.2.2",
-    "vite": "^6.4.2"
+    "vite": "^8.0.16"
   },
   "overrides": {
     "protobufjs": "^8.0.2",
