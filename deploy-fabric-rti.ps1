@@ -188,6 +188,43 @@ function Invoke-FabricApi {
     }
 }
 
+function Set-MasimoDashboardDefinition {
+    param (
+        [Parameter(Mandatory)][string]$WorkspaceId,
+        [Parameter(Mandatory)][string]$DashboardId,
+        [Parameter(Mandatory)][string]$DashboardName,
+        [Parameter(Mandatory)][string]$KqlDbName,
+        [Parameter(Mandatory)][string]$KqlDbId,
+        [Parameter(Mandatory)][string]$KustoUri
+    )
+
+    $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    $templatePath = Join-Path $scriptRoot "fabric-rti/dashboard/masimo-clinical-dashboard.json"
+    if (-not (Test-Path $templatePath)) {
+        throw "Dashboard template not found: $templatePath"
+    }
+
+    $dashboardJson = Get-Content -Path $templatePath -Raw
+    $replacements = @{
+        "__DASHBOARD_TITLE__" = $DashboardName
+        "__DATA_SOURCE_ID__"  = [guid]::NewGuid().ToString()
+        "__KQL_DB_NAME__"     = $KqlDbName
+        "__KUSTO_URI__"       = $KustoUri
+        "__KQL_DB_ID__"       = $KqlDbId
+        "__WORKSPACE_ID__"    = $WorkspaceId
+    }
+    foreach ($key in $replacements.Keys) {
+        $dashboardJson = $dashboardJson.Replace($key, [string]$replacements[$key])
+    }
+
+    $definition = $dashboardJson | ConvertFrom-Json -ErrorAction Stop
+    $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($dashboardJson))
+    $null = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$WorkspaceId/items/$DashboardId/updateDefinition" `
+        -Body @{ definition = @{ parts = @( @{ path = "RealTimeDashboard.json"; payload = $payload; payloadType = "InlineBase64" } ) } }
+
+    return @{ Pages = $definition.pages.Count; Tiles = $definition.tiles.Count }
+}
+
 function Invoke-KustoMgmt {
     <#
     .SYNOPSIS
@@ -1066,19 +1103,23 @@ dependencies:
     Write-Host ""
 
     $cmd = '.create-or-alter function with (docstring = "Enriched clinical alerts — joins telemetry with HDS Silver Lakehouse patient data via Basic (DeviceAssociation) resources", folder = "ClinicalAlerts") fn_ClinicalAlerts(windowMinutes: int = 5) { let device_patient_map = external_table(''SilverBasic'') | where tostring(code.coding[0].code) in ("device-assoc", "ASSIGNED") | extend ext = parse_json(extension) | mv-expand ext | where tostring(ext.url) has "associated-device" or tostring(ext.url) has "device-association-device" | extend device_identifier = replace_string(tostring(ext.valueReference.reference), "Device/", "") | project device_identifier, patient_orig_id = tostring(subject.idOrig); let patient_info = external_table(''SilverPatient'') | extend name_obj = name[0] | project patient_orig_id = idOrig, patient_name = coalesce(tostring(name_obj.text), strcat(tostring(name_obj.given[0]), " ", tostring(name_obj.family))), gender, birthDate; let high_risk_conditions = external_table(''SilverCondition'') | mv-expand coding = code.coding | where tostring(coding.code) in ("13645005", "84114007", "195967001", "233604007", "59621000") | summarize conditions = make_set(tostring(coding.display)) by patient_orig_id = tostring(subject.msftSourceReference) | extend conditions_str = strcat_array(conditions, ", "); let spo2_alerts = fn_SpO2Alerts(windowMinutes) | project device_id, alert_time, spo2_tier = alert_tier, spo2_value = metric_value, spo2_message = message; let pr_alerts = fn_PulseRateAlerts(windowMinutes) | project device_id, alert_time, pr_tier = alert_tier, pr_value = metric_value, pr_message = message; let vitals = TelemetryRaw | where todatetime(timestamp) > ago(1m * windowMinutes) | summarize arg_max(todatetime(timestamp), *) by device_id | project device_id, current_spo2 = todouble(telemetry.spo2), current_pr = toint(telemetry.pr), current_pi = todouble(telemetry.pi), current_sphb = todouble(telemetry.sphb), signal_iq = toint(telemetry.signal_iq); vitals | join kind=leftouter spo2_alerts on device_id | join kind=leftouter pr_alerts on device_id | where isnotempty(spo2_tier) or isnotempty(pr_tier) | join kind=leftouter device_patient_map on $left.device_id == $right.device_identifier | join kind=leftouter patient_info on patient_orig_id | join kind=leftouter high_risk_conditions on patient_orig_id | extend has_high_risk = isnotempty(conditions_str), base_tier = case(spo2_tier == "CRITICAL" or pr_tier == "CRITICAL", "CRITICAL", spo2_tier == "URGENT" or pr_tier == "URGENT", "URGENT", "WARNING") | extend final_tier = case(base_tier == "CRITICAL", "CRITICAL", base_tier == "URGENT" and has_high_risk, "CRITICAL", base_tier == "WARNING" and has_high_risk, "URGENT", base_tier), alert_type = case(isnotempty(spo2_tier) and isnotempty(pr_tier), "MULTI_METRIC", isnotempty(spo2_tier), "SPO2_LOW", "PR_ABNORMAL") | project alert_id = strcat("ALERT-", device_id, "-", format_datetime(now(), "yyyyMMddHHmmss")), alert_time = coalesce(alert_time, alert_time1, now()), device_id, patient_id = coalesce(patient_orig_id, ""), patient_name = coalesce(patient_name, "(not linked)"), alert_tier = final_tier, alert_type, spo2 = current_spo2, pr = current_pr, pi = current_pi, sphb = current_sphb, signal_iq, qualifying_conditions = coalesce(conditions_str, ""), escalated = (final_tier != base_tier), message = strcat(final_tier, " ALERT", iff(final_tier != base_tier, " (ESCALATED)", ""), " | Patient: ", coalesce(patient_name, "Unknown"), " | Device: ", device_id, " | SpO2: ", tostring(current_spo2), "%", " | PR: ", tostring(current_pr), " bpm", iff(has_high_risk, strcat(" | Conditions: ", conditions_str), "")) | order by alert_tier asc, device_id asc }'
+    # Fabric KQL can return HTTP 520 while validating functions that reference
+    # OneLake-backed external tables. Defer validation, then verify by querying.
+    $cmd = $cmd.Replace('with (', "with (skipvalidation = 'true', ")
     if (Invoke-KustoMgmt -Command $cmd -Label "fn_ClinicalAlerts (enriched with Silver LH)" @kqlParams) { $p2Success++ } else { $p2Fail++ }
 
-    # Deploy fn_AlertLocationMap — joins alerts with Encounter → Location for map visualization
+    # Cache the relatively stable patient-to-facility dimension once. Alert
+    # facts remain live because fn_AlertLocationMap joins current alerts to this
+    # small local table instead of snapshotting the alert result itself.
     Write-Host ""
-    Write-Host "  Deploying fn_AlertLocationMap (alert + location join for map dashboard)..." -ForegroundColor White
-    $cmd = '.create-or-alter function with (docstring = "Clinical alerts enriched with location data from Silver Lakehouse — joins alerts with most recent Encounter location for map visualization", folder = "ClinicalAlerts") fn_AlertLocationMap(windowMinutes: int = 60) { let alerts = fn_ClinicalAlerts(windowMinutes); let patient_encounters = external_table(''SilverEncounter'') | mv-expand loc = location | extend patient_orig_id = coalesce(tostring(subject.idOrig), replace_string(tostring(subject.msftSourceReference), "Patient/", ""), tostring(subject.identifier.value)), location_key = coalesce(tostring(loc.location.id), tostring(loc.location.identifier.value)) | where isnotempty(patient_orig_id) and isnotempty(location_key) | summarize arg_max(todatetime(period.start), location_key) by patient_orig_id | project patient_orig_id, location_key; let location_info = external_table(''SilverLocation'') | where isnotempty(position) | extend location_keys = pack_array(tostring(id), tostring(idOrig)) | mv-expand location_key = location_keys | where isnotempty(location_key) | project location_key = tostring(location_key), location_name = name, latitude = todouble(position.latitude), longitude = todouble(position.longitude), city = tostring(address.city), state = tostring(address.state); alerts | join kind=leftouter patient_encounters on $left.patient_id == $right.patient_orig_id | join kind=leftouter location_info on location_key | project alert_time, device_id, patient_id, patient_name, alert_tier, alert_type, spo2, pr, location_name = coalesce(location_name, "Unknown (no Encounter Location match)"), city = coalesce(city, "Unknown"), state = coalesce(state, ""), latitude = latitude, longitude = longitude, qualifying_conditions, escalated, message | order by alert_tier asc, alert_time desc }'
-    if (Invoke-KustoMgmt -Command $cmd -Label "fn_AlertLocationMap" @kqlParams) { $p2Success++ } else { $p2Fail++ }
+    Write-Host "  Refreshing patient-to-facility location mapping..." -ForegroundColor White
+    $cmd = '.set-or-replace PatientLocationDashboard <| let patient_encounters = external_table(''SilverEncounter'') | mv-expand loc = location | extend patient_orig_id = coalesce(tostring(subject.idOrig), replace_string(tostring(subject.msftSourceReference), "Patient/", ""), tostring(subject.identifier.value)), location_key = coalesce(tostring(loc.location.id), tostring(loc.location.identifier.value)) | where isnotempty(patient_orig_id) and isnotempty(location_key) | summarize arg_max(todatetime(period.start), location_key) by patient_orig_id | project patient_orig_id, location_key; let location_info = external_table(''SilverLocation'') | where isnotempty(position) | extend location_keys = pack_array(tostring(id), tostring(idOrig)) | mv-expand location_key = location_keys | where isnotempty(location_key) | project location_key = tostring(location_key), location_name = name, latitude = todouble(position.latitude), longitude = todouble(position.longitude), city = tostring(address.city), state = tostring(address.state); patient_encounters | join kind=leftouter location_info on location_key | project patient_id = patient_orig_id, location_name = coalesce(location_name, "Unknown (no Encounter Location match)"), city = coalesce(city, "Unknown"), state = coalesce(state, ""), latitude, longitude'
+    if (Invoke-KustoMgmt -Command $cmd -Label "PatientLocationDashboard mapping" @kqlParams) { $p2Success++ } else { $p2Fail++ }
 
-    # Cache the expensive HDS/FHIR location join for dashboard refreshes. The
-    # dashboard reads this real HDS-derived snapshot so map/card/bar tiles stay
-    # responsive while locations remain semantically faithful.
-    $cmd = '.set-or-replace AlertLocationDashboard <| fn_AlertLocationMap(60)'
-    if (Invoke-KustoMgmt -Command $cmd -Label "AlertLocationDashboard snapshot" @kqlParams) { $p2Success++ } else { $p2Fail++ }
+    Write-Host "  Deploying fn_AlertLocationMap (live alerts + cached location mapping)..." -ForegroundColor White
+    $cmd = '.create-or-alter function with (docstring = "Live clinical alerts joined to the deployment-refreshed patient location mapping", folder = "ClinicalAlerts") fn_AlertLocationMap(windowMinutes: int = 60) { fn_ClinicalAlerts(windowMinutes) | join kind=leftouter PatientLocationDashboard on patient_id | project alert_time, device_id, patient_id, patient_name, alert_tier, alert_type, spo2, pr, location_name = coalesce(location_name, "Unknown (no Encounter Location match)"), city = coalesce(city, "Unknown"), state = coalesce(state, ""), latitude, longitude, qualifying_conditions, escalated, message | order by alert_tier asc, alert_time desc }'
+    $cmd = $cmd.Replace('with (', "with (skipvalidation = 'true', ")
+    if (Invoke-KustoMgmt -Command $cmd -Label "fn_AlertLocationMap" @kqlParams) { $p2Success++ } else { $p2Fail++ }
 
     # ================================================================
     # PHASE 2c: CLINICAL ALERTS MAP DASHBOARD
@@ -1122,7 +1163,7 @@ dependencies:
         # succeeds.
         $mapDsUuid   = "fd24750d-7a27-58a5-a74d-3eca90252091"
         $mapPageUuid = "2dfd9f6e-7dcb-4eee-a2f4-4045a36ab0a4"
-        $alertLocationBaseKql = "AlertLocationDashboard"
+        $alertLocationBaseKql = "fn_AlertLocationMap(60)"
 
         $mapDashDef = @{
             '$schema' = "https://dataexplorer.azure.com/static/d/schema/20/dashboard.json"
@@ -1242,6 +1283,22 @@ dependencies:
         }
     }
 
+    # Phase 2 owns the enriched alert/location contracts consumed by the main
+    # dashboard. Reapply its template so Phase2-only repair runs update existing
+    # dashboards instead of leaving Phase 1 tile definitions stale.
+    $patientDashboard = $dashItems.value | Where-Object { $_.displayName -eq "Masimo Patient Monitoring" }
+    if ($patientDashboard) {
+        try {
+            $applied = Set-MasimoDashboardDefinition -WorkspaceId $workspaceId -DashboardId $patientDashboard.id `
+                -DashboardName "Masimo Patient Monitoring" -KqlDbName $kqlDbName -KqlDbId $kqlDbId -KustoUri $kustoUri
+            Write-Host "  ✓ Masimo Patient Monitoring definition refreshed ($($applied.Pages) pages, $($applied.Tiles) tiles)" -ForegroundColor Green
+            $p2Success++
+        } catch {
+            Write-Host "  ✗ Could not refresh Masimo Patient Monitoring definition: $($_.Exception.Message)" -ForegroundColor Red
+            $p2Fail++
+        }
+    }
+
     # ================================================================
     # PHASE 2 SUMMARY
     # ================================================================
@@ -1261,9 +1318,11 @@ dependencies:
     Write-Host "║    • SilverDevice external table (OneLake shortcut)          ║" -ForegroundColor Gray
     Write-Host "║    • SilverLocation external table (OneLake shortcut)        ║" -ForegroundColor Gray
     Write-Host "║    • SilverEncounter external table (OneLake shortcut)       ║" -ForegroundColor Gray
+    Write-Host "║    • PatientLocationDashboard (cached facility mapping)      ║" -ForegroundColor Gray
     Write-Host "║    • fn_ClinicalAlerts (enriched with patient context)       ║" -ForegroundColor Gray
     Write-Host "║    • fn_AlertLocationMap (alerts + location for map)         ║" -ForegroundColor Gray
     Write-Host "║    • Clinical Alerts Map dashboard (4 tiles)                 ║" -ForegroundColor Gray
+    Write-Host "║    • Masimo Patient Monitoring dashboard refreshed          ║" -ForegroundColor Gray
     Write-Host "║                                                              ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║  Verify with:                                                ║" -ForegroundColor $(if ($p2Fail -eq 0) { "Green" } else { "Yellow" })
     Write-Host "║    external_table('SilverPatient') | take 5                  ║" -ForegroundColor Gray
@@ -2701,63 +2760,24 @@ if ($existingDash) {
 # 7b-ii. Apply dashboard definition (tiles, data source, auto-refresh)
 if ($dashId) {
     Write-Host "  Applying enhanced dashboard definition (5 pages, clinical triage + operations)" -ForegroundColor White
-
-    # kusto-trident data source requires UUID IDs and database GUID (not name).
-    # The JSON template keeps stable page/tile IDs while this runtime data source
-    # block is injected for the target workspace/database.
-    $dsUuid = [guid]::NewGuid().ToString()
-    $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-    $dashboardTemplatePath = Join-Path $scriptRoot "fabric-rti/dashboard/masimo-clinical-dashboard.json"
-
-    if (-not (Test-Path $dashboardTemplatePath)) {
-        Write-Host "  ⚠ Dashboard template not found: $dashboardTemplatePath" -ForegroundColor Yellow
-        Add-RtiFailure "Masimo Patient Monitoring dashboard template was not found"
-    } else {
-        $dashJson = Get-Content -Path $dashboardTemplatePath -Raw
-        $replacements = @{
-            "__DASHBOARD_TITLE__" = $dashboardName
-            "__DATA_SOURCE_ID__"  = $dsUuid
-            "__KQL_DB_NAME__"     = $kqlDbName
-            "__KUSTO_URI__"       = $kustoUri
-            "__KQL_DB_ID__"       = $kqlDbId
-            "__WORKSPACE_ID__"    = $workspaceId
-        }
-        foreach ($key in $replacements.Keys) {
-            $dashJson = $dashJson.Replace($key, [string]$replacements[$key])
-        }
-
-        $dashJsonValid = $true
-        $templateDash = $null
-        try {
-            $templateDash = $dashJson | ConvertFrom-Json -ErrorAction Stop
-        } catch {
-            $dashJsonValid = $false
-            Write-Host "  ⚠ Dashboard template JSON is invalid: $($_.Exception.Message)" -ForegroundColor Yellow
-            Add-RtiFailure "Masimo Patient Monitoring dashboard template JSON was invalid"
-        }
-
-        if ($dashJsonValid) {
-            $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($dashJson))
-            try {
-                $null = Invoke-FabricApi -Method POST -Endpoint "/workspaces/$workspaceId/items/$dashId/updateDefinition" `
-                    -Body @{ definition = @{ parts = @( @{ path = "RealTimeDashboard.json"; payload = $b64; payloadType = "InlineBase64" } ) } }
-                Write-Host "  ✓ Dashboard definition applied ($($templateDash.pages.Count) pages, $($templateDash.tiles.Count) tiles)" -ForegroundColor Green
-                Write-Host "    • Command Center: severity KPIs, alert feed, data freshness, SpO2 thresholds" -ForegroundColor Gray
-                Write-Host "    • Clinical Alerts: triage table, explainability, noisy devices, clinical load" -ForegroundColor Gray
-                Write-Host "    • Device Detail: selected-device vitals, alerts, risk context, signal trend" -ForegroundColor Gray
-                Write-Host "    • Operations: ingestion health, connectivity, signal-quality separation" -ForegroundColor Gray
-                Write-Host "    • Facility Map: alert locations, hospital breakdown, location detail" -ForegroundColor Gray
-                Write-Host "  Device filter: single-select with 'All' option" -ForegroundColor Cyan
-                Write-Host "  Auto-refresh: 30 seconds" -ForegroundColor Cyan
-                Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$dashId" -ForegroundColor DarkGray
-                $dashboardDeployed = $true
-            } catch {
-                Write-Host "  ⚠ Failed to apply dashboard definition: $($_.Exception.Message)" -ForegroundColor Yellow
-                Write-Host "    The dashboard was created but needs manual tile configuration." -ForegroundColor Yellow
-                Write-Host "    See: fabric-rti/kql/05-dashboard-queries.kql" -ForegroundColor Yellow
-                Add-RtiFailure "Masimo Patient Monitoring dashboard definition was not applied"
-            }
-        }
+    try {
+        $applied = Set-MasimoDashboardDefinition -WorkspaceId $workspaceId -DashboardId $dashId `
+            -DashboardName $dashboardName -KqlDbName $kqlDbName -KqlDbId $kqlDbId -KustoUri $kustoUri
+        Write-Host "  ✓ Dashboard definition applied ($($applied.Pages) pages, $($applied.Tiles) tiles)" -ForegroundColor Green
+        Write-Host "    • Command Center: severity KPIs, alert feed, data freshness, SpO2 thresholds" -ForegroundColor Gray
+        Write-Host "    • Clinical Alerts: triage table, explainability, noisy devices, clinical load" -ForegroundColor Gray
+        Write-Host "    • Device Detail: selected-device vitals, alerts, risk context, signal trend" -ForegroundColor Gray
+        Write-Host "    • Operations: ingestion health, connectivity, signal-quality separation" -ForegroundColor Gray
+        Write-Host "    • Facility Map: alert locations, hospital breakdown, location detail" -ForegroundColor Gray
+        Write-Host "  Device filter: single-select with 'All' option" -ForegroundColor Cyan
+        Write-Host "  Auto-refresh: 30 seconds" -ForegroundColor Cyan
+        Write-Host "  Dashboard URL: https://app.fabric.microsoft.com/groups/$workspaceId/kustodashboards/$dashId" -ForegroundColor DarkGray
+        $dashboardDeployed = $true
+    } catch {
+        Write-Host "  ⚠ Failed to apply dashboard definition: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    The dashboard was created but needs manual tile configuration." -ForegroundColor Yellow
+        Write-Host "    See: fabric-rti/kql/05-dashboard-queries.kql" -ForegroundColor Yellow
+        Add-RtiFailure "Masimo Patient Monitoring dashboard definition was not applied"
     }
 }
 Write-Host ""

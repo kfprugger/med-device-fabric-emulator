@@ -1157,7 +1157,7 @@
     {
       "id": "40d5513d-2419-5e7a-a7ce-79d69cd74b9d",
       "title": "Alert Locations",
-      "query": "fn_AlertLocationMap(60) | summarize alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), patients=dcount(patient_name), devices=dcount(device_id) by location_name, latitude, longitude, city, state | extend tooltip=strcat(location_name, ' ', alert_count, ' alerts (', critical, ' critical) ', devices, ' devices, ', patients, ' patients') | project longitude, latitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices, tooltip | render scatterchart with (kind=map, xcolumn=longitude, ycolumns=latitude, series=alert_count, title='Alert Locations Map')",
+      "query": "fn_AlertLocationMap(60) | summarize alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), patients=dcount(patient_name), devices=dcount(device_id) by location_name, latitude, longitude, city, state | project latitude, longitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices | order by alert_count desc",
       "layout": {
         "x": 0,
         "y": 0,
@@ -1165,9 +1165,23 @@
         "height": 10
       },
       "pageId": "15437403-636e-5774-8dba-261ff6861ee1",
-      "visualType": "scatterchart",
+      "visualType": "map",
       "dataSourceId": "__DATA_SOURCE_ID__",
-      "visualOptions": {},
+      "visualOptions": {
+        "map__latitudeColumn": {
+          "type": "specified",
+          "value": "latitude"
+        },
+        "map__longitudeColumn": {
+          "type": "specified",
+          "value": "longitude"
+        },
+        "map__bubbleFormat": "bubble",
+        "map__minBubbleSizeColumn": {
+          "type": "specified",
+          "value": "alert_count"
+        }
+      },
       "usedParamVariables": []
     },
     {

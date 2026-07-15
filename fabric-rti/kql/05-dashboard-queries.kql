@@ -267,9 +267,8 @@ TelemetryRaw
 // Visual: map
 fn_AlertLocationMap(60)
 | summarize alert_count=count(), critical=countif(alert_tier == 'CRITICAL'), urgent=countif(alert_tier == 'URGENT'), warning=countif(alert_tier == 'WARNING'), patients=dcount(patient_name), devices=dcount(device_id) by location_name, latitude, longitude, city, state
-| extend tooltip=strcat(location_name, ' ', alert_count, ' alerts (', critical, ' critical) ', devices, ' devices, ', patients, ' patients')
-| project longitude, latitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices, tooltip
-| render scatterchart with (kind=map, xcolumn=longitude, ycolumns=latitude, series=alert_count, title='Alert Locations Map')
+| project latitude, longitude, location_name, city, state, alert_count, critical, urgent, warning, patients, devices
+| order by alert_count desc
 
 // Title: Alerts by Hospital
 // Visual: bar
