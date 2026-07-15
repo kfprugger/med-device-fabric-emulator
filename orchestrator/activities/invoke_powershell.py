@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import contextvars
 import subprocess
 import sys
 import threading
@@ -22,6 +23,19 @@ import re
 from shared.policy_tags import normalize_policy_tags
 
 logger = logging.getLogger(__name__)
+
+_INSTANCE_ID: contextvars.ContextVar[str] = contextvars.ContextVar("invoke_powershell_instance_id", default="")
+
+
+class _InstanceCorrelationFilter(logging.Filter):
+    """Attach the active deployment id to every activity log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.instance_id = _INSTANCE_ID.get()
+        return True
+
+
+logger.addFilter(_InstanceCorrelationFilter())
 
 # The Deploy-All.ps1 script lives in the repo root
 SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -156,10 +170,14 @@ def run_deploy(config: dict[str, Any], step_callback: Any = None, pid_callback: 
             Events: "step_start", "step_succeeded", "step_failed"
     """
     start = time.time()
-    args = _build_deploy_args(config)
-    logger.info("Invoking Deploy-All.ps1 with args: %s", " ".join(args[2:]))
     instance_id = config.get("instance_id", "")
-    exit_code = _run_powershell(args, step_callback, pid_callback, instance_id=instance_id)
+    token = _INSTANCE_ID.set(instance_id)
+    try:
+        args = _build_deploy_args(config)
+        logger.info("Invoking Deploy-All.ps1 with args: %s", " ".join(args[2:]))
+        exit_code = _run_powershell(args, step_callback, pid_callback, instance_id=instance_id)
+    finally:
+        _INSTANCE_ID.reset(token)
     duration = time.time() - start
 
     if exit_code != 0:
@@ -280,6 +298,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         params = [
             f"-FabricWorkspaceName {_ps_single_quoted(config['fabric_workspace_name'])}",
             f"-Location {_ps_single_quoted(config.get('location', 'eastus'))}",
+            f"-ExpectedTenantId {_ps_single_quoted(config.get('expected_tenant_id', '8d038e6a-9b7d-4cb8-bbcf-e84dff156478'))}",
+            f"-ExpectedSubscriptionId {_ps_single_quoted(config.get('expected_subscription_id', '9bbee190-dc61-4c58-ab47-1275cb04018f'))}",
         ]
         if config.get("resource_group_name"):
             params.append(f"-ResourceGroupName {_ps_single_quoted(config['resource_group_name'])}")
@@ -368,6 +388,8 @@ def _build_deploy_args(config: dict[str, Any]) -> list[str]:
         "pwsh", "-NoProfile", "-NonInteractive", "-File",
         str(DEPLOY_SCRIPT),
         "-FabricWorkspaceName", config["fabric_workspace_name"],
+        "-ExpectedTenantId", config.get("expected_tenant_id", "8d038e6a-9b7d-4cb8-bbcf-e84dff156478"),
+        "-ExpectedSubscriptionId", config.get("expected_subscription_id", "9bbee190-dc61-4c58-ab47-1275cb04018f"),
         "-Location", config.get("location", "eastus"),
     ]
 
@@ -492,14 +514,18 @@ def _run_powershell(args: list[str], step_callback: Any = None, pid_callback: An
     heartbeat_stop = threading.Event()
 
     def emit_quiet_heartbeat() -> None:
-        while not heartbeat_stop.wait(30):
-            if process.poll() is not None:
-                return
-            quiet_for = time.monotonic() - last_output_at[0]
-            if quiet_for < 30:
-                continue
-            label = current_step_title[0] or current_phase_label or "PowerShell deployment"
-            logger.info("Still running %s — waiting for PowerShell output (%.0fs quiet)", label, quiet_for)
+        token = _INSTANCE_ID.set(instance_id)
+        try:
+            while not heartbeat_stop.wait(30):
+                if process.poll() is not None:
+                    return
+                quiet_for = time.monotonic() - last_output_at[0]
+                if quiet_for < 30:
+                    continue
+                label = current_step_title[0] or current_phase_label or "PowerShell deployment"
+                logger.info("Still running %s — waiting for PowerShell output (%.0fs quiet)", label, quiet_for)
+        finally:
+            _INSTANCE_ID.reset(token)
 
 
     env_dict = {**__import__("os").environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}

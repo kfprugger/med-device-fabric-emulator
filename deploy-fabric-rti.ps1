@@ -202,25 +202,33 @@ function Invoke-KustoMgmt {
         [hashtable]$KustoHeaders
     )
     $body = @{ db = $DatabaseName; csl = $Command } | ConvertTo-Json -Depth 3 -Compress
-    try {
-        $null = Invoke-RestMethod -Uri "$KustoUri/v1/rest/mgmt" -Headers $KustoHeaders -Method POST -Body $body
-        Write-Host "  ✓ $Label" -ForegroundColor Green
-        return $true
-    } catch {
-        $errBody = $_.ErrorDetails.Message
-        try { $parsed = $errBody | ConvertFrom-Json; $msg = $parsed.error.message } catch { $msg = $errBody }
-        if ($msg -match "already exists") {
-            Write-Host "  ✓ $Label (already exists)" -ForegroundColor Yellow
+    $maxRetries = 3
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            $null = Invoke-RestMethod -Uri "$KustoUri/v1/rest/mgmt" -Headers $KustoHeaders -Method POST -Body $body
+            Write-Host "  ✓ $Label" -ForegroundColor Green
             return $true
+        } catch {
+            $errBody = $_.ErrorDetails.Message
+            try { $parsed = $errBody | ConvertFrom-Json; $msg = $parsed.error.message } catch { $msg = $errBody }
+            if ($msg -match "already exists") {
+                Write-Host "  ✓ $Label (already exists)" -ForegroundColor Yellow
+                return $true
+            }
+            $transient = $msg -match "internal service error|request aborted|temporarily unavailable|timeout|timed out|429|5\d{2}"
+            if ($transient -and $attempt -lt $maxRetries) {
+                $delay = 15 * [Math]::Pow(2, $attempt - 1)
+                Write-Host "  ⚠ $Label transient failure; retrying in ${delay}s ($($attempt + 1)/$maxRetries)..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $delay
+                continue
+            }
+            Write-Host "  ✗ $Label" -ForegroundColor Red
+            if ($msg) { Write-Host "    $msg" -ForegroundColor DarkRed }
+            else { Write-Host "    $($_.Exception.Message)" -ForegroundColor DarkRed }
+            return $false
         }
-        Write-Host "  ✗ $Label" -ForegroundColor Red
-        if ($msg) {
-            Write-Host "    $msg" -ForegroundColor DarkRed
-        } else {
-            Write-Host "    $($_.Exception.Message)" -ForegroundColor DarkRed
-        }
-        return $false
     }
+    return $false
 }
 
 function Wait-FabricItem {

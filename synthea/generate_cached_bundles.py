@@ -116,9 +116,10 @@ def patient_demographic_extensions(idx):
     ]
 
 PAYER_PROFILES = [
-    {"id": "payer-medicare", "name": "Medicare", "type_code": "EHCPOL", "type_display": "extended healthcare"},
-    {"id": "payer-medicaid", "name": "Georgia Medicaid", "type_code": "MCPOL", "type_display": "managed care policy"},
-    {"id": "payer-commercial", "name": "BrakeKat Commercial Health", "type_code": "DENTPRG", "type_display": "dental program"},
+    {"id": "payer-medicare", "name": "Medicare", "category": "Medicare", "type_code": "EHCPOL", "type_display": "extended healthcare"},
+    {"id": "payer-medicaid", "name": "Georgia Medicaid", "category": "Medicaid", "type_code": "MCPOL", "type_display": "managed care policy"},
+    {"id": "payer-commercial", "name": "BrakeKat Commercial Health", "category": "Commercial", "type_code": "DENTPRG", "type_display": "commercial health plan"},
+    {"id": "payer-uninsured", "name": "Self Pay", "category": "Uninsured", "type_code": "SELF-PAY", "type_display": "self-pay"},
 ]
 
 CARE_GOAL_PROFILES = [
@@ -225,6 +226,10 @@ def generate_patient(idx):
     # Assign hospital
     hospital = ATLANTA_HOSPITALS[idx % len(ATLANTA_HOSPITALS)]
     is_choa = "choa" in hospital or "childrens" in hospital
+    # Keep a deterministic inpatient cohort for utilization/readmission analytics.
+    is_inpatient = idx % 4 == 0
+    admission_date = (datetime.now() - timedelta(days=30 + (idx % 7))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    discharge_date = (datetime.now() - timedelta(days=25 + (idx % 5))).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     # Age assignment: CHOA patients must be pediatric (< 21) to pass validation, others can be adult
     if is_choa:
@@ -288,9 +293,16 @@ def generate_patient(idx):
                     "status": "finished",
                     "class": {
                         "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-                        "code": "AMB",
-                        "display": "ambulatory"
+                        "code": "IMP" if is_inpatient else "AMB",
+                        "display": "inpatient encounter" if is_inpatient else "ambulatory"
                     },
+                    **({
+                        "period": {"start": admission_date, "end": discharge_date},
+                        "hospitalization": {
+                            "admitSource": {"text": "Emergency"},
+                            "dischargeDisposition": {"text": "Home"}
+                        }
+                    } if is_inpatient else {}),
                     "subject": {
                         "reference": f"urn:uuid:{patient_uuid}"
                     },
@@ -326,7 +338,8 @@ def generate_patient(idx):
                         }
                     ]
                 }
-            },
+            }
+            ,
             {
                 "fullUrl": f"urn:uuid:{condition_uuid}",
                 "resource": {

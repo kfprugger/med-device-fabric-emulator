@@ -3,34 +3,22 @@
   "type": "transaction",
   "entry": [
     {
-      "fullUrl": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d",
+      "fullUrl": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a",
       "resource": {
         "resourceType": "Patient",
-        "id": "6a230ed6-d499-4d3c-a8c0-428f46faf99d",
+        "id": "9bedf3f1-652a-4ea3-be4c-34a37f5cc06a",
         "active": true,
         "name": [
           {
             "use": "official",
-            "family": "Brown",
+            "family": "Williams",
             "given": [
-              "Patricia"
+              "Mary"
             ]
           }
         ],
-        "gender": "female",
-        "birthDate": "2000-07-23",
-        "address": [
-          {
-            "use": "home",
-            "line": [
-              "8756 Peachtree St NE"
-            ],
-            "city": "Atlanta",
-            "state": "GA",
-            "postalCode": "30309",
-            "country": "US"
-          }
-        ],
+        "gender": "male",
+        "birthDate": "2017-04-19",
         "extension": [
           {
             "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
@@ -66,14 +54,26 @@
               }
             ]
           }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "6312 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
         ]
       }
     },
     {
-      "fullUrl": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1",
+      "fullUrl": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6",
       "resource": {
         "resourceType": "Encounter",
-        "id": "885e60ee-998b-48d4-9df6-969b07403cd1",
+        "id": "5285f8f9-b42d-4f93-a36b-c4e6837753b6",
         "status": "finished",
         "class": {
           "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -81,7 +81,7 @@
           "display": "ambulatory"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "participant": [
           {
@@ -97,19 +97,19 @@
               }
             ],
             "individual": {
-              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810006"
             }
           }
         ],
         "serviceProvider": {
-          "reference": "Organization/grady-memorial-hospital",
-          "display": "Grady Memorial Hospital"
+          "reference": "Organization/choa-scottish-rite",
+          "display": "Choa Scottish Rite"
         },
         "location": [
           {
             "location": {
-              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
-              "display": "Location Grady Memorial Hospital"
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-scottish-rite",
+              "display": "Location Choa Scottish Rite"
             },
             "status": "completed"
           }
@@ -117,10 +117,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:0ceb7f0e-4f58-4452-b191-45aae711d415",
+      "fullUrl": "urn:uuid:dde6ca75-e02c-4fe4-b889-26aa63ccb348",
       "resource": {
         "resourceType": "Condition",
-        "id": "0ceb7f0e-4f58-4452-b191-45aae711d415",
+        "id": "dde6ca75-e02c-4fe4-b889-26aa63ccb348",
         "clinicalStatus": {
           "coding": [
             {
@@ -152,26 +152,155 @@
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "162864005",
-              "display": "Body mass index 30+ - obesity"
+              "code": "195967001",
+              "display": "Asthma"
             }
           ],
-          "text": "Body mass index 30+ - obesity"
+          "text": "Asthma"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "recordedDate": "2026-05-29T14:44:48Z"
+        "recordedDate": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:e3910217-c7a8-4d9f-92c7-569dd862f2ce",
+      "fullUrl": "urn:uuid:585e76a5-8133-4dd5-b78e-f960f0a8a1b8",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "585e76a5-8133-4dd5-b78e-f960f0a8a1b8",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "DENTPRG",
+              "display": "commercial health plan"
+            }
+          ],
+          "text": "BrakeKat Commercial Health"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-commercial",
+            "display": "BrakeKat Commercial Health"
+          }
+        ],
+        "period": {
+          "start": "2025-07-14",
+          "end": "2027-07-14"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d2e387a3-4256-4053-9a45-c70da49b174e",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "d2e387a3-4256-4053-9a45-c70da49b174e",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Improve respiratory symptom control"
+        },
+        "subject": {
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
+        },
+        "startDate": "2026-07-14",
+        "target": [
+          {
+            "measure": {
+              "text": "Maintain oxygen saturation at or above 94 percent"
+            },
+            "dueDate": "2026-10-12"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ac45f82a-9049-47d2-b45a-9444282cf490",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "ac45f82a-9049-47d2-b45a-9444282cf490",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Asthma",
+        "description": "Synthetic care plan for Asthma cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
+        },
+        "period": {
+          "start": "2026-07-14",
+          "end": "2026-08-13"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:dde6ca75-e02c-4fe4-b889-26aa63ccb348"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:d2e387a3-4256-4053-9a45-c70da49b174e"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-commercial",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-commercial",
+        "active": true,
+        "name": "BrakeKat Commercial Health",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a7c4efd8-27a0-4f72-abff-2e97ef3acebc",
       "resource": {
         "resourceType": "Observation",
-        "id": "e3910217-c7a8-4d9f-92c7-569dd862f2ce",
+        "id": "a7c4efd8-27a0-4f72-abff-2e97ef3acebc",
         "status": "final",
         "category": [
           {
@@ -195,14 +324,14 @@
           "text": "Oxygen saturation"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 97.2,
+          "value": 93.6,
           "unit": "%",
           "system": "http://unitsofmeasure.org",
           "code": "%"
@@ -210,10 +339,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:b847f203-71bb-4d07-9dac-1f6b9237a4b6",
+      "fullUrl": "urn:uuid:811866f8-8ef3-4032-951a-0adef981955f",
       "resource": {
         "resourceType": "Observation",
-        "id": "b847f203-71bb-4d07-9dac-1f6b9237a4b6",
+        "id": "811866f8-8ef3-4032-951a-0adef981955f",
         "status": "final",
         "category": [
           {
@@ -237,14 +366,14 @@
           "text": "Heart rate"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 96.5,
+          "value": 87.9,
           "unit": "beats/min",
           "system": "http://unitsofmeasure.org",
           "code": "/min"
@@ -252,10 +381,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:d7383236-e766-48e0-83e7-2ab06b891d92",
+      "fullUrl": "urn:uuid:8fcf0424-6a8d-4080-9a6c-34e46fc6bbb3",
       "resource": {
         "resourceType": "Observation",
-        "id": "d7383236-e766-48e0-83e7-2ab06b891d92",
+        "id": "8fcf0424-6a8d-4080-9a6c-34e46fc6bbb3",
         "status": "final",
         "category": [
           {
@@ -279,14 +408,14 @@
           "text": "Systolic blood pressure"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 110.6,
+          "value": 138.3,
           "unit": "mmHg",
           "system": "http://unitsofmeasure.org",
           "code": "mm[Hg]"
@@ -294,36 +423,36 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:e10a7124-2abc-4524-8964-36764d5a1cd7",
+      "fullUrl": "urn:uuid:5ca69c91-9d56-4556-86fc-c3086a71a1a6",
       "resource": {
         "resourceType": "MedicationRequest",
-        "id": "e10a7124-2abc-4524-8964-36764d5a1cd7",
+        "id": "5ca69c91-9d56-4556-86fc-c3086a71a1a6",
         "status": "active",
         "intent": "order",
         "medicationCodeableConcept": {
           "coding": [
             {
               "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
-              "code": "855332",
-              "display": "Lisinopril 10 MG Oral Tablet"
+              "code": "197361",
+              "display": "Amlodipine 5 MG Oral Tablet"
             }
           ],
-          "text": "Lisinopril 10 MG Oral Tablet"
+          "text": "Amlodipine 5 MG Oral Tablet"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "authoredOn": "2026-05-29T14:44:48Z"
+        "authoredOn": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:45a22f81-22be-40a2-8e1f-4428a338aa7f",
+      "fullUrl": "urn:uuid:e8e0e197-39c6-40e7-a74c-da352d023721",
       "resource": {
         "resourceType": "Procedure",
-        "id": "45a22f81-22be-40a2-8e1f-4428a338aa7f",
+        "id": "e8e0e197-39c6-40e7-a74c-da352d023721",
         "status": "completed",
         "code": {
           "coding": [
@@ -336,141 +465,12 @@
           "text": "History taking"
         },
         "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
+          "reference": "urn:uuid:9bedf3f1-652a-4ea3-be4c-34a37f5cc06a"
         },
         "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
+          "reference": "urn:uuid:5285f8f9-b42d-4f93-a36b-c4e6837753b6"
         },
-        "performedDateTime": "2026-05-29T14:44:48Z"
-      }
-    },
-    {
-      "fullUrl": "Organization/payer-medicare",
-      "resource": {
-        "resourceType": "Organization",
-        "id": "payer-medicare",
-        "active": true,
-        "name": "Medicare",
-        "type": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
-                "code": "pay",
-                "display": "Payer"
-              }
-            ],
-            "text": "Payer"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:eee87e16-e337-4699-a204-e246a997260b",
-      "resource": {
-        "resourceType": "Coverage",
-        "id": "eee87e16-e337-4699-a204-e246a997260b",
-        "status": "active",
-        "type": {
-          "coding": [
-            {
-              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-              "code": "EHCPOL",
-              "display": "extended healthcare"
-            }
-          ],
-          "text": "Medicare"
-        },
-        "beneficiary": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
-        },
-        "payor": [
-          {
-            "reference": "Organization/payer-medicare",
-            "display": "Medicare"
-          }
-        ],
-        "period": {
-          "start": "2025-07-01",
-          "end": "2027-07-01"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:99bdc728-5e2b-4d97-b490-04a3c612d5fb",
-      "resource": {
-        "resourceType": "Goal",
-        "id": "99bdc728-5e2b-4d97-b490-04a3c612d5fb",
-        "lifecycleStatus": "active",
-        "description": {
-          "text": "Improve respiratory symptom control"
-        },
-        "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
-        },
-        "startDate": "2026-07-01",
-        "target": [
-          {
-            "measure": {
-              "text": "Maintain oxygen saturation at or above 94 percent"
-            },
-            "dueDate": "2026-09-29"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:0f637a86-df15-4346-9c61-41f4e459ee28",
-      "resource": {
-        "resourceType": "CarePlan",
-        "id": "0f637a86-df15-4346-9c61-41f4e459ee28",
-        "status": "active",
-        "intent": "plan",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
-                "code": "assess-plan",
-                "display": "Assessment and Plan of Treatment"
-              }
-            ],
-            "text": "Assessment and Plan of Treatment"
-          }
-        ],
-        "title": "Care management plan for Body mass index 30+ - obesity",
-        "description": "Synthetic care plan for Body mass index 30+ - obesity cohort analytics.",
-        "subject": {
-          "reference": "urn:uuid:6a230ed6-d499-4d3c-a8c0-428f46faf99d"
-        },
-        "encounter": {
-          "reference": "urn:uuid:885e60ee-998b-48d4-9df6-969b07403cd1"
-        },
-        "period": {
-          "start": "2026-07-01",
-          "end": "2026-07-31"
-        },
-        "addresses": [
-          {
-            "reference": "urn:uuid:0ceb7f0e-4f58-4452-b191-45aae711d415"
-          }
-        ],
-        "goal": [
-          {
-            "reference": "urn:uuid:99bdc728-5e2b-4d97-b490-04a3c612d5fb"
-          }
-        ],
-        "activity": [
-          {
-            "detail": {
-              "kind": "ServiceRequest",
-              "code": {
-                "text": "Care manager outreach"
-              },
-              "status": "scheduled"
-            }
-          }
-        ]
+        "performedDateTime": "2026-07-14T10:44:04Z"
       }
     }
   ]

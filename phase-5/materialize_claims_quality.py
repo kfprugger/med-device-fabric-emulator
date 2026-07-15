@@ -156,6 +156,17 @@ def fhir_reference(column_name, resource_type, path="$"):
         F.when(identifier_value.isNotNull() & (identifier_value != ""), F.concat(simple_reference_type, F.lit("/"), identifier_value)),
     )
 
+def payer_category_expr(type_code, type_display, type_text, payor_name):
+    """Normalize all available Coverage signals into a reporting category."""
+    signals = F.lower(F.concat_ws(" ", type_code, type_display, type_text, payor_name))
+    return (
+        F.when(signals.rlike(r"medicare|\bmcr\b"), "Medicare")
+        .when(signals.rlike(r"medicaid|\bmcd\b"), "Medicaid")
+        .when(signals.rlike(r"self[- ]pay|uninsured|no insurance"), "Uninsured")
+        .when(signals.rlike(r"commercial|private|employer|blue cross|bcbs|aetna|cigna|united|humana|anthem|kaiser"), "Commercial")
+        .otherwise("Unknown")
+    )
+
 
 # ============================================================================
 # STEP 1: BUILD dim_payer — Insurance payer dimension
@@ -166,21 +177,15 @@ print("\n--- Step 1: dim_payer ---")
 try:
     coverage_df = read_silver("Coverage")
     
+    payer_name = F.get_json_object(F.col("payor_string"), "$[0].display")
+    type_code = F.get_json_object(F.col("type_string"), "$.coding[0].code")
+    type_display = F.get_json_object(F.col("type_string"), "$.coding[0].display")
+    type_text = F.get_json_object(F.col("type_string"), "$.text")
     dim_payer = coverage_df.select(
         F.monotonically_increasing_id().alias("payer_key"),
         F.col("idOrig").alias("payer_id"),
-        # Extract payor name from JSON
-        F.get_json_object(F.col("payor_string"), "$[0].display").alias("payer_name"),
-        # Classify payer type
-        F.when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).contains("medicare"), "Medicare"
-        ).when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).contains("medicaid"), "Medicaid"
-        ).when(
-            F.lower(F.get_json_object(F.col("type_string"), "$.coding[0].code")).isin(
-                "self-pay", "self pay"
-            ), "Uninsured"
-        ).otherwise("Commercial").alias("payer_type"),
+        payer_name.alias("payer_name"),
+        payer_category_expr(type_code, type_display, type_text, payer_name).alias("payer_type"),
         F.get_json_object(F.col("period_string"), "$.start").cast("date").alias("coverage_start"),
         F.get_json_object(F.col("period_string"), "$.end").cast("date").alias("coverage_end"),
         fhir_reference("beneficiary_string", "Patient").alias("patient_ref"),
@@ -188,13 +193,8 @@ try:
         F.current_timestamp().alias("load_timestamp")
     ).dropDuplicates(["payer_id"])
     
-    # payer_category mirrors payer_type as a convenience name for stratified
-    # reporting (Medicare / Medicaid / Commercial / Uninsured / Other).
-    dim_payer = dim_payer.withColumn(
-        "payer_category",
-        F.when(F.col("payer_type").isin("Medicare", "Medicaid", "Commercial", "Uninsured"),
-               F.col("payer_type")).otherwise(F.lit("Other"))
-    )
+    # payer_category mirrors the normalized payer type for stratified reporting.
+    dim_payer = dim_payer.withColumn("payer_category", F.col("payer_type"))
     dim_payer.write.format("delta").mode("overwrite").option("mergeSchema", "true") \
         .saveAsTable(f"{GOLD_LAKEHOUSE}.dim_payer")
     print(f"  ✓ dim_payer: {dim_payer.count()} rows (with payer_category)")
@@ -210,7 +210,6 @@ except Exception as e:
     ])
     spark.createDataFrame([], dim_payer_schema).write.format("delta").mode("overwrite") \
         .saveAsTable(f"{GOLD_LAKEHOUSE}.dim_payer")
-
 
 # ============================================================================
 # STEP 1b: BUILD patient_payer — primary payer per patient (for stratification)

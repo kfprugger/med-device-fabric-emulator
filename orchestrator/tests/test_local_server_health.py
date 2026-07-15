@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 
 import importlib
 import io
@@ -181,6 +182,43 @@ class LocalServerHealthTests(unittest.TestCase):
             {"total": 2, "active": 1, "items": capacities},
         )
         self.assertIsInstance(payload.get("checkedAt"), str)
+
+    def test_auth_probe_imports_isolated_az_context_and_aligns_context_fields(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_az_run(args: list[str], **kwargs):
+            commands.append(args)
+            if args[0] == "az" and args[1] == "version":
+                return types.SimpleNamespace(returncode=0, stdout="{}", stderr="")
+            if args[0] == "az" and args[1:3] == ["account", "show"]:
+                return types.SimpleNamespace(
+                    returncode=0,
+                    stdout='{"user":"cli-user","subscriptionName":"Production","subscriptionId":"SUB-123","tenantId":"TENANT-456"}',
+                    stderr="",
+                )
+            if args[0] == "pwsh":
+                return types.SimpleNamespace(
+                    returncode=0,
+                    stdout='{"installed":true,"loggedIn":true,"user":"ps-user","subscriptionName":"Production","subscriptionId":"sub-123","tenantId":"tenant-456","error":""}',
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected command: {args!r}")
+
+        with patch.dict(os.environ, {"AZURE_CONFIG_DIR": "/tmp/isolated-azure"}), patch.object(
+            self.local_server, "_az_run", side_effect=fake_az_run
+        ):
+            result = self.local_server._get_auth_context_sync()
+
+        pwsh_command = next(command[-1] for command in commands if command[0] == "pwsh")
+        import_path = "Join-Path $env:AZURE_CONFIG_DIR 'azps-context.json'"
+        import_command = "Import-AzContext -Path $isolatedContext -ErrorAction Stop | Out-Null"
+        get_context = "$ctx = Get-AzContext -ErrorAction Stop"
+        self.assertIn(import_path, pwsh_command)
+        self.assertIn(import_command, pwsh_command)
+        self.assertIn(get_context, pwsh_command)
+        self.assertLess(pwsh_command.index(import_command), pwsh_command.index(get_context))
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["aligned"], {"subscription": True, "tenant": True})
 
     def test_phase_log_matching_accepts_ui_cards_for_backend_phase_names(self) -> None:
         matching_cases = [

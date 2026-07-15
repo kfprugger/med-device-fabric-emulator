@@ -554,6 +554,10 @@ def _get_auth_context_sync() -> dict:
             "  [PSCustomObject]@{installed=$false;loggedIn=$false;user='';subscriptionName='';subscriptionId='';tenantId='';error='Az.Accounts module not installed'} | ConvertTo-Json -Compress; exit 0 "
             "}; "
             "try { "
+            "  if ($env:AZURE_CONFIG_DIR) { "
+            "    $isolatedContext = Join-Path $env:AZURE_CONFIG_DIR 'azps-context.json'; "
+            "    if (Test-Path $isolatedContext) { Import-AzContext -Path $isolatedContext -ErrorAction Stop | Out-Null } "
+            "  }; "
             "  $ctx = Get-AzContext -ErrorAction Stop; "
             "  if ($null -eq $ctx -or $null -eq $ctx.Subscription) { throw 'No active Az context' }; "
             "  [PSCustomObject]@{installed=$true;loggedIn=$true;user=$ctx.Account.Id;subscriptionName=$ctx.Subscription.Name;subscriptionId=$ctx.Subscription.Id;tenantId=$ctx.Tenant.Id;error=''} | ConvertTo-Json -Compress "
@@ -645,6 +649,8 @@ class DeployRequest(BaseModel):
     admin_security_group: str = ""
     fabric_workspace_name: str = ""
 
+    expected_tenant_id: str = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478"
+    expected_subscription_id: str = "9bbee190-dc61-4c58-ab47-1275cb04018f"
     @staticmethod
     def _check_name(v: str, info) -> str:
         return _validate_safe_name(v, info.field_name) if v else v
@@ -1676,6 +1682,9 @@ async def start_deploy(req: DeployRequest):
             _apply_prior_success_skips(req)
 
     _ensure_deployment_policy_tags(req)
+    if req.skip_fhir and not req.skip_dicom:
+        req.skip_dicom = True
+        logger.warning("SkipFhir implies SkipDicom because DICOM loading requires a FHIR endpoint")
 
     selected_synth_clinical = not req.skip_hds_pipelines and not req.skip_fhir and not req.skip_synthea
     selected_synth_imaging = not req.skip_hds_pipelines and not req.skip_dicom
@@ -1883,6 +1892,14 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
     deploy_log_file = deploy_log_dir / f"{instance_id}.jsonl"
     current_phase_name: list[str] = [""]  # mutable container for closure
 
+    class DeploymentCorrelationFilter(_logging.Filter):
+        """Keep this handler isolated from other concurrent deployment runs."""
+
+        def filter(self, record: _logging.LogRecord) -> bool:
+            return getattr(record, "instance_id", "") == instance_id
+
+
+
     class StatusLogHandler(_logging.Handler):
         def emit(self, record: _logging.LogRecord):
             msg = self.format(record)
@@ -1928,6 +1945,7 @@ async def _run_deploy(instance_id: str, req: DeployRequest):
     handler = StatusLogHandler()
     handler.setLevel(_logging.INFO)
     handler.setFormatter(_logging.Formatter("%(message)s"))
+    handler.addFilter(DeploymentCorrelationFilter())
 
     _logging.getLogger("activities.invoke_powershell").addHandler(handler)
 

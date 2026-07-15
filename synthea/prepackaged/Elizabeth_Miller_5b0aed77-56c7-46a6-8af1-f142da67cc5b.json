@@ -3,34 +3,22 @@
   "type": "transaction",
   "entry": [
     {
-      "fullUrl": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b",
+      "fullUrl": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880",
       "resource": {
         "resourceType": "Patient",
-        "id": "5b0aed77-56c7-46a6-8af1-f142da67cc5b",
+        "id": "4324b415-8fcb-47cf-928b-71e3bb053880",
         "active": true,
         "name": [
           {
             "use": "official",
-            "family": "Miller",
+            "family": "Brown",
             "given": [
-              "Elizabeth"
+              "James"
             ]
           }
         ],
         "gender": "male",
-        "birthDate": "2010-03-02",
-        "address": [
-          {
-            "use": "home",
-            "line": [
-              "957 Peachtree St NE"
-            ],
-            "city": "Atlanta",
-            "state": "GA",
-            "postalCode": "30309",
-            "country": "US"
-          }
-        ],
+        "birthDate": "2024-05-02",
         "extension": [
           {
             "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
@@ -39,13 +27,13 @@
                 "url": "ombCategory",
                 "valueCoding": {
                   "system": "urn:oid:2.16.840.1.113883.6.238",
-                  "code": "2054-5",
-                  "display": "Black or African American"
+                  "code": "2028-9",
+                  "display": "Asian"
                 }
               },
               {
                 "url": "text",
-                "valueString": "Black or African American"
+                "valueString": "Asian"
               }
             ]
           },
@@ -66,14 +54,26 @@
               }
             ]
           }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "8982 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
         ]
       }
     },
     {
-      "fullUrl": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14",
+      "fullUrl": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b",
       "resource": {
         "resourceType": "Encounter",
-        "id": "002e6435-c7c3-43da-9dfe-a870395fab14",
+        "id": "ca4b2aca-841c-4a20-bb08-ebe38218c63b",
         "status": "finished",
         "class": {
           "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -81,7 +81,7 @@
           "display": "ambulatory"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "participant": [
           {
@@ -97,19 +97,19 @@
               }
             ],
             "individual": {
-              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
             }
           }
         ],
         "serviceProvider": {
-          "reference": "Organization/choa-egleston",
-          "display": "Choa Egleston"
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
         },
         "location": [
           {
             "location": {
-              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
-              "display": "Location Choa Egleston"
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
             },
             "status": "completed"
           }
@@ -117,10 +117,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:8866413d-2a13-40d5-ade6-353d5596e178",
+      "fullUrl": "urn:uuid:a7baaf1c-30e3-4f59-b969-3d1da971555c",
       "resource": {
         "resourceType": "Condition",
-        "id": "8866413d-2a13-40d5-ade6-353d5596e178",
+        "id": "a7baaf1c-30e3-4f59-b969-3d1da971555c",
         "clinicalStatus": {
           "coding": [
             {
@@ -152,26 +152,155 @@
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "13645005",
-              "display": "Chronic obstructive lung disease"
+              "code": "840539006",
+              "display": "COVID-19"
             }
           ],
-          "text": "Chronic obstructive lung disease"
+          "text": "COVID-19"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "recordedDate": "2026-05-29T14:44:48Z"
+        "recordedDate": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:6402c8f2-b56b-41a2-bf82-a4f6a1056dca",
+      "fullUrl": "urn:uuid:6a1023bb-e6ca-43f6-82aa-f6e06409bcc6",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "6a1023bb-e6ca-43f6-82aa-f6e06409bcc6",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "SELF-PAY",
+              "display": "self-pay"
+            }
+          ],
+          "text": "Self Pay"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-uninsured",
+            "display": "Self Pay"
+          }
+        ],
+        "period": {
+          "start": "2025-07-14",
+          "end": "2027-07-14"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:5e037c2c-1b46-4e8a-b1ad-8cfc4957d243",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "5e037c2c-1b46-4e8a-b1ad-8cfc4957d243",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Reduce avoidable acute care utilization"
+        },
+        "subject": {
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
+        },
+        "startDate": "2026-07-14",
+        "target": [
+          {
+            "measure": {
+              "text": "Complete follow-up care plan activities within 30 days"
+            },
+            "dueDate": "2026-10-12"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:606504b3-2da1-40df-825b-184aeb3ef9c4",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "606504b3-2da1-40df-825b-184aeb3ef9c4",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for COVID-19",
+        "description": "Synthetic care plan for COVID-19 cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
+        },
+        "encounter": {
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
+        },
+        "period": {
+          "start": "2026-07-14",
+          "end": "2026-08-13"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:a7baaf1c-30e3-4f59-b969-3d1da971555c"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:5e037c2c-1b46-4e8a-b1ad-8cfc4957d243"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-uninsured",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-uninsured",
+        "active": true,
+        "name": "Self Pay",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:46e35575-0bb4-4779-8257-dfd6c4d2f6be",
       "resource": {
         "resourceType": "Observation",
-        "id": "6402c8f2-b56b-41a2-bf82-a4f6a1056dca",
+        "id": "46e35575-0bb4-4779-8257-dfd6c4d2f6be",
         "status": "final",
         "category": [
           {
@@ -195,14 +324,14 @@
           "text": "Oxygen saturation"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 98.3,
+          "value": 95.9,
           "unit": "%",
           "system": "http://unitsofmeasure.org",
           "code": "%"
@@ -210,10 +339,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:935a5a17-e266-44d9-a591-81648ae27069",
+      "fullUrl": "urn:uuid:2febbd6f-d922-4ed3-afbb-c0d0e52a5a9e",
       "resource": {
         "resourceType": "Observation",
-        "id": "935a5a17-e266-44d9-a591-81648ae27069",
+        "id": "2febbd6f-d922-4ed3-afbb-c0d0e52a5a9e",
         "status": "final",
         "category": [
           {
@@ -237,14 +366,14 @@
           "text": "Heart rate"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 91.0,
+          "value": 98.4,
           "unit": "beats/min",
           "system": "http://unitsofmeasure.org",
           "code": "/min"
@@ -252,10 +381,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:e7865f14-8a97-4049-aaea-d05c989cbb33",
+      "fullUrl": "urn:uuid:2949ec72-f4bf-4f4b-9c39-f255ee62681f",
       "resource": {
         "resourceType": "Observation",
-        "id": "e7865f14-8a97-4049-aaea-d05c989cbb33",
+        "id": "2949ec72-f4bf-4f4b-9c39-f255ee62681f",
         "status": "final",
         "category": [
           {
@@ -279,14 +408,14 @@
           "text": "Systolic blood pressure"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 133.4,
+          "value": 117.3,
           "unit": "mmHg",
           "system": "http://unitsofmeasure.org",
           "code": "mm[Hg]"
@@ -294,36 +423,36 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:04fe3f57-4622-4fc5-a96b-4dca322abae3",
+      "fullUrl": "urn:uuid:fde9ccca-0a7e-4695-9613-bcf2d1e137b5",
       "resource": {
         "resourceType": "MedicationRequest",
-        "id": "04fe3f57-4622-4fc5-a96b-4dca322abae3",
+        "id": "fde9ccca-0a7e-4695-9613-bcf2d1e137b5",
         "status": "active",
         "intent": "order",
         "medicationCodeableConcept": {
           "coding": [
             {
               "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
-              "code": "197361",
-              "display": "Amlodipine 5 MG Oral Tablet"
+              "code": "310963",
+              "display": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
             }
           ],
-          "text": "Amlodipine 5 MG Oral Tablet"
+          "text": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "authoredOn": "2026-05-29T14:44:48Z"
+        "authoredOn": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:28695391-4cdf-4e50-88bb-c59066f986a2",
+      "fullUrl": "urn:uuid:ba11cb41-3c64-4c17-b65c-5d59064d7122",
       "resource": {
         "resourceType": "Procedure",
-        "id": "28695391-4cdf-4e50-88bb-c59066f986a2",
+        "id": "ba11cb41-3c64-4c17-b65c-5d59064d7122",
         "status": "completed",
         "code": {
           "coding": [
@@ -336,141 +465,12 @@
           "text": "History taking"
         },
         "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
+          "reference": "urn:uuid:4324b415-8fcb-47cf-928b-71e3bb053880"
         },
         "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
+          "reference": "urn:uuid:ca4b2aca-841c-4a20-bb08-ebe38218c63b"
         },
-        "performedDateTime": "2026-05-29T14:44:48Z"
-      }
-    },
-    {
-      "fullUrl": "Organization/payer-medicaid",
-      "resource": {
-        "resourceType": "Organization",
-        "id": "payer-medicaid",
-        "active": true,
-        "name": "Georgia Medicaid",
-        "type": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
-                "code": "pay",
-                "display": "Payer"
-              }
-            ],
-            "text": "Payer"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:4cdd20eb-39e9-4f53-96ea-d6ae7a71fb72",
-      "resource": {
-        "resourceType": "Coverage",
-        "id": "4cdd20eb-39e9-4f53-96ea-d6ae7a71fb72",
-        "status": "active",
-        "type": {
-          "coding": [
-            {
-              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-              "code": "MCPOL",
-              "display": "managed care policy"
-            }
-          ],
-          "text": "Georgia Medicaid"
-        },
-        "beneficiary": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
-        },
-        "payor": [
-          {
-            "reference": "Organization/payer-medicaid",
-            "display": "Georgia Medicaid"
-          }
-        ],
-        "period": {
-          "start": "2025-07-01",
-          "end": "2027-07-01"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:55fbc3de-8524-4c25-af05-565125603853",
-      "resource": {
-        "resourceType": "Goal",
-        "id": "55fbc3de-8524-4c25-af05-565125603853",
-        "lifecycleStatus": "active",
-        "description": {
-          "text": "Reduce avoidable acute care utilization"
-        },
-        "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
-        },
-        "startDate": "2026-07-01",
-        "target": [
-          {
-            "measure": {
-              "text": "Complete follow-up care plan activities within 30 days"
-            },
-            "dueDate": "2026-09-29"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:b3e3fe49-f5ac-4387-a249-2756c1ef3c0c",
-      "resource": {
-        "resourceType": "CarePlan",
-        "id": "b3e3fe49-f5ac-4387-a249-2756c1ef3c0c",
-        "status": "active",
-        "intent": "plan",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
-                "code": "assess-plan",
-                "display": "Assessment and Plan of Treatment"
-              }
-            ],
-            "text": "Assessment and Plan of Treatment"
-          }
-        ],
-        "title": "Care management plan for Chronic obstructive lung disease",
-        "description": "Synthetic care plan for Chronic obstructive lung disease cohort analytics.",
-        "subject": {
-          "reference": "urn:uuid:5b0aed77-56c7-46a6-8af1-f142da67cc5b"
-        },
-        "encounter": {
-          "reference": "urn:uuid:002e6435-c7c3-43da-9dfe-a870395fab14"
-        },
-        "period": {
-          "start": "2026-07-01",
-          "end": "2026-07-31"
-        },
-        "addresses": [
-          {
-            "reference": "urn:uuid:8866413d-2a13-40d5-ade6-353d5596e178"
-          }
-        ],
-        "goal": [
-          {
-            "reference": "urn:uuid:55fbc3de-8524-4c25-af05-565125603853"
-          }
-        ],
-        "activity": [
-          {
-            "detail": {
-              "kind": "ServiceRequest",
-              "code": {
-                "text": "Care manager outreach"
-              },
-              "status": "scheduled"
-            }
-          }
-        ]
+        "performedDateTime": "2026-07-14T10:44:04Z"
       }
     }
   ]

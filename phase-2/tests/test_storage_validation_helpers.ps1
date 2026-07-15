@@ -13,8 +13,10 @@ foreach ($functionName in @(
     "Get-LakehouseTableRowCount",
     "Assert-BronzeTableHasData",
     "Assert-LakehouseTableHasData",
-    "Assert-SilverFhirReferencesIntact"
+    "Assert-SilverFhirReferencesIntact",
+    "Invoke-OptionalDataPipelineNonBlocking"
 )) {
+
     $functionAst = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName
@@ -31,6 +33,11 @@ function Write-Log {
     )
     $script:Logs += "[$Level] $Message"
 }
+
+function Record-Step {
+    param([string]$Name, [string]$Status, [double]$Seconds)
+}
+
 
 function Assert-ThrowsLike {
     param(
@@ -143,6 +150,16 @@ function Invoke-FabricApiRequest {
         }
     }
 }
+
+$cmaRegressionResult = Invoke-OptionalDataPipelineNonBlocking `
+    -WorkspaceId "workspace-id" -PipelineName "healthcare1_msft_cma" `
+    -Pipeline ([pscustomobject]@{ id = "pipeline-id" }) -FabricHeaders @{} `
+    -StepName "CMA Pipeline"
+Assert-Equal -Expected $true -Actual $cmaRegressionResult.Invoked `
+    -Message "A successful 202 optional pipeline trigger must expose Invoked=true even when the API response has no Invoked property."
+Assert-Equal -Expected "INVOKED" -Actual $cmaRegressionResult.Status `
+    -Message "A successful optional pipeline trigger should report INVOKED status."
+
 
 function Invoke-LakehouseScalarQuery {
     param(

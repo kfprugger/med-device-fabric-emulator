@@ -318,8 +318,10 @@ $venvVersion = & $VenvPython --version 2>&1
 if ($venvVersion -match "(\d+)\.(\d+)\.(\d+)") {
     $venvMajor = [int]$Matches[1]
     $venvMinor = [int]$Matches[2]
-    if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le 13)) {
-        Write-Host "  ✗ Backend venv uses Python $($Matches[0]); use Python 3.10-3.13 for Windows native dependency wheels" -ForegroundColor Red
+    $maxVenvMinor = if ($IsWindows) { 13 } else { 14 }
+    if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le $maxVenvMinor)) {
+        $platformNote = if ($IsWindows) { "use Python 3.10-3.13 for Windows native dependency wheels" } else { "use Python 3.10-3.14 on macOS/Linux" }
+        Write-Host "  ✗ Backend venv uses Python $($Matches[0]); $platformNote" -ForegroundColor Red
         Write-Host "    Fix: Remove-Item -Recurse -Force .\orchestrator\.venv; .\setup-prereqs.ps1" -ForegroundColor DarkGray
         exit 1
     }

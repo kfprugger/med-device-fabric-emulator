@@ -3,34 +3,22 @@
   "type": "transaction",
   "entry": [
     {
-      "fullUrl": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6",
+      "fullUrl": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5",
       "resource": {
         "resourceType": "Patient",
-        "id": "e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6",
+        "id": "d933dcc4-0e69-4e46-bd22-00d35f3c2ec5",
         "active": true,
         "name": [
           {
             "use": "official",
-            "family": "Williams",
+            "family": "Johnson",
             "given": [
               "William"
             ]
           }
         ],
         "gender": "female",
-        "birthDate": "1992-12-27",
-        "address": [
-          {
-            "use": "home",
-            "line": [
-              "4777 Peachtree St NE"
-            ],
-            "city": "Atlanta",
-            "state": "GA",
-            "postalCode": "30309",
-            "country": "US"
-          }
-        ],
+        "birthDate": "1955-09-21",
         "extension": [
           {
             "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
@@ -39,13 +27,13 @@
                 "url": "ombCategory",
                 "valueCoding": {
                   "system": "urn:oid:2.16.840.1.113883.6.238",
-                  "code": "2106-3",
-                  "display": "White"
+                  "code": "2076-8",
+                  "display": "Native Hawaiian or Other Pacific Islander"
                 }
               },
               {
                 "url": "text",
-                "valueString": "White"
+                "valueString": "Native Hawaiian or Other Pacific Islander"
               }
             ]
           },
@@ -56,32 +44,56 @@
                 "url": "ombCategory",
                 "valueCoding": {
                   "system": "urn:oid:2.16.840.1.113883.6.238",
-                  "code": "2135-2",
-                  "display": "Hispanic or Latino"
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
                 }
               },
               {
                 "url": "text",
-                "valueString": "Hispanic or Latino"
+                "valueString": "Not Hispanic or Latino"
               }
             ]
+          }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "3745 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
           }
         ]
       }
     },
     {
-      "fullUrl": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00",
+      "fullUrl": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8",
       "resource": {
         "resourceType": "Encounter",
-        "id": "fe23b695-34a2-4eec-a097-c2f619be2e00",
+        "id": "94d90461-2bd0-499f-ba2d-2bf1ce73b7a8",
         "status": "finished",
         "class": {
           "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-          "code": "AMB",
-          "display": "ambulatory"
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2026-06-13T10:44:04Z",
+          "end": "2026-06-16T10:44:04Z"
+        },
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
         },
         "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
         },
         "participant": [
           {
@@ -97,7 +109,7 @@
               }
             ],
             "individual": {
-              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810000"
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810008"
             }
           }
         ],
@@ -117,10 +129,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:e4454eb4-5d02-495e-80a2-68d15553f237",
+      "fullUrl": "urn:uuid:b8f332a9-a153-49a4-b2be-97698d1bb4fb",
       "resource": {
         "resourceType": "Condition",
-        "id": "e4454eb4-5d02-495e-80a2-68d15553f237",
+        "id": "b8f332a9-a153-49a4-b2be-97698d1bb4fb",
         "clinicalStatus": {
           "coding": [
             {
@@ -152,196 +164,127 @@
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "84114007",
-              "display": "Heart failure"
+              "code": "840539006",
+              "display": "COVID-19"
             }
           ],
-          "text": "Heart failure"
+          "text": "COVID-19"
         },
         "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
         },
         "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
         },
-        "recordedDate": "2026-05-29T14:44:48Z"
+        "recordedDate": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:3a6a192b-e3d1-407e-9676-e23fb87bd845",
+      "fullUrl": "urn:uuid:c2862aae-dec2-40ee-a056-d2b73c881b45",
       "resource": {
-        "resourceType": "Observation",
-        "id": "3a6a192b-e3d1-407e-9676-e23fb87bd845",
-        "status": "final",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                "code": "vital-signs",
-                "display": "Vital Signs"
-              }
-            ]
-          }
-        ],
-        "code": {
-          "coding": [
-            {
-              "system": "http://loinc.org",
-              "code": "2708-6",
-              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
-            }
-          ],
-          "text": "Oxygen saturation"
-        },
-        "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
-        },
-        "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
-        },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
-        "valueQuantity": {
-          "value": 96.1,
-          "unit": "%",
-          "system": "http://unitsofmeasure.org",
-          "code": "%"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:a6b82b8d-9fcc-47db-a139-b1d2a2418707",
-      "resource": {
-        "resourceType": "Observation",
-        "id": "a6b82b8d-9fcc-47db-a139-b1d2a2418707",
-        "status": "final",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                "code": "vital-signs",
-                "display": "Vital Signs"
-              }
-            ]
-          }
-        ],
-        "code": {
-          "coding": [
-            {
-              "system": "http://loinc.org",
-              "code": "8867-4",
-              "display": "Heart rate"
-            }
-          ],
-          "text": "Heart rate"
-        },
-        "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
-        },
-        "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
-        },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
-        "valueQuantity": {
-          "value": 66.0,
-          "unit": "beats/min",
-          "system": "http://unitsofmeasure.org",
-          "code": "/min"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:6e778b67-ec11-48c9-b5de-b577d046e7fa",
-      "resource": {
-        "resourceType": "Observation",
-        "id": "6e778b67-ec11-48c9-b5de-b577d046e7fa",
-        "status": "final",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                "code": "vital-signs",
-                "display": "Vital Signs"
-              }
-            ]
-          }
-        ],
-        "code": {
-          "coding": [
-            {
-              "system": "http://loinc.org",
-              "code": "8480-6",
-              "display": "Systolic blood pressure"
-            }
-          ],
-          "text": "Systolic blood pressure"
-        },
-        "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
-        },
-        "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
-        },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
-        "valueQuantity": {
-          "value": 121.1,
-          "unit": "mmHg",
-          "system": "http://unitsofmeasure.org",
-          "code": "mm[Hg]"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:228820fd-df06-40ed-aa22-d5ee45593284",
-      "resource": {
-        "resourceType": "MedicationRequest",
-        "id": "228820fd-df06-40ed-aa22-d5ee45593284",
+        "resourceType": "Coverage",
+        "id": "c2862aae-dec2-40ee-a056-d2b73c881b45",
         "status": "active",
-        "intent": "order",
-        "medicationCodeableConcept": {
+        "type": {
           "coding": [
             {
-              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
-              "code": "313226",
-              "display": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "EHCPOL",
+              "display": "extended healthcare"
             }
           ],
-          "text": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+          "text": "Medicare"
         },
-        "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
+        "beneficiary": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
         },
-        "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
-        },
-        "authoredOn": "2026-05-29T14:44:48Z"
+        "payor": [
+          {
+            "reference": "Organization/payer-medicare",
+            "display": "Medicare"
+          }
+        ],
+        "period": {
+          "start": "2025-07-14",
+          "end": "2027-07-14"
+        }
       }
     },
     {
-      "fullUrl": "urn:uuid:cdbf49b5-f159-4403-a7c6-6c5299d5bafb",
+      "fullUrl": "urn:uuid:24abd6e8-e3f1-42a8-9b41-3ee96781ad61",
       "resource": {
-        "resourceType": "Procedure",
-        "id": "cdbf49b5-f159-4403-a7c6-6c5299d5bafb",
-        "status": "completed",
-        "code": {
-          "coding": [
-            {
-              "system": "http://snomed.info/sct",
-              "code": "43075005",
-              "display": "Inhalation therapy"
-            }
-          ],
-          "text": "Inhalation therapy"
+        "resourceType": "Goal",
+        "id": "24abd6e8-e3f1-42a8-9b41-3ee96781ad61",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Improve medication adherence"
         },
         "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
+        },
+        "startDate": "2026-07-14",
+        "target": [
+          {
+            "measure": {
+              "text": "Take prescribed respiratory or cardiac medication as directed"
+            },
+            "dueDate": "2026-10-12"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4eacee54-d177-44e2-b969-3cac61eb86ca",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "4eacee54-d177-44e2-b969-3cac61eb86ca",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for COVID-19",
+        "description": "Synthetic care plan for COVID-19 cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
         },
         "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
         },
-        "performedDateTime": "2026-05-29T14:44:48Z"
+        "period": {
+          "start": "2026-07-14",
+          "end": "2026-08-13"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:b8f332a9-a153-49a4-b2be-97698d1bb4fb"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:24abd6e8-e3f1-42a8-9b41-3ee96781ad61"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
       }
     },
     {
@@ -366,111 +309,180 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:f7fc85ac-6b25-4a8f-a79f-9381d4e2069d",
+      "fullUrl": "urn:uuid:cf5854cc-b84d-4125-9d39-296e14138f84",
       "resource": {
-        "resourceType": "Coverage",
-        "id": "f7fc85ac-6b25-4a8f-a79f-9381d4e2069d",
-        "status": "active",
-        "type": {
-          "coding": [
-            {
-              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-              "code": "EHCPOL",
-              "display": "extended healthcare"
-            }
-          ],
-          "text": "Medicare"
-        },
-        "beneficiary": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
-        },
-        "payor": [
-          {
-            "reference": "Organization/payer-medicare",
-            "display": "Medicare"
-          }
-        ],
-        "period": {
-          "start": "2025-07-01",
-          "end": "2027-07-01"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:caebf70c-ac15-4421-8039-bcd68a31a999",
-      "resource": {
-        "resourceType": "Goal",
-        "id": "caebf70c-ac15-4421-8039-bcd68a31a999",
-        "lifecycleStatus": "active",
-        "description": {
-          "text": "Improve respiratory symptom control"
-        },
-        "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
-        },
-        "startDate": "2026-07-01",
-        "target": [
-          {
-            "measure": {
-              "text": "Maintain oxygen saturation at or above 94 percent"
-            },
-            "dueDate": "2026-09-29"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:7f8e56a3-bdfc-4f1a-8703-736dfe02a1da",
-      "resource": {
-        "resourceType": "CarePlan",
-        "id": "7f8e56a3-bdfc-4f1a-8703-736dfe02a1da",
-        "status": "active",
-        "intent": "plan",
+        "resourceType": "Observation",
+        "id": "cf5854cc-b84d-4125-9d39-296e14138f84",
+        "status": "final",
         "category": [
           {
             "coding": [
               {
-                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
-                "code": "assess-plan",
-                "display": "Assessment and Plan of Treatment"
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
               }
-            ],
-            "text": "Assessment and Plan of Treatment"
+            ]
           }
         ],
-        "title": "Care management plan for Heart failure",
-        "description": "Synthetic care plan for Heart failure cohort analytics.",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
         "subject": {
-          "reference": "urn:uuid:e6fc722d-e080-4bf9-ba2b-8fff2c5e6ee6"
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
         },
         "encounter": {
-          "reference": "urn:uuid:fe23b695-34a2-4eec-a097-c2f619be2e00"
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
         },
-        "period": {
-          "start": "2026-07-01",
-          "end": "2026-07-31"
-        },
-        "addresses": [
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
+        "valueQuantity": {
+          "value": 97.2,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a5d2f049-e5d7-4173-b3e4-30db5b8d4689",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "a5d2f049-e5d7-4173-b3e4-30db5b8d4689",
+        "status": "final",
+        "category": [
           {
-            "reference": "urn:uuid:e4454eb4-5d02-495e-80a2-68d15553f237"
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
           }
         ],
-        "goal": [
-          {
-            "reference": "urn:uuid:caebf70c-ac15-4421-8039-bcd68a31a999"
-          }
-        ],
-        "activity": [
-          {
-            "detail": {
-              "kind": "ServiceRequest",
-              "code": {
-                "text": "Care manager outreach"
-              },
-              "status": "scheduled"
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
             }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
+        },
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
+        "valueQuantity": {
+          "value": 92.4,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:6d1ac1d5-6b84-4c81-843b-edb747518136",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "6d1ac1d5-6b84-4c81-843b-edb747518136",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
           }
-        ]
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic blood pressure"
+            }
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
+        },
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
+        "valueQuantity": {
+          "value": 136.2,
+          "unit": "mmHg",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm[Hg]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4ccf5468-e2be-4883-87d4-ee2d3dd596e5",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "4ccf5468-e2be-4883-87d4-ee2d3dd596e5",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "313226",
+              "display": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+            }
+          ],
+          "text": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+        },
+        "subject": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
+        },
+        "authoredOn": "2026-07-14T10:44:04Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ba5bd080-ff35-4623-b6f0-ebd279807597",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "ba5bd080-ff35-4623-b6f0-ebd279807597",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "182764009",
+              "display": "Systemic arterial blood pressure measurement"
+            }
+          ],
+          "text": "Systemic arterial blood pressure measurement"
+        },
+        "subject": {
+          "reference": "urn:uuid:d933dcc4-0e69-4e46-bd22-00d35f3c2ec5"
+        },
+        "encounter": {
+          "reference": "urn:uuid:94d90461-2bd0-499f-ba2d-2bf1ce73b7a8"
+        },
+        "performedDateTime": "2026-07-14T10:44:04Z"
       }
     }
   ]

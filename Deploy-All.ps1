@@ -77,6 +77,8 @@ param (
     [switch]$ReusePatients,          # Reuse existing patients — skip Synthea/Loader, keep emulator
     [switch]$UseCachedSynthea,       # Use cached/prepackaged Synthea patient bundles
     [hashtable]$Tags = @{},            # Resource tags (e.g. @{SecurityControl='Ignore'})
+    [string]$ExpectedTenantId = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478",
+    [string]$ExpectedSubscriptionId = "9bbee190-dc61-4c58-ab47-1275cb04018f",
     [switch]$SkipFhirExport,         # Skip FHIR $export step in Fabric Phase 1
 
     # ── Granular component skips ──
@@ -238,6 +240,10 @@ if ($DicomToolkitPath -ne "C:\git\FabricDicomCohortingToolkit") {
 # the coarser switches consumed by the existing step logic.
 # SkipSynthea implies the FHIR loader has nothing new to load; however
 # the FHIR *service* infra still deploys so HDS / $export keep working.
+if ($SkipFhir -and -not $SkipDicom) {
+    Write-Host "  [VALIDATION] -SkipFhir implies -SkipDicom because the DICOM loader requires a FHIR Service endpoint." -ForegroundColor Yellow
+    $SkipDicom = $true
+}
 if ($SkipSynthea) { $ReusePatients = $true }
 if ($Phase4 -or $Phase5) { $SkipPhase7 = $true }
 if ($SkipFabric) {
@@ -3636,6 +3642,8 @@ if ((-not $SkipPhase7 -and -not $Teardown) -or $Phase7) {
             -PayerOpsEmail $PayerOpsEmail `
             -ClaimEventRatePerMinute $ClaimEventRatePerMinute `
             -Tags $Tags `
+            -ExpectedTenantId $ExpectedTenantId `
+            -ExpectedSubscriptionId $ExpectedSubscriptionId `
             -SkipPayerRti:$SkipPayerRti `
             -SkipPayerActivator:$SkipPayerActivator `
             -SkipOpsAgent:$SkipOpsAgent `

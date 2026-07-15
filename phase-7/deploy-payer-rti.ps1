@@ -11,7 +11,9 @@ param (
     [switch]$SkipPayerRti,
     [switch]$SkipPayerActivator,
     [switch]$SkipOpsAgent,
-    [switch]$SkipGraphAgent
+    [switch]$SkipGraphAgent,
+    [string]$ExpectedTenantId = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478",
+    [string]$ExpectedSubscriptionId = "9bbee190-dc61-4c58-ab47-1275cb04018f"
 )
 
 Set-StrictMode -Version Latest
@@ -19,8 +21,6 @@ $ErrorActionPreference = "Stop"
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
-$ExpectedTenantId = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478"
-$ExpectedSubscriptionId = "9bbee190-dc61-4c58-ab47-1275cb04018f"
 $script:AccessTokenCache = @{}
 
 function Get-AccessTokenForResource {

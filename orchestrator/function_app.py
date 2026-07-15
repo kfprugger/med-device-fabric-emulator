@@ -273,7 +273,7 @@ def deploy_all_orchestrator(context):
         phases.append({"phase": "Phase 1: FHIR Service + Synthea + Loader", "status": "skipped"})
 
     # ── Phase 1d: DICOM Loader ────────────────────────────────────
-    if not config.get("skip_dicom"):
+    if not config.get("skip_dicom") and not config.get("skip_fhir"):
         update_status("Phase 1: DICOM Loader", "running")
         phase1d_input = {"config": config, "resources": resources}
         result = yield context.call_activity_with_retry(
@@ -373,6 +373,19 @@ def deploy_all_orchestrator(context):
     else:
         phases.append({"phase": "Phase 6: CMS Quality & Claims", "status": "skipped"})
 
+    # ── Phase 7: Payer RTI & Ops ──────────────────────────────────
+    if not config.get("skip_phase7") and not config.get("skip_fabric"):
+        update_status("Phase 7: Payer RTI & Ops", "running")
+        phase7_input = {"config": config, "resources": resources}
+        result = yield context.call_activity_with_retry(
+            "activity_deploy_payer_rti", RETRY_POLICY, phase7_input
+        )
+        resources.update(result.get("resources", {}))
+        phases.append({"phase": result["phase"], "status": "succeeded", "duration": result["duration_seconds"]})
+    else:
+        phases.append({"phase": "Phase 7: Payer RTI & Ops", "status": "skipped"})
+
+
     # ── Complete ──────────────────────────────────────────────────
     update_status("Deployment Complete", "succeeded")
 
@@ -469,6 +482,12 @@ def activity_deploy_ontology(input_data: dict) -> dict:
 def activity_deploy_quality_measures(input_data: dict) -> dict:
     """Phase 6: CMS Quality & Claims."""
     from activities.deploy_quality_measures import run
+    return run(input_data["config"], input_data["resources"])
+
+@app.activity_trigger(input_name="input_data")
+def activity_deploy_payer_rti(input_data: dict) -> dict:
+    """Phase 7: Payer RTI and operations agents."""
+    from activities.deploy_payer_rti import run
     return run(input_data["config"], input_data["resources"])
 
 

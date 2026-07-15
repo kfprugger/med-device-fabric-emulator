@@ -34,6 +34,8 @@ class DeploymentConfig(BaseModel):
     # Fabric
     fabric_workspace_name: str
     fabric_api_base: str = "https://api.fabric.microsoft.com/v1"
+    expected_tenant_id: str = "8d038e6a-9b7d-4cb8-bbcf-e84dff156478"
+    expected_subscription_id: str = "9bbee190-dc61-4c58-ab47-1275cb04018f"
 
     # Phase control
     skip_base_infra: bool = False

@@ -229,7 +229,7 @@ function Invoke-OptionalDataPipelineNonBlocking {
     $runUri = "$FabricManagementEndpoint/v1/workspaces/$WorkspaceId/items/$pipelineId/jobs/Pipeline/instances"
 
     try {
-        Invoke-FabricApiRequest -Method Post -Uri $runUri -Headers $FabricHeaders -Description "Run optional pipeline '$PipelineName'"
+        $null = Invoke-FabricApiRequest -Method Post -Uri $runUri -Headers $FabricHeaders -Description "Run optional pipeline '$PipelineName'"
         Write-Log "  Optional pipeline '$PipelineName' invoked successfully (non-blocking)." 'INFO'
         $invoked = $true
         $status = 'INVOKED'

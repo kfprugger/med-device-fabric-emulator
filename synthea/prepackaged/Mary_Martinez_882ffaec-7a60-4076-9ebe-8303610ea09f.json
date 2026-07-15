@@ -3,34 +3,22 @@
   "type": "transaction",
   "entry": [
     {
-      "fullUrl": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f",
+      "fullUrl": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712",
       "resource": {
         "resourceType": "Patient",
-        "id": "882ffaec-7a60-4076-9ebe-8303610ea09f",
+        "id": "9bd910ea-2a35-4446-a088-b71321aed712",
         "active": true,
         "name": [
           {
             "use": "official",
-            "family": "Martinez",
+            "family": "Smith",
             "given": [
               "Mary"
             ]
           }
         ],
         "gender": "male",
-        "birthDate": "1991-09-09",
-        "address": [
-          {
-            "use": "home",
-            "line": [
-              "9710 Peachtree St NE"
-            ],
-            "city": "Atlanta",
-            "state": "GA",
-            "postalCode": "30309",
-            "country": "US"
-          }
-        ],
+        "birthDate": "1994-12-03",
         "extension": [
           {
             "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
@@ -39,13 +27,13 @@
                 "url": "ombCategory",
                 "valueCoding": {
                   "system": "urn:oid:2.16.840.1.113883.6.238",
-                  "code": "2106-3",
-                  "display": "White"
+                  "code": "2054-5",
+                  "display": "Black or African American"
                 }
               },
               {
                 "url": "text",
-                "valueString": "White"
+                "valueString": "Black or African American"
               }
             ]
           },
@@ -66,14 +54,26 @@
               }
             ]
           }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "5270 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
         ]
       }
     },
     {
-      "fullUrl": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7",
+      "fullUrl": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533",
       "resource": {
         "resourceType": "Encounter",
-        "id": "52a1a6af-081b-425c-b635-97b84355def7",
+        "id": "fc6e3e14-966a-4b67-9946-4a39714a1533",
         "status": "finished",
         "class": {
           "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -81,7 +81,7 @@
           "display": "ambulatory"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "participant": [
           {
@@ -97,19 +97,19 @@
               }
             ],
             "individual": {
-              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810008"
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810001"
             }
           }
         ],
         "serviceProvider": {
-          "reference": "Organization/emory-university-hospital",
-          "display": "Emory University Hospital"
+          "reference": "Organization/piedmont-atlanta-hospital",
+          "display": "Piedmont Atlanta Hospital"
         },
         "location": [
           {
             "location": {
-              "reference": "Location?identifier=http://example.org/location-ids|loc-emory-university-hospital",
-              "display": "Location Emory University Hospital"
+              "reference": "Location?identifier=http://example.org/location-ids|loc-piedmont-atlanta-hospital",
+              "display": "Location Piedmont Atlanta Hospital"
             },
             "status": "completed"
           }
@@ -117,10 +117,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:d54ec2d4-b0fd-404e-bc18-6d3ab3b54693",
+      "fullUrl": "urn:uuid:6a5a42d8-f7ee-4191-951f-8c377a7e0976",
       "resource": {
         "resourceType": "Condition",
-        "id": "d54ec2d4-b0fd-404e-bc18-6d3ab3b54693",
+        "id": "6a5a42d8-f7ee-4191-951f-8c377a7e0976",
         "clinicalStatus": {
           "coding": [
             {
@@ -152,26 +152,155 @@
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "59621000",
-              "display": "Essential hypertension"
+              "code": "162864005",
+              "display": "Body mass index 30+ - obesity"
             }
           ],
-          "text": "Essential hypertension"
+          "text": "Body mass index 30+ - obesity"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "recordedDate": "2026-05-29T14:44:48Z"
+        "recordedDate": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:d35e8460-4f0a-43eb-a9fc-c59e7194a06e",
+      "fullUrl": "urn:uuid:bb19fabe-a7fe-409c-93fe-dbed89a789bb",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "bb19fabe-a7fe-409c-93fe-dbed89a789bb",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "MCPOL",
+              "display": "managed care policy"
+            }
+          ],
+          "text": "Georgia Medicaid"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-medicaid",
+            "display": "Georgia Medicaid"
+          }
+        ],
+        "period": {
+          "start": "2025-07-14",
+          "end": "2027-07-14"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4fd3e1e4-8ff8-4d5c-ab1f-666f5604e960",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "4fd3e1e4-8ff8-4d5c-ab1f-666f5604e960",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Reduce avoidable acute care utilization"
+        },
+        "subject": {
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
+        },
+        "startDate": "2026-07-14",
+        "target": [
+          {
+            "measure": {
+              "text": "Complete follow-up care plan activities within 30 days"
+            },
+            "dueDate": "2026-10-12"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cf53c9d0-57a4-46b0-b6d7-0143e3676b8c",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "cf53c9d0-57a4-46b0-b6d7-0143e3676b8c",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Body mass index 30+ - obesity",
+        "description": "Synthetic care plan for Body mass index 30+ - obesity cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
+        },
+        "encounter": {
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
+        },
+        "period": {
+          "start": "2026-07-14",
+          "end": "2026-08-13"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:6a5a42d8-f7ee-4191-951f-8c377a7e0976"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:4fd3e1e4-8ff8-4d5c-ab1f-666f5604e960"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-medicaid",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-medicaid",
+        "active": true,
+        "name": "Georgia Medicaid",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:9f48526f-0cb6-4c83-9c9b-b84cc302950d",
       "resource": {
         "resourceType": "Observation",
-        "id": "d35e8460-4f0a-43eb-a9fc-c59e7194a06e",
+        "id": "9f48526f-0cb6-4c83-9c9b-b84cc302950d",
         "status": "final",
         "category": [
           {
@@ -195,14 +324,14 @@
           "text": "Oxygen saturation"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 94.0,
+          "value": 94.2,
           "unit": "%",
           "system": "http://unitsofmeasure.org",
           "code": "%"
@@ -210,10 +339,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:39c62f50-62f0-43bb-9af1-513d6d3f4d7f",
+      "fullUrl": "urn:uuid:e7963ad8-faca-4714-920c-b226fcdc7c17",
       "resource": {
         "resourceType": "Observation",
-        "id": "39c62f50-62f0-43bb-9af1-513d6d3f4d7f",
+        "id": "e7963ad8-faca-4714-920c-b226fcdc7c17",
         "status": "final",
         "category": [
           {
@@ -237,14 +366,14 @@
           "text": "Heart rate"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 60.8,
+          "value": 87.2,
           "unit": "beats/min",
           "system": "http://unitsofmeasure.org",
           "code": "/min"
@@ -252,10 +381,10 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:1341175e-b671-44b7-8d58-8035e690e668",
+      "fullUrl": "urn:uuid:4e6ba68f-21fe-4dc5-9ccf-64c2bc4f51f2",
       "resource": {
         "resourceType": "Observation",
-        "id": "1341175e-b671-44b7-8d58-8035e690e668",
+        "id": "4e6ba68f-21fe-4dc5-9ccf-64c2bc4f51f2",
         "status": "final",
         "category": [
           {
@@ -279,14 +408,14 @@
           "text": "Systolic blood pressure"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "effectiveDateTime": "2026-05-29T14:44:48Z",
+        "effectiveDateTime": "2026-07-14T10:44:04Z",
         "valueQuantity": {
-          "value": 137.8,
+          "value": 110.4,
           "unit": "mmHg",
           "system": "http://unitsofmeasure.org",
           "code": "mm[Hg]"
@@ -294,183 +423,54 @@
       }
     },
     {
-      "fullUrl": "urn:uuid:9a4178bb-4b00-4549-b64e-ee9895a8850c",
+      "fullUrl": "urn:uuid:f805e4ce-af50-42aa-8dcc-1dbe7a3f8a1a",
       "resource": {
         "resourceType": "MedicationRequest",
-        "id": "9a4178bb-4b00-4549-b64e-ee9895a8850c",
+        "id": "f805e4ce-af50-42aa-8dcc-1dbe7a3f8a1a",
         "status": "active",
         "intent": "order",
         "medicationCodeableConcept": {
           "coding": [
             {
               "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
-              "code": "866514",
-              "display": "Metoprolol succinate 50 MG G Ext-Release Oral Tablet"
+              "code": "197361",
+              "display": "Amlodipine 5 MG Oral Tablet"
             }
           ],
-          "text": "Metoprolol succinate 50 MG G Ext-Release Oral Tablet"
+          "text": "Amlodipine 5 MG Oral Tablet"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "authoredOn": "2026-05-29T14:44:48Z"
+        "authoredOn": "2026-07-14T10:44:04Z"
       }
     },
     {
-      "fullUrl": "urn:uuid:8a0d6572-3f39-4a10-8df1-1d005e47f92e",
+      "fullUrl": "urn:uuid:0f769188-f29b-43b8-a3b5-0f8862746a5c",
       "resource": {
         "resourceType": "Procedure",
-        "id": "8a0d6572-3f39-4a10-8df1-1d005e47f92e",
+        "id": "0f769188-f29b-43b8-a3b5-0f8862746a5c",
         "status": "completed",
         "code": {
           "coding": [
             {
               "system": "http://snomed.info/sct",
-              "code": "182764009",
-              "display": "Systemic arterial blood pressure measurement"
+              "code": "3981000175107",
+              "display": "Oxygen administration"
             }
           ],
-          "text": "Systemic arterial blood pressure measurement"
+          "text": "Oxygen administration"
         },
         "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
+          "reference": "urn:uuid:9bd910ea-2a35-4446-a088-b71321aed712"
         },
         "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
+          "reference": "urn:uuid:fc6e3e14-966a-4b67-9946-4a39714a1533"
         },
-        "performedDateTime": "2026-05-29T14:44:48Z"
-      }
-    },
-    {
-      "fullUrl": "Organization/payer-commercial",
-      "resource": {
-        "resourceType": "Organization",
-        "id": "payer-commercial",
-        "active": true,
-        "name": "BrakeKat Commercial Health",
-        "type": [
-          {
-            "coding": [
-              {
-                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
-                "code": "pay",
-                "display": "Payer"
-              }
-            ],
-            "text": "Payer"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:014ae264-227b-41a8-a21b-7baacb574b0c",
-      "resource": {
-        "resourceType": "Coverage",
-        "id": "014ae264-227b-41a8-a21b-7baacb574b0c",
-        "status": "active",
-        "type": {
-          "coding": [
-            {
-              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
-              "code": "DENTPRG",
-              "display": "dental program"
-            }
-          ],
-          "text": "BrakeKat Commercial Health"
-        },
-        "beneficiary": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
-        },
-        "payor": [
-          {
-            "reference": "Organization/payer-commercial",
-            "display": "BrakeKat Commercial Health"
-          }
-        ],
-        "period": {
-          "start": "2025-07-01",
-          "end": "2027-07-01"
-        }
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:97390369-dca1-41ac-84ca-38c2965c231b",
-      "resource": {
-        "resourceType": "Goal",
-        "id": "97390369-dca1-41ac-84ca-38c2965c231b",
-        "lifecycleStatus": "active",
-        "description": {
-          "text": "Improve medication adherence"
-        },
-        "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
-        },
-        "startDate": "2026-07-01",
-        "target": [
-          {
-            "measure": {
-              "text": "Take prescribed respiratory or cardiac medication as directed"
-            },
-            "dueDate": "2026-09-29"
-          }
-        ]
-      }
-    },
-    {
-      "fullUrl": "urn:uuid:017f83ba-6ef5-41a8-b496-20ad994274c2",
-      "resource": {
-        "resourceType": "CarePlan",
-        "id": "017f83ba-6ef5-41a8-b496-20ad994274c2",
-        "status": "active",
-        "intent": "plan",
-        "category": [
-          {
-            "coding": [
-              {
-                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
-                "code": "assess-plan",
-                "display": "Assessment and Plan of Treatment"
-              }
-            ],
-            "text": "Assessment and Plan of Treatment"
-          }
-        ],
-        "title": "Care management plan for Essential hypertension",
-        "description": "Synthetic care plan for Essential hypertension cohort analytics.",
-        "subject": {
-          "reference": "urn:uuid:882ffaec-7a60-4076-9ebe-8303610ea09f"
-        },
-        "encounter": {
-          "reference": "urn:uuid:52a1a6af-081b-425c-b635-97b84355def7"
-        },
-        "period": {
-          "start": "2026-07-01",
-          "end": "2026-07-31"
-        },
-        "addresses": [
-          {
-            "reference": "urn:uuid:d54ec2d4-b0fd-404e-bc18-6d3ab3b54693"
-          }
-        ],
-        "goal": [
-          {
-            "reference": "urn:uuid:97390369-dca1-41ac-84ca-38c2965c231b"
-          }
-        ],
-        "activity": [
-          {
-            "detail": {
-              "kind": "ServiceRequest",
-              "code": {
-                "text": "Care manager outreach"
-              },
-              "status": "scheduled"
-            }
-          }
-        ]
+        "performedDateTime": "2026-07-14T10:44:04Z"
       }
     }
   ]

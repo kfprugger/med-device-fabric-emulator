@@ -161,7 +161,7 @@ if ($azMod) {
     }
 }
 
-# ── 5. Python 3.10-3.13 ───────────────────────────────────────────────
+# ── 5. Python 3.10-3.13 on Windows, 3.10-3.14 elsewhere ───────────────
 Write-Host ""
 Write-Host "  Checking Python + Node.js..." -ForegroundColor White
 $hasPython = $false
@@ -178,6 +178,7 @@ $pythonCandidates = if ($isWin) {
     )
 } else {
     @(
+        @{ File = "python3.14"; Args = @() },
         @{ File = "python3.13"; Args = @() },
         @{ File = "python3.12"; Args = @() },
         @{ File = "python3.11"; Args = @() },
@@ -196,7 +197,8 @@ function Select-SupportedPython {
         if ($LASTEXITCODE -ne 0) { continue }
         if ($pyVer -match "(\d+)\.(\d+)\.(\d+)") {
             $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-            if ($major -eq 3 -and $minor -ge 10 -and $minor -le 13) {
+            $maxMinor = if ($isWin) { 13 } else { 14 }
+            if ($major -eq 3 -and $minor -ge 10 -and $minor -le $maxMinor) {
                 Write-Host "  ✓ Python $($Matches[0]) via $candidateLabel" -ForegroundColor Green
                 $script:pass++
                 $script:hasPython = $true
@@ -205,8 +207,8 @@ function Select-SupportedPython {
                 $script:pythonLabel = $candidateLabel
                 return $true
             }
-            if ($major -eq 3 -and $minor -ge 14) {
-                Write-Host "  ⚠ Python $($Matches[0]) via $candidateLabel is too new for this repo's Windows native dependencies" -ForegroundColor Yellow
+            if ($isWin -and $major -eq 3 -and $minor -ge 14) {
+                Write-Host "  ⚠ Python $($Matches[0]) via $candidateLabel is too new for Windows native dependencies" -ForegroundColor Yellow
                 $script:warn++
             }
         }
@@ -315,7 +317,8 @@ if ($hasPython) {
         $venvVer = & $venvPython --version 2>&1
         if ($venvVer -match "(\d+)\.(\d+)\.(\d+)") {
             $venvMajor = [int]$Matches[1]; $venvMinor = [int]$Matches[2]
-            if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le 13)) {
+            $maxVenvMinor = if ($isWin) { 13 } else { 14 }
+            if (-not ($venvMajor -eq 3 -and $venvMinor -ge 10 -and $venvMinor -le $maxVenvMinor)) {
                 Write-Host "  ⚠ Existing venv uses Python $($Matches[0]); recreating with $pythonLabel" -ForegroundColor Yellow
                 $warn++
                 $venvNeedsRecreate = $true
