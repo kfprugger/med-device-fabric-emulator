@@ -456,19 +456,13 @@ function Update-EventstreamDefinition {
     }
 }
 
-function New-EventstreamDefinition {
-    param([string]$TelemetryConnectionId, [string]$ClaimConnectionId, [string]$WorkspaceId, [string]$KqlDbId, [string]$KqlDbName, [string]$EventstreamName, [switch]$ClaimsOnly)
-    $sources = @()
-    $streams = @()
-    $destinations = @()
-    if (-not $ClaimsOnly) {
-        $sources += @{ name = "EventHubSource"; type = "AzureEventHub"; properties = @{ dataConnectionId = $TelemetryConnectionId; consumerGroupName = "`$Default"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } } }
-        $streams += @{ name = "MasimoTelemetryStream-stream"; type = "DefaultStream"; properties = @{}; inputNodes = @(@{ name = "EventHubSource" }) }
-        $destinations += @{ name = "EventhouseDestination"; type = "Eventhouse"; properties = @{ dataIngestionMode = "ProcessedIngestion"; workspaceId = $WorkspaceId; itemId = $KqlDbId; databaseName = $KqlDbName; tableName = "TelemetryRaw"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } }; inputNodes = @(@{ name = "MasimoTelemetryStream-stream" }) }
-    }
-    $sources += @{ name = "ClaimEventHubSource"; type = "AzureEventHub"; properties = @{ dataConnectionId = $ClaimConnectionId; consumerGroupName = "`$Default"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } } }
-    $streams += @{ name = "ClaimEventsStream"; type = "DefaultStream"; properties = @{}; inputNodes = @(@{ name = "ClaimEventHubSource" }) }
-    $destinations += @{ name = "ClaimsEventhouseDestination"; type = "Eventhouse"; properties = @{ dataIngestionMode = "ProcessedIngestion"; workspaceId = $WorkspaceId; itemId = $KqlDbId; databaseName = $KqlDbName; tableName = "claims_events"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } }; inputNodes = @(@{ name = "ClaimEventsStream" }) }
+function New-ClaimsEventstreamDefinition {
+    param([string]$ClaimConnectionId, [string]$WorkspaceId, [string]$KqlDbId, [string]$KqlDbName)
+    # Single-source claims topology. Fabric permits exactly one DefaultStream per Eventstream, so claims
+    # cannot be merged into the Phase 2 telemetry Eventstream; they route to their own claims_events table.
+    $sources = @(@{ name = "ClaimEventHubSource"; type = "AzureEventHub"; properties = @{ dataConnectionId = $ClaimConnectionId; consumerGroupName = "`$Default"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } } })
+    $streams = @(@{ name = "ClaimEventsStream"; type = "DefaultStream"; properties = @{}; inputNodes = @(@{ name = "ClaimEventHubSource" }) })
+    $destinations = @(@{ name = "ClaimsEventhouseDestination"; type = "Eventhouse"; properties = @{ dataIngestionMode = "ProcessedIngestion"; workspaceId = $WorkspaceId; itemId = $KqlDbId; databaseName = $KqlDbName; tableName = "claims_events"; inputSerialization = @{ type = "Json"; properties = @{ encoding = "UTF8" } } }; inputNodes = @(@{ name = "ClaimEventsStream" }) })
     return @{ sources = $sources; destinations = $destinations; streams = $streams; operators = @(); compatibilityLevel = "1.1" }
 }
 
@@ -609,12 +603,15 @@ if (-not $SkipPayerRti) {
         throw "No ACR found; cannot build and deploy claim-emulator"
     } else {
         $acrLoginServer = az acr show --name $acrName --query loginServer -o tsv
-        Write-Host "  Building claim-emulator:v1 in ACR $acrName..." -ForegroundColor White
-        Invoke-AcrBuildWithTagVerification -Registry $acrName -Repository "claim-emulator" -Tag "v1" -ContextPath "phase-7/claim-emulator"
+        $claimImageTag = "deploy-$(Get-Date -AsUTC -Format 'yyyyMMddHHmmss')"
+        Write-Host "  Building claim-emulator:$claimImageTag in ACR $acrName..." -ForegroundColor White
+        Invoke-AcrBuildWithTagVerification -Registry $acrName -Repository "claim-emulator" -Tag $claimImageTag -ContextPath "phase-7/claim-emulator"
+        $claimImageDigest = az acr manifest show-metadata --registry $acrName --name "claim-emulator:$claimImageTag" --query digest -o tsv 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($claimImageDigest)) { throw "Could not resolve immutable claim-emulator image digest" }
         $resourceTagsJson = if ($Tags.Count -gt 0) { $Tags | ConvertTo-Json -Compress } else { '{}' }
         $deploymentParams = @(
             "acrName=$acrName",
-            "imageName=$acrLoginServer/claim-emulator:v1",
+            "imageName=$acrLoginServer/claim-emulator@$claimImageDigest",
             "eventHubName=claim-stream",
             "eventHubNamespace=$EventHubNamespace",
             "eventRatePerMinute=$ClaimEventRatePerMinute",
@@ -707,23 +704,17 @@ if (-not $SkipPayerRti) {
     }
     $connStr = az eventhubs namespace authorization-rule keys list --resource-group $ResourceGroupName --namespace-name $EventHubNamespace --name emulator-access --query primaryConnectionString -o tsv
     $claimConnectionId = Ensure-EventHubConnection -WorkspaceId $workspaceId -Namespace $EventHubNamespace -HubName "claim-stream" -ConnectionString $connStr
-    $telemetryConnectionId = Ensure-EventHubConnection -WorkspaceId $workspaceId -Namespace $EventHubNamespace -HubName "telemetry-stream" -ConnectionString $connStr
     if (-not $claimConnectionId) { throw "Fabric Event Hub cloud connection for claim-stream was not created" }
-    if (-not $telemetryConnectionId) { throw "Fabric Event Hub cloud connection for telemetry-stream was not created" }
-    $mainEs = Ensure-Eventstream -WorkspaceId $workspaceId -Name "MasimoTelemetryStream" -Description "Ingests Masimo device telemetry and payer claim events into the Eventhouse for clinical alerts, HDS enrichment, and cross-domain operations."
-    if (-not $mainEs) { throw "MasimoTelemetryStream was not created or discovered" }
-    $combinedDef = New-EventstreamDefinition -TelemetryConnectionId $telemetryConnectionId -ClaimConnectionId $claimConnectionId -WorkspaceId $workspaceId -KqlDbId $kqlDbId -KqlDbName $kqlDbName -EventstreamName "MasimoTelemetryStream"
-    $updated = Update-EventstreamDefinition -WorkspaceId $workspaceId -EventstreamId $mainEs.id -EventstreamName "MasimoTelemetryStream" -Definition $combinedDef
-    if ($updated) {
-        Write-Host "  ✓ MasimoTelemetryStream updated with claim-stream → claims_events" -ForegroundColor Green
-    } else {
-        Write-Host "  ⚠ Combined Eventstream update failed; creating ClaimsRTIStream fallback." -ForegroundColor Yellow
-        $claimEs = Ensure-Eventstream -WorkspaceId $workspaceId -Name "ClaimsRTIStream" -Description "Ingests payer claim-stream events into the Eventhouse for fraud, care-gap, high-cost, and payer-operations scoring."
-        if (-not $claimEs) { throw "ClaimsRTIStream fallback was not created or discovered" }
-        $claimDef = New-EventstreamDefinition -ClaimConnectionId $claimConnectionId -WorkspaceId $workspaceId -KqlDbId $kqlDbId -KqlDbName $kqlDbName -EventstreamName "ClaimsRTIStream" -ClaimsOnly
-        $fallbackUpdated = Update-EventstreamDefinition -WorkspaceId $workspaceId -EventstreamId $claimEs.id -EventstreamName "ClaimsRTIStream" -Definition $claimDef
-        if (-not $fallbackUpdated) { throw "ClaimsRTIStream fallback update failed" }
+    # Telemetry (MasimoTelemetryStream → TelemetryRaw) is owned by Phase 2 Fabric RTI and must not be
+    # reconfigured here. Claims get a dedicated Eventstream because Fabric permits only one DefaultStream
+    # per topology; telemetry and claims carry different schemas routed to different Eventhouse tables.
+    $claimEs = Ensure-Eventstream -WorkspaceId $workspaceId -Name "ClaimsRTIStream" -Description "Ingests payer claim-stream events into the Eventhouse for fraud, care-gap, high-cost, and payer-operations scoring."
+    if (-not $claimEs) { throw "ClaimsRTIStream was not created or discovered" }
+    $claimDef = New-ClaimsEventstreamDefinition -ClaimConnectionId $claimConnectionId -WorkspaceId $workspaceId -KqlDbId $kqlDbId -KqlDbName $kqlDbName
+    if (-not (Update-EventstreamDefinition -WorkspaceId $workspaceId -EventstreamId $claimEs.id -EventstreamName "ClaimsRTIStream" -Definition $claimDef)) {
+        throw "ClaimsRTIStream definition update failed"
     }
+    Write-Host "  ✓ ClaimsRTIStream configured: claim-stream → claims_events" -ForegroundColor Green
 } else {
     Write-Host "Payer RTI skipped because -SkipPayerRti was supplied" -ForegroundColor Yellow
 }

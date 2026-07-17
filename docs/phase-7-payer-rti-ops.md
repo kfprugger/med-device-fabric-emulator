@@ -54,14 +54,18 @@ Streaming ingestion is enabled only on `claims_events`, `adt_events`, and `rx_ev
 - `Payer Ops Triage`: DataAgent with KQL and optional Gold Lakehouse datasources.
 - `Healthcare Graph Agent`: DataAgent shell with KQL + Gold/Silver datasource context.
 
-## Eventstream fallback
+## Eventstream topology
 
-The deployment first tries to extend `MasimoTelemetryStream` with both telemetry and claim source chains:
+Telemetry and claims use two separate Eventstreams because Fabric permits exactly one DefaultStream per
+Eventstream, and the two feeds carry different schemas routed to different Eventhouse tables:
 
-- `EventHubSource` → `MasimoTelemetryStream-stream` → `EventhouseDestination` → `TelemetryRaw`
-- `ClaimEventHubSource` → `ClaimEventsStream` → `ClaimsEventhouseDestination` → `claims_events`
+- Telemetry (owned by Phase 2 Fabric RTI): `telemetry-stream` → `MasimoTelemetryStream` → `TelemetryRaw`
+- Claims (owned by Phase 7): `claim-stream` → `ClaimsRTIStream` → `claims_events`
 
-If Fabric rejects that update, deployment automatically creates `ClaimsRTIStream` with `claim-stream` → `claims_events`. The `med-0619` run used this fallback because Fabric rejected two default streams in one Eventstream topology.
+Phase 7 creates and configures `ClaimsRTIStream` only; it never reconfigures the Phase 2 telemetry
+Eventstream. Earlier revisions attempted a single combined `MasimoTelemetryStream` carrying both source
+chains (two DefaultStreams), which Fabric always rejected with "more than one default stream in the
+topology" — observed on `med-0619` and `med-0717` before this was corrected.
 
 ## Manual graph attach instructions
 
