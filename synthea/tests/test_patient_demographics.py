@@ -84,21 +84,22 @@ class PatientDemographicExtensionTests(unittest.TestCase):
                 )
 
     def test_generated_patient_resource_carries_race_and_ethnicity_extensions(self) -> None:
+        named_uuids = iter([
+            "patient-uuid",
+            "encounter-uuid",
+            "condition-uuid",
+            "coverage-uuid",
+            "goal-uuid",
+            "care-plan-uuid",
+            "oxygen-observation-uuid",
+            "heart-rate-observation-uuid",
+            "blood-pressure-observation-uuid",
+            "medication-request-uuid",
+            "procedure-uuid",
+        ])
         with patch.object(self.generator.random, "choice", lambda values: values[0]), \
              patch.object(self.generator.random, "randint", lambda start, _end: start), \
-             patch.object(self.generator.uuid, "uuid4", side_effect=[
-                 "patient-uuid",
-                 "encounter-uuid",
-                 "condition-uuid",
-                 "coverage-uuid",
-                 "goal-uuid",
-                 "care-plan-uuid",
-                 "oxygen-observation-uuid",
-                 "heart-rate-observation-uuid",
-                 "blood-pressure-observation-uuid",
-                 "medication-request-uuid",
-                 "procedure-uuid",
-             ]):
+             patch.object(self.generator.uuid, "uuid4", side_effect=lambda: next(named_uuids, "extra-encounter-uuid")):
             _filename, bundle = self.generator.generate_patient(4)
 
         patient = bundle["entry"][0]["resource"]

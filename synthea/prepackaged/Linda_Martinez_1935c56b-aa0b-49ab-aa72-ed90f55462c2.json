@@ -1,0 +1,815 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "1935c56b-aa0b-49ab-aa72-ed90f55462c2",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Martinez",
+            "given": [
+              "Linda"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "2018-12-19",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2028-9",
+                  "display": "Asian"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Asian"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Not Hispanic or Latino"
+              }
+            ]
+          }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "9176 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "2f4b7ad9-0b91-4f46-a062-0318e7c32aa5",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:bd90955b-016d-481c-aa5e-21c589279304",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "bd90955b-016d-481c-aa5e-21c589279304",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "195967001",
+              "display": "Asthma"
+            }
+          ],
+          "text": "Asthma"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "recordedDate": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d5a3a88b-20eb-443b-97a3-0d294f9a2c1f",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "d5a3a88b-20eb-443b-97a3-0d294f9a2c1f",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "SELF-PAY",
+              "display": "self-pay"
+            }
+          ],
+          "text": "Self Pay"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-uninsured",
+            "display": "Self Pay"
+          }
+        ],
+        "period": {
+          "start": "2025-07-16",
+          "end": "2027-07-16"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d50ac52c-bb41-4035-992c-af867c4792b9",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "d50ac52c-bb41-4035-992c-af867c4792b9",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Reduce avoidable acute care utilization"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "startDate": "2026-07-16",
+        "target": [
+          {
+            "measure": {
+              "text": "Complete follow-up care plan activities within 30 days"
+            },
+            "dueDate": "2026-10-14"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d4d822be-81a1-43b2-a424-fa2225d9ba4b",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "d4d822be-81a1-43b2-a424-fa2225d9ba4b",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Asthma",
+        "description": "Synthetic care plan for Asthma cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "period": {
+          "start": "2026-07-16",
+          "end": "2026-08-15"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:bd90955b-016d-481c-aa5e-21c589279304"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:d50ac52c-bb41-4035-992c-af867c4792b9"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-uninsured",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-uninsured",
+        "active": true,
+        "name": "Self Pay",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d42c935e-b2f3-4a72-8bc6-4b46132ef6a4",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "d42c935e-b2f3-4a72-8bc6-4b46132ef6a4",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 97.1,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ac8e761a-f9ca-4f98-8fb1-ef57a59c1373",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "ac8e761a-f9ca-4f98-8fb1-ef57a59c1373",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 86.9,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d086048e-abf5-4a0c-b6dc-8db32c7f2db8",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "d086048e-abf5-4a0c-b6dc-8db32c7f2db8",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic blood pressure"
+            }
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 117.6,
+          "unit": "mmHg",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm[Hg]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f7b8a76d-8300-430c-954d-47f57fbb1b79",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "f7b8a76d-8300-430c-954d-47f57fbb1b79",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "310963",
+              "display": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
+            }
+          ],
+          "text": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "authoredOn": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c7b53297-c98d-445e-ad0b-b56bfff5ee77",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "c7b53297-c98d-445e-ad0b-b56bfff5ee77",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "182764009",
+              "display": "Systemic arterial blood pressure measurement"
+            }
+          ],
+          "text": "Systemic arterial blood pressure measurement"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "encounter": {
+          "reference": "urn:uuid:2f4b7ad9-0b91-4f46-a062-0318e7c32aa5"
+        },
+        "performedDateTime": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:141906b4-eb8e-40c9-9cb3-cd6cd394cc45",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "141906b4-eb8e-40c9-9cb3-cd6cd394cc45",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2026-01-10T15:50:36Z",
+          "end": "2026-01-10T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0448362c-b1c9-4fc7-a5dd-4ea4f2bb4661",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "0448362c-b1c9-4fc7-a5dd-4ea4f2bb4661",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2025-07-14T15:50:36Z",
+          "end": "2025-07-14T19:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1fce9667-3866-4050-9788-a5b67c0db288",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "1fce9667-3866-4050-9788-a5b67c0db288",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2025-01-15T15:50:36Z",
+          "end": "2025-01-20T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:64d70330-730d-4a4d-b9c1-b294deac3f6a",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "64d70330-730d-4a4d-b9c1-b294deac3f6a",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2024-07-19T15:50:36Z",
+          "end": "2024-07-19T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7ec94c24-a209-41c8-8780-5bbf319d8a49",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "7ec94c24-a209-41c8-8780-5bbf319d8a49",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2024-01-21T15:50:36Z",
+          "end": "2024-01-21T19:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:450bd072-e835-43d4-bdc3-1fb909c2d7cc",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "450bd072-e835-43d4-bdc3-1fb909c2d7cc",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2023-07-25T15:50:36Z",
+          "end": "2023-07-30T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:1935c56b-aa0b-49ab-aa72-ed90f55462c2"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810007"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-hughes-spalding",
+          "display": "Choa Hughes Spalding"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-hughes-spalding",
+              "display": "Location Choa Hughes Spalding"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    }
+  ]
+}

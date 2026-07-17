@@ -74,7 +74,7 @@ class GeneratedCareResourceTests(unittest.TestCase):
         self.assertRegex(goal["target"][0]["dueDate"], r"^\d{4}-\d{2}-\d{2}$")
 
     def test_generated_bundle_contains_coverage_goal_and_care_plan_wired_to_patient_condition(self) -> None:
-        uuid_values = iter(
+        named_uuids = iter(
             [
                 "patient-uuid",
                 "encounter-uuid",
@@ -90,7 +90,12 @@ class GeneratedCareResourceTests(unittest.TestCase):
             ]
         )
 
-        with patch.object(self.generator.uuid, "uuid4", side_effect=lambda: next(uuid_values)), \
+        def next_uuid():
+            # Named values for the primary resources, then deterministic extras for the
+            # historical multi-class encounter series appended at the end of the bundle.
+            return next(named_uuids, "extra-encounter-uuid")
+
+        with patch.object(self.generator.uuid, "uuid4", side_effect=next_uuid), \
             patch.object(self.generator.random, "choice", lambda values: values[0]), \
             patch.object(self.generator.random, "randint", lambda start, end: start), \
             patch.object(self.generator.random, "uniform", lambda start, end: start):

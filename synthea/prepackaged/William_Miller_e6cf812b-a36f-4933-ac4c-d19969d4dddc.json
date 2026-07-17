@@ -1,0 +1,815 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "e6cf812b-a36f-4933-ac4c-d19969d4dddc",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Miller",
+            "given": [
+              "William"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1977-11-16",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2028-9",
+                  "display": "Asian"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Asian"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Not Hispanic or Latino"
+              }
+            ]
+          }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "3093 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "b0a35f82-a592-4309-9e0d-04dc48fab597",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f272c8da-3920-40a2-bafc-840acf97147e",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "f272c8da-3920-40a2-bafc-840acf97147e",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "233604007",
+              "display": "Pneumonia"
+            }
+          ],
+          "text": "Pneumonia"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "recordedDate": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:bfa486fb-51d4-44aa-a64d-7acdd5c5a3bc",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "bfa486fb-51d4-44aa-a64d-7acdd5c5a3bc",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "DENTPRG",
+              "display": "commercial health plan"
+            }
+          ],
+          "text": "BrakeKat Commercial Health"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-commercial",
+            "display": "BrakeKat Commercial Health"
+          }
+        ],
+        "period": {
+          "start": "2025-07-16",
+          "end": "2027-07-16"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f517c8da-2d02-4cb7-a732-8ae3f447ea9e",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "f517c8da-2d02-4cb7-a732-8ae3f447ea9e",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Improve medication adherence"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "startDate": "2026-07-16",
+        "target": [
+          {
+            "measure": {
+              "text": "Take prescribed respiratory or cardiac medication as directed"
+            },
+            "dueDate": "2026-10-14"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:eeebdb87-a6ba-4b81-8319-60f2e3ef626b",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "eeebdb87-a6ba-4b81-8319-60f2e3ef626b",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Pneumonia",
+        "description": "Synthetic care plan for Pneumonia cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "period": {
+          "start": "2026-07-16",
+          "end": "2026-08-15"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:f272c8da-3920-40a2-bafc-840acf97147e"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:f517c8da-2d02-4cb7-a732-8ae3f447ea9e"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-commercial",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-commercial",
+        "active": true,
+        "name": "BrakeKat Commercial Health",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:27c176e2-373e-4de8-b5f0-f09b9c29476c",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "27c176e2-373e-4de8-b5f0-f09b9c29476c",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 98.5,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3946e25f-cc5a-4612-9606-75f246ca8550",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "3946e25f-cc5a-4612-9606-75f246ca8550",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 72.6,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8d6e7a2d-cd54-49e5-9d27-411766028e6e",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "8d6e7a2d-cd54-49e5-9d27-411766028e6e",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic blood pressure"
+            }
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 124.0,
+          "unit": "mmHg",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm[Hg]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:12ea8cae-5f92-4c5c-93e3-ff0de8d4f265",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "12ea8cae-5f92-4c5c-93e3-ff0de8d4f265",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "310963",
+              "display": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
+            }
+          ],
+          "text": "Fluticasone propionate 0.044 MG/ACTUAT Inhalant Suspension"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "authoredOn": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:94ccd49e-e571-43f7-8077-61dd89a0a6ac",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "94ccd49e-e571-43f7-8077-61dd89a0a6ac",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "5300003",
+              "display": "Artificial respiration"
+            }
+          ],
+          "text": "Artificial respiration"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "encounter": {
+          "reference": "urn:uuid:b0a35f82-a592-4309-9e0d-04dc48fab597"
+        },
+        "performedDateTime": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e103d681-f650-49ac-a3db-c5f1b3fd4cf6",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "e103d681-f650-49ac-a3db-c5f1b3fd4cf6",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2026-01-15T15:50:36Z",
+          "end": "2026-01-15T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a4a8716d-1220-459d-a2e3-ba1d203e46b6",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "a4a8716d-1220-459d-a2e3-ba1d203e46b6",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2025-07-19T15:50:36Z",
+          "end": "2025-07-19T20:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ae54f6c6-63a3-435f-99fd-a88738c5dd98",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "ae54f6c6-63a3-435f-99fd-a88738c5dd98",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2025-01-20T15:50:36Z",
+          "end": "2025-01-24T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b0ade3d6-981b-4c34-b4ef-b6372faf2af1",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "b0ade3d6-981b-4c34-b4ef-b6372faf2af1",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2024-07-24T15:50:36Z",
+          "end": "2024-07-24T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0a4a40f6-43ae-4d31-9442-649c78c290dd",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "0a4a40f6-43ae-4d31-9442-649c78c290dd",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2024-01-26T15:50:36Z",
+          "end": "2024-01-26T20:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8be40b51-9e58-4931-a0c0-37f09e0cc1e4",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "8be40b51-9e58-4931-a0c0-37f09e0cc1e4",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2023-07-30T15:50:36Z",
+          "end": "2023-08-03T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:e6cf812b-a36f-4933-ac4c-d19969d4dddc"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810002"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/grady-memorial-hospital",
+          "display": "Grady Memorial Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-grady-memorial-hospital",
+              "display": "Location Grady Memorial Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    }
+  ]
+}

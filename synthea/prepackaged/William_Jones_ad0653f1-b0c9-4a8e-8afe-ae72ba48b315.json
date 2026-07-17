@@ -1,0 +1,815 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "ad0653f1-b0c9-4a8e-8afe-ae72ba48b315",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Jones",
+            "given": [
+              "William"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "2014-09-03",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2106-3",
+                  "display": "White"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "White"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Not Hispanic or Latino"
+              }
+            ]
+          }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "2776 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "e090b09a-c53b-4a52-b594-d76e4ecbe099",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:76cc2db5-0bb7-48fc-b1bb-88405c987f34",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "76cc2db5-0bb7-48fc-b1bb-88405c987f34",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "84114007",
+              "display": "Heart failure"
+            }
+          ],
+          "text": "Heart failure"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "recordedDate": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:43db2ac2-94f7-44cc-a35e-fc267d2205a2",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "43db2ac2-94f7-44cc-a35e-fc267d2205a2",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "MCPOL",
+              "display": "managed care policy"
+            }
+          ],
+          "text": "Georgia Medicaid"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-medicaid",
+            "display": "Georgia Medicaid"
+          }
+        ],
+        "period": {
+          "start": "2025-07-16",
+          "end": "2027-07-16"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:29f28670-2261-4b5f-b668-0eb54b68bfc6",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "29f28670-2261-4b5f-b668-0eb54b68bfc6",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Improve medication adherence"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "startDate": "2026-07-16",
+        "target": [
+          {
+            "measure": {
+              "text": "Take prescribed respiratory or cardiac medication as directed"
+            },
+            "dueDate": "2026-10-14"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1df6d92e-d312-412b-a364-d1be5322e16c",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "1df6d92e-d312-412b-a364-d1be5322e16c",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Heart failure",
+        "description": "Synthetic care plan for Heart failure cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "period": {
+          "start": "2026-07-16",
+          "end": "2026-08-15"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:76cc2db5-0bb7-48fc-b1bb-88405c987f34"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:29f28670-2261-4b5f-b668-0eb54b68bfc6"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-medicaid",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-medicaid",
+        "active": true,
+        "name": "Georgia Medicaid",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:90fd925a-9995-49d9-8a31-ec59d330337c",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "90fd925a-9995-49d9-8a31-ec59d330337c",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 94.9,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f907e77b-aa6f-420c-bf54-cbbc097d47d1",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "f907e77b-aa6f-420c-bf54-cbbc097d47d1",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 85.1,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b7130c1e-c632-41fc-b641-e953ab4c88f6",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "b7130c1e-c632-41fc-b641-e953ab4c88f6",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic blood pressure"
+            }
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 136.2,
+          "unit": "mmHg",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm[Hg]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:26a16b7f-a2bf-4e73-bdb5-cf1246b00f99",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "26a16b7f-a2bf-4e73-bdb5-cf1246b00f99",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "197361",
+              "display": "Amlodipine 5 MG Oral Tablet"
+            }
+          ],
+          "text": "Amlodipine 5 MG Oral Tablet"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "authoredOn": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a337c534-a051-4d5c-b03a-197734fc7060",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "a337c534-a051-4d5c-b03a-197734fc7060",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "5300003",
+              "display": "Artificial respiration"
+            }
+          ],
+          "text": "Artificial respiration"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "encounter": {
+          "reference": "urn:uuid:e090b09a-c53b-4a52-b594-d76e4ecbe099"
+        },
+        "performedDateTime": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c0f28c9b-407c-4dd8-a01f-a402c424ddc4",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "c0f28c9b-407c-4dd8-a01f-a402c424ddc4",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2026-01-12T15:50:36Z",
+          "end": "2026-01-12T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1960b1eb-11b2-4b4a-bbb7-80f24eb8fd7f",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "1960b1eb-11b2-4b4a-bbb7-80f24eb8fd7f",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2025-07-16T15:50:36Z",
+          "end": "2025-07-16T23:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b97268bc-f552-4d69-bf10-8562578b7376",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "b97268bc-f552-4d69-bf10-8562578b7376",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2025-01-17T15:50:36Z",
+          "end": "2025-01-20T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f61f8995-030c-4643-b6be-143694e48bd7",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "f61f8995-030c-4643-b6be-143694e48bd7",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2024-07-21T15:50:36Z",
+          "end": "2024-07-21T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:20437efd-49b4-4882-9366-2214e937f179",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "20437efd-49b4-4882-9366-2214e937f179",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2024-01-23T15:50:36Z",
+          "end": "2024-01-23T23:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:df6d7d23-61c3-4dc0-8782-e4d25772fb3e",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "df6d7d23-61c3-4dc0-8782-e4d25772fb3e",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2023-07-27T15:50:36Z",
+          "end": "2023-07-30T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:ad0653f1-b0c9-4a8e-8afe-ae72ba48b315"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810005"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/choa-egleston",
+          "display": "Choa Egleston"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-choa-egleston",
+              "display": "Location Choa Egleston"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    }
+  ]
+}

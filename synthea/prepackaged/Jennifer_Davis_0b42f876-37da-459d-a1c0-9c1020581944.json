@@ -1,0 +1,815 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "0b42f876-37da-459d-a1c0-9c1020581944",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Davis",
+            "given": [
+              "Jennifer"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1991-01-31",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2076-8",
+                  "display": "Native Hawaiian or Other Pacific Islander"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Native Hawaiian or Other Pacific Islander"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "system": "urn:oid:2.16.840.1.113883.6.238",
+                  "code": "2186-5",
+                  "display": "Not Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Not Hispanic or Latino"
+              }
+            ]
+          }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "9706 Peachtree St NE"
+            ],
+            "city": "Atlanta",
+            "state": "GA",
+            "postalCode": "30309",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "12f12648-23be-45ed-b3dd-f319090ae6cb",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:fd68ce16-bddd-471c-ac88-d245c77f2b80",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fd68ce16-bddd-471c-ac88-d245c77f2b80",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "84114007",
+              "display": "Heart failure"
+            }
+          ],
+          "text": "Heart failure"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "recordedDate": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:fc031418-ffbf-4975-986e-31a2584b6ce2",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "fc031418-ffbf-4975-986e-31a2584b6ce2",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "SELF-PAY",
+              "display": "self-pay"
+            }
+          ],
+          "text": "Self Pay"
+        },
+        "beneficiary": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "payor": [
+          {
+            "reference": "Organization/payer-uninsured",
+            "display": "Self Pay"
+          }
+        ],
+        "period": {
+          "start": "2025-07-16",
+          "end": "2027-07-16"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:964c439c-a648-4d0c-a28b-e533845c00cb",
+      "resource": {
+        "resourceType": "Goal",
+        "id": "964c439c-a648-4d0c-a28b-e533845c00cb",
+        "lifecycleStatus": "active",
+        "description": {
+          "text": "Improve respiratory symptom control"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "startDate": "2026-07-16",
+        "target": [
+          {
+            "measure": {
+              "text": "Maintain oxygen saturation at or above 94 percent"
+            },
+            "dueDate": "2026-10-14"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0aa0e2c7-448d-4691-a113-e9bad2a02977",
+      "resource": {
+        "resourceType": "CarePlan",
+        "id": "0aa0e2c7-448d-4691-a113-e9bad2a02977",
+        "status": "active",
+        "intent": "plan",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+                "code": "assess-plan",
+                "display": "Assessment and Plan of Treatment"
+              }
+            ],
+            "text": "Assessment and Plan of Treatment"
+          }
+        ],
+        "title": "Care management plan for Heart failure",
+        "description": "Synthetic care plan for Heart failure cohort analytics.",
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "period": {
+          "start": "2026-07-16",
+          "end": "2026-08-15"
+        },
+        "addresses": [
+          {
+            "reference": "urn:uuid:fd68ce16-bddd-471c-ac88-d245c77f2b80"
+          }
+        ],
+        "goal": [
+          {
+            "reference": "urn:uuid:964c439c-a648-4d0c-a28b-e533845c00cb"
+          }
+        ],
+        "activity": [
+          {
+            "detail": {
+              "kind": "ServiceRequest",
+              "code": {
+                "text": "Care manager outreach"
+              },
+              "status": "scheduled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Organization/payer-uninsured",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "payer-uninsured",
+        "active": true,
+        "name": "Self Pay",
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "pay",
+                "display": "Payer"
+              }
+            ],
+            "text": "Payer"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:fc6b0aa2-ce42-47ed-a1b8-7f264c00b883",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "fc6b0aa2-ce42-47ed-a1b8-7f264c00b883",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 94.6,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:5a991612-c638-4c4c-8854-28f59cbc891a",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "5a991612-c638-4c4c-8854-28f59cbc891a",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 73.0,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:882d9b8d-9bdc-4e03-a345-fcb972030755",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "882d9b8d-9bdc-4e03-a345-fcb972030755",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8480-6",
+              "display": "Systolic blood pressure"
+            }
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "effectiveDateTime": "2026-07-16T15:50:36Z",
+        "valueQuantity": {
+          "value": 114.8,
+          "unit": "mmHg",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm[Hg]"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d1bd305b-c9df-4a6f-b008-8503d4eb3e77",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "d1bd305b-c9df-4a6f-b008-8503d4eb3e77",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "313226",
+              "display": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+            }
+          ],
+          "text": "Albuterol 0.09 MG/ACTUAT Inhalant Powder"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "authoredOn": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:29c15afd-c35d-4e94-bc9c-e3c3f7182a2f",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "29c15afd-c35d-4e94-bc9c-e3c3f7182a2f",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "312850006",
+              "display": "History taking"
+            }
+          ],
+          "text": "History taking"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "encounter": {
+          "reference": "urn:uuid:12f12648-23be-45ed-b3dd-f319090ae6cb"
+        },
+        "performedDateTime": "2026-07-16T15:50:36Z"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d60bf713-dd60-49ff-b25f-719d45ca2797",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "d60bf713-dd60-49ff-b25f-719d45ca2797",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2026-01-14T15:50:36Z",
+          "end": "2026-01-14T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b6d1b1c9-07f8-4a8e-9cf6-8480ddc0c5c3",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "b6d1b1c9-07f8-4a8e-9cf6-8480ddc0c5c3",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2025-07-18T15:50:36Z",
+          "end": "2025-07-18T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:bc3a7c26-902e-4a54-9cef-3c7042457007",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "bc3a7c26-902e-4a54-9cef-3c7042457007",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2025-01-19T15:50:36Z",
+          "end": "2025-01-24T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d8a04d91-92a8-4ce0-a066-b8c49dc82c10",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "d8a04d91-92a8-4ce0-a066-b8c49dc82c10",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "period": {
+          "start": "2024-07-23T15:50:36Z",
+          "end": "2024-07-23T16:05:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1fefd455-3171-4797-b60d-533e8e16aec5",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "1fefd455-3171-4797-b60d-533e8e16aec5",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "EMER",
+          "display": "emergency"
+        },
+        "period": {
+          "start": "2024-01-25T15:50:36Z",
+          "end": "2024-01-25T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Emergency"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4b226253-e57a-49d9-863e-68ce29c15131",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "4b226253-e57a-49d9-863e-68ce29c15131",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "period": {
+          "start": "2023-07-29T15:50:36Z",
+          "end": "2023-08-03T21:50:36Z"
+        },
+        "subject": {
+          "reference": "urn:uuid:0b42f876-37da-459d-a1c0-9c1020581944"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "PPRF",
+                    "display": "primary performer"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|9999810003"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization/northside-hospital",
+          "display": "Northside Hospital"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=http://example.org/location-ids|loc-northside-hospital",
+              "display": "Location Northside Hospital"
+            },
+            "status": "completed"
+          }
+        ],
+        "hospitalization": {
+          "admitSource": {
+            "text": "Physician referral"
+          },
+          "dischargeDisposition": {
+            "text": "Home"
+          }
+        }
+      }
+    }
+  ]
+}

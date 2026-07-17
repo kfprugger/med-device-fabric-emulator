@@ -44,7 +44,7 @@ class SyntheticInpatientEncounterTests(unittest.TestCase):
     def generate_bundle(self, index: int) -> dict[str, Any]:
         _filename, bundle = self.generator.generate_patient(index)
         return bundle
-    def test_small_index_range_contains_inpatient_and_ambulatory_encounters(self) -> None:
+    def test_small_index_range_contains_inpatient_ambulatory_and_emergency_encounters(self) -> None:
         encounters = []
         for index in range(4):
             resources = self.resources_by_type(self.generate_bundle(index))
@@ -53,6 +53,22 @@ class SyntheticInpatientEncounterTests(unittest.TestCase):
         class_pairs = {(encounter["class"]["code"], encounter["class"]["display"]) for encounter in encounters}
         self.assertIn(("IMP", "inpatient encounter"), class_pairs)
         self.assertIn(("AMB", "ambulatory"), class_pairs)
+        self.assertIn(("EMER", "emergency"), class_pairs)
+
+    def test_every_patient_bundle_has_all_three_encounter_classes(self) -> None:
+        for index in range(6):
+            resources = self.resources_by_type(self.generate_bundle(index))
+            codes = {encounter["class"]["code"] for encounter in resources["Encounter"]}
+            self.assertEqual({"AMB", "EMER", "IMP"}, codes & {"AMB", "EMER", "IMP"})
+
+    def test_facility_encounters_carry_period_and_hospitalization(self) -> None:
+        for index in range(4):
+            resources = self.resources_by_type(self.generate_bundle(index))
+            for encounter in resources["Encounter"]:
+                if encounter["class"]["code"] in ("IMP", "EMER"):
+                    self.assertTrue(encounter.get("period", {}).get("start"))
+                    self.assertTrue(encounter.get("period", {}).get("end"))
+                    self.assertTrue(encounter.get("hospitalization"))
 
     def test_inpatient_encounter_has_dates_and_retains_clinical_references(self) -> None:
         for index in range(4):

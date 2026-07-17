@@ -49,6 +49,20 @@ PROCEDURES = [
     {"code": "312850006", "display": "History taking", "system": "http://snomed.info/sct"}
 ]
 
+# Realistic per-patient encounter class mix for utilization/readmission analytics.
+# Each patient receives the primary clinical-anchor encounter plus a deterministic
+# series of historical encounters spanning ambulatory (AMB), emergency (EMER), and
+# inpatient (IMP) classes across multiple years so downstream OMOP visit_occurrence
+# and cost-by-service-category analytics are populated across every visit class.
+ENCOUNTER_CLASS_CYCLE = [
+    ("AMB", "ambulatory"),
+    ("EMER", "emergency"),
+    ("IMP", "inpatient encounter"),
+    ("AMB", "ambulatory"),
+    ("EMER", "emergency"),
+    ("IMP", "inpatient encounter"),
+]
+
 RACE_ETHNICITY_PROFILES = [
     {
         "race_code": "2106-3",
@@ -212,6 +226,68 @@ def care_plan_resource(care_plan_uuid, patient_uuid, encounter_uuid, condition_u
         }],
     }
 
+
+
+def build_encounter_resource(encounter_uuid, patient_uuid, hospital, practitioner_npi, class_code, class_display, start_dt, end_dt):
+    """Build a single FHIR Encounter of the given class, wired to the patient and hospital.
+
+    IMP/EMER encounters carry a period and hospitalization block (admit source +
+    discharge disposition) so downstream OMOP visit_occurrence gets length-of-stay,
+    readmission, and discharge attributes; AMB encounters are lightweight visits.
+    """
+    is_facility = class_code in ("IMP", "EMER")
+    resource = {
+        "resourceType": "Encounter",
+        "id": encounter_uuid,
+        "status": "finished",
+        "class": {
+            "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            "code": class_code,
+            "display": class_display,
+        },
+        "period": {
+            "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+        "subject": {"reference": f"urn:uuid:{patient_uuid}"},
+        "participant": [
+            {
+                "type": [
+                    {
+                        "coding": [
+                            {
+                                "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                                "code": "PPRF",
+                                "display": "primary performer",
+                            }
+                        ]
+                    }
+                ],
+                "individual": {
+                    "reference": f"Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|{practitioner_npi}"
+                },
+            }
+        ],
+        "serviceProvider": {
+            "reference": f"Organization/{hospital}",
+            "display": hospital.replace("-", " ").title(),
+        },
+        "location": [
+            {
+                "location": {
+                    "reference": f"Location?identifier=http://example.org/location-ids|loc-{hospital}",
+                    "display": f"Location {hospital.replace('-', ' ').title()}",
+                },
+                "status": "completed",
+            }
+        ],
+    }
+    if is_facility:
+        resource["hospitalization"] = {
+            "admitSource": {"text": "Emergency" if class_code == "EMER" else "Physician referral"},
+            "dischargeDisposition": {"text": "Home"},
+        }
+    return resource
 
 
 def generate_patient(idx):
@@ -605,6 +681,28 @@ def generate_patient(idx):
             "performedDateTime": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
         }
     })
+
+    # 6. Add a deterministic series of historical encounters spanning AMB, EMER, and IMP
+    #    classes across multiple years. This gives downstream OMOP visit_occurrence a
+    #    realistic mix of ambulatory, emergency, and inpatient utilization (and the cost
+    #    joins that hang off each visit) instead of a single anchor encounter.
+    for enc_idx, (class_code, class_display) in enumerate(ENCOUNTER_CLASS_CYCLE):
+        # Spread encounters over the trailing years; emergency/inpatient stays span days.
+        start_dt = datetime.now() - timedelta(days=180 * (enc_idx + 1) + (idx % 30))
+        if class_code == "IMP":
+            end_dt = start_dt + timedelta(days=2 + (idx % 4), hours=6)
+        elif class_code == "EMER":
+            end_dt = start_dt + timedelta(hours=3 + (idx % 6))
+        else:
+            end_dt = start_dt + timedelta(minutes=15)
+        extra_encounter_uuid = str(uuid.uuid4())
+        bundle["entry"].append({
+            "fullUrl": f"urn:uuid:{extra_encounter_uuid}",
+            "resource": build_encounter_resource(
+                extra_encounter_uuid, patient_uuid, hospital, practitioner_npi,
+                class_code, class_display, start_dt, end_dt,
+            ),
+        })
     
     filename = f"{first_name}_{last_name}_{patient_uuid}.json"
     return filename, bundle
