@@ -63,6 +63,7 @@ param (
     [switch]$SkipFhir,               # Skip deploy-fhir.ps1 (FHIR data already loaded)
     [switch]$SkipDicom,              # Skip TCIA DICOM download + ADLS/FHIR ImagingStudy load
     [switch]$SkipFabric,             # Skip deploy-fabric-rti.ps1 entirely
+    [switch]$ReuseFabricRti,         # Reuse existing Eventhouse/Eventstream without disabling downstream Fabric phases
     [switch]$Phase2,             # Run only Fabric Phase 2
     [switch]$Phase3,             # Run only Phase 3 (Cohorting Agent + DICOM Viewer)
     [switch]$Phase4,             # Run only Phase 4 (Ontology + Agent binding)
@@ -119,6 +120,8 @@ param (
 )
 
 $ErrorActionPreference = "Stop"
+$requestedSummaryTitle = if ($Phase7) { "PHASE 7 DEPLOYMENT SUMMARY" } elseif ($Phase5) { "PHASE 5 DEPLOYMENT SUMMARY" } elseif ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
+$requestedSummaryPhase = if ($Phase7) { "Phase7" } elseif ($Phase5) { "Phase5" } elseif ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4+5+6+7" }
 
 # Prevent interactive `az` extension-install prompts from hanging the orchestrator.
 # The orchestrator launches pwsh with -NonInteractive; any extension prompt would hang forever.
@@ -710,6 +713,26 @@ function Assert-LastExternalCommandSucceeded {
     }
 }
 
+function Invoke-PostHdsRtiRefresh {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceName,
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$DeploymentLocation,
+        [hashtable]$ResourceTags = @{}
+    )
+    Write-Host "  Refreshing RTI device/patient/location dimensions after HDS pipelines..." -ForegroundColor Cyan
+    $refreshArgs = @{
+        Phase2 = $true
+        FabricWorkspaceName = $WorkspaceName
+        ResourceGroupName = $ResourceGroup
+        Location = $DeploymentLocation
+    }
+    if ($ResourceTags.Count -gt 0) { $refreshArgs['Tags'] = $ResourceTags }
+    $global:LASTEXITCODE = 0
+    & "$ScriptDir/deploy-fabric-rti.ps1" @refreshArgs
+    Assert-LastExternalCommandSucceeded "post-HDS deploy-fabric-rti.ps1 -Phase2"
+}
+
 
 function Write-Summary {
     param(
@@ -748,22 +771,22 @@ function Write-Summary {
     Write-Host "  Total time: $totalMin min" -ForegroundColor Cyan
     Write-Host ""
 
-    # Show cross-phase history if multiple phases have run
+    # Keep prior attempts visibly separate from the result of this invocation.
     $state = Read-DeploymentState
-    if ($state.phases -and @($state.phases).Count -gt 1) {
-        Write-Host "  ┌─────────────────────────────────────────────────────────────┐" -ForegroundColor DarkCyan
-        Write-Host "  │  ALL PHASES                                                │" -ForegroundColor DarkCyan
-        Write-Host "  ├─────────────────────────────────────────────────────────────┤" -ForegroundColor DarkCyan
-        foreach ($p in $state.phases) {
-            $pSteps = @($p.steps)
-            $pPassed = ($pSteps | Where-Object { $_.success }).Count
-            $pTotal = $pSteps.Count
-            $pIcon = if ($pPassed -eq $pTotal) { "✓" } else { "⚠" }
-            $pColor = if ($pPassed -eq $pTotal) { "Green" } else { "Yellow" }
-            Write-Host "  │  $pIcon $($p.phase.PadRight(20)) $pPassed/$pTotal steps   $($p.timestamp)  │" -ForegroundColor $pColor
+    $phaseHistory = @($state.phases)
+    if ($phaseHistory.Count -gt 1) {
+        $priorAttempts = @($phaseHistory | Select-Object -First ($phaseHistory.Count - 1))
+        if ($priorAttempts.Count -gt 0) {
+            Write-Host "  PRIOR DEPLOYMENT ATTEMPTS (historical; not current status)" -ForegroundColor DarkGray
+            foreach ($p in $priorAttempts) {
+                $pSteps = @($p.steps)
+                $pPassed = ($pSteps | Where-Object { $_.success }).Count
+                $pTotal = $pSteps.Count
+                $priorLabel = if ($pPassed -eq $pTotal) { "prior complete" } else { "prior incomplete" }
+                Write-Host "    $priorLabel — $pPassed/$pTotal steps — $($p.timestamp)" -ForegroundColor DarkGray
+            }
+            Write-Host ""
         }
-        Write-Host "  └─────────────────────────────────────────────────────────────┘" -ForegroundColor DarkCyan
-        Write-Host ""
     }
 
     # Show key resources from state
@@ -889,7 +912,8 @@ function Write-Phase3Diagnostics {
     param(
         [string]$Checkpoint,             # e.g. "PRE-VIEWER", "POST-NOTEBOOK"
         [string]$WorkspaceId,
-        [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1"
+        [string]$FabricApiBase = "https://api.fabric.microsoft.com/v1",
+        [switch]$RequireReportingTables
     )
 
     $diagTimestamp = Get-Date -Format "HH:mm:ss"
@@ -997,28 +1021,44 @@ SELECT 'DicomFileReporting' AS tbl, COUNT(*) AS cnt FROM dbo.DicomFileReporting
 UNION ALL SELECT 'ImagingStudyReporting', COUNT(*) FROM dbo.ImagingStudyReporting
 UNION ALL SELECT 'PatientReporting', COUNT(*) FROM dbo.PatientReporting
 "@
-                $rptRows = Invoke-DiagQuery -Server $rptServer -Database $rptDb -Token $sqlToken -Query $rptQuery
-                foreach ($line in $rptRows) {
-                    if ($line -match '^(.+?)\|(\d+)$') {
-                        $tbl = $Matches[1].Trim()
-                        $cnt = [int]$Matches[2]
-                        $icon = if ($cnt -gt 0) { "✓" } else { "○" }
-                        Write-Host "  │    $icon $($tbl.PadRight(25)) $($cnt.ToString().PadLeft(8)) rows" -ForegroundColor $(if ($cnt -gt 0) { 'Green' } else { 'DarkGray' })
-                    } elseif ($line -and $line -notmatch '^\s*$') {
-                        Write-Host "  │    ! $line" -ForegroundColor DarkGray
+                $maxAttempts = if ($RequireReportingTables) { 8 } else { 1 }
+                $reportingReady = $false
+                for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                    $rptRows = Invoke-DiagQuery -Server $rptServer -Database $rptDb -Token $sqlToken -Query $rptQuery
+                    $parsedRows = @($rptRows | Where-Object { $_ -match '^(.+?)\|(\d+)$' })
+                    if ($parsedRows.Count -eq 3) {
+                        foreach ($line in $parsedRows) {
+                            $null = $line -match '^(.+?)\|(\d+)$'
+                            $tbl = $Matches[1].Trim()
+                            $cnt = [int]$Matches[2]
+                            $icon = if ($cnt -gt 0) { "✓" } else { "○" }
+                            Write-Host "  │    $icon $($tbl.PadRight(25)) $($cnt.ToString().PadLeft(8)) rows" -ForegroundColor $(if ($cnt -gt 0) { 'Green' } else { 'DarkGray' })
+                        }
+                        $reportingReady = $true
+                        break
                     }
+                    $detail = @($rptRows | Where-Object { $_ -and $_ -notmatch '^\s*$' }) -join ' '
+                    Write-Host "  │    Reporting SQL metadata not ready (attempt $attempt/$maxAttempts): $detail" -ForegroundColor DarkGray
+                    if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 15 }
+                }
+                if ($RequireReportingTables -and -not $reportingReady) {
+                    throw "Reporting tables were materialized but did not become queryable through the SQL endpoint after $maxAttempts attempts."
                 }
             } elseif (-not $rptServer) {
+                if ($RequireReportingTables) { throw "Reporting Lakehouse SQL endpoint is not ready." }
                 Write-Host "  │    SQL endpoint not ready" -ForegroundColor DarkGray
             } else {
+                if ($RequireReportingTables) { throw "SQL token unavailable for required reporting table validation." }
                 Write-Host "  │    ⚠ No SQL token — skipping row counts" -ForegroundColor Yellow
             }
         } else {
+            if ($RequireReportingTables) { throw "Reporting Lakehouse was not created." }
             Write-Host "  │  Reporting Lakehouse not yet created" -ForegroundColor DarkGray
         }
 
     } catch {
         Write-Host "  │  ⚠ Diagnostics query failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        if ($RequireReportingTables) { throw }
     }
 
     Write-Host "  │" -ForegroundColor DarkYellow
@@ -1057,6 +1097,7 @@ if ($Teardown) {
     if ($SkipFhir) { $skips += "FHIR/Synthea" }
     if ($SkipDicom) { $skips += "DICOM" }
     if ($SkipFabric) { $skips += "Fabric" }
+    if ($ReuseFabricRti) { $skips += "Fabric RTI deploy (reusing live resources)" }
     if ($SkipPhase7) { $skips += "Payer RTI & Ops" }
     if ($skips.Count -gt 0) {
         Write-Host "  SKIPPING: $($skips -join ', ')" -ForegroundColor Yellow
@@ -1130,6 +1171,7 @@ if ($Phase2) {
             $global:LASTEXITCODE = 0
             & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" @hdsPipelineArgs
             Assert-LastExternalCommandSucceeded "storage-access-trusted-workspace.ps1"
+            Invoke-PostHdsRtiRefresh -WorkspaceName $FabricWorkspaceName -ResourceGroup $ResourceGroupName -DeploymentLocation $Location -ResourceTags $Tags
         }
     }
 
@@ -1299,10 +1341,12 @@ if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7) {
                 -Headers $fabHeaders -Method POST | Out-Null
             Write-Host "  ✓ Workspace identity provisioned" -ForegroundColor Green
         } catch {
-            if ($_.Exception.Message -match "already|exists") {
-                Write-Host "  ✓ Workspace identity already exists" -ForegroundColor Green
+            $provisionError = $_.Exception.Message
+            $identitySpId = az ad sp list --display-name $FabricWorkspaceName --query "[0].id" -o tsv 2>$null
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($identitySpId)) {
+                Write-Host "  ✓ Workspace identity already exists ($identitySpId)" -ForegroundColor Green
             } else {
-                Write-Host "  ⚠ Could not provision workspace identity: $($_.Exception.Message)" -ForegroundColor Yellow
+                throw "Workspace identity provisioning failed and no existing identity could be verified: $provisionError"
             }
         }
 
@@ -1630,11 +1674,11 @@ if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not
 # STEP 3 — FABRIC RTI PHASE 1
 # ============================================================================
 
-if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric -and -not $ReuseFabricRti) {
     Emit-PhaseTransition -Phase 2 -Label "Active Patient Telemetry" -StepCount 2
 }
 
-if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric) {
+if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not $SkipFabric -and -not $ReuseFabricRti) {
     Invoke-Step -StepName "Phase 2: Fabric RTI" `
         -Description "Eventhouse, KQL DB, Eventstream, FHIR export, and core telemetry dashboard" -Action {
         Write-Host "  This step will:" -ForegroundColor White
@@ -1662,7 +1706,8 @@ if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not
         if ($LASTEXITCODE -ne 0) { throw "deploy-fabric-rti.ps1 failed with exit code $LASTEXITCODE" }
     }
 } else {
-    Write-Host "  >>  Skipping Fabric RTI (--SkipFabric)" -ForegroundColor DarkGray
+    $skipReason = if ($ReuseFabricRti) { "-ReuseFabricRti; live RTI resources retained" } else { "-SkipFabric" }
+    Write-Host "  >>  Skipping Fabric RTI deployment ($skipReason)" -ForegroundColor DarkGray
 }
 
 # ============================================================================
@@ -1783,6 +1828,7 @@ if (-not $Phase3 -and -not $Phase4 -and -not $Phase5 -and -not $Phase7 -and -not
                 $global:LASTEXITCODE = 0
                 & "$ScriptDir/phase-2/storage-access-trusted-workspace.ps1" @hdsPipelineArgs
                 Assert-LastExternalCommandSucceeded "storage-access-trusted-workspace.ps1"
+                Invoke-PostHdsRtiRefresh -WorkspaceName $FabricWorkspaceName -ResourceGroup $ResourceGroupName -DeploymentLocation $Location -ResourceTags $Tags
                 Move-FabricNotebooksToFolder -FabricWorkspaceName $FabricWorkspaceName
 
                 # Stage OMOP Academic Research Dashboard
@@ -1986,16 +2032,19 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 
             Write-Host ""
 
-            # Resolve OHIF SWA URL once and pass it downstream to notebook + report deploy.
+            # Use the exact viewer host that passed deployment health. This may be
+            # the SWA or the proxy-hosted fallback when azurestaticapps.net is unreachable.
             $ohifViewerBaseUrl = ""
+            $viewerStateFile = Join-Path $DicomToolkitPath "dicom-viewer/state-tracking/.deployment-state.json"
+            if (-not (Test-Path $viewerStateFile)) { throw "DICOM viewer deployment state is missing: $viewerStateFile" }
             try {
-                $swaHost = az staticwebapp list -g $viewerRg --query "[0].defaultHostname" -o tsv 2>$null
-                if ($swaHost) {
-                    $ohifViewerBaseUrl = "https://$swaHost/viewer?StudyInstanceUIDs="
-                    Write-Host "  ✓ OHIF Viewer URL: $ohifViewerBaseUrl" -ForegroundColor Green
-                }
+                $viewerState = Get-Content $viewerStateFile -Raw | ConvertFrom-Json
+                $viewerHost = if ($viewerState.viewerUrl) { [string]$viewerState.viewerUrl } elseif ($viewerState.swaHostname) { "https://$($viewerState.swaHostname)" } else { "" }
+                if ([string]::IsNullOrWhiteSpace($viewerHost)) { throw "Viewer state contains no healthy viewer URL." }
+                $ohifViewerBaseUrl = "$($viewerHost.TrimEnd('/'))/viewer?StudyInstanceUIDs="
+                Write-Host "  ✓ Verified OHIF Viewer URL: $ohifViewerBaseUrl ($($viewerState.viewerMode))" -ForegroundColor Green
             } catch {
-                Write-Host "  ⚠ Could not resolve OHIF SWA URL from Azure CLI" -ForegroundColor Yellow
+                throw "Could not resolve the verified OHIF viewer URL from deployment state: $($_.Exception.Message)"
             }
 
             # Step 3c: Create Reporting Lakehouse + Materialize Notebook
@@ -2028,7 +2077,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
             Write-Host ""
 
             # ── DIAGNOSTIC CHECKPOINT: After notebook materialization ──
-            Write-Phase3Diagnostics -Checkpoint "POST-NOTEBOOK (7c)" -WorkspaceId $p3WsId
+            Write-Phase3Diagnostics -Checkpoint "POST-NOTEBOOK (7c)" -WorkspaceId $p3WsId -RequireReportingTables
 
             # Step 3d: Deploy Power BI Direct Lake Report
             Write-Host "  --- Step 7d: Power BI Imaging Report (Direct Lake) ---" -ForegroundColor Cyan
@@ -3286,6 +3335,60 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             }
         }
 
+        function Invoke-P5PowerBiRest {
+            param(
+                [Parameter(Mandatory)][string]$Uri,
+                [string]$Method = 'GET',
+                [object]$Body = $null,
+                [string]$Label = 'Power BI request'
+            )
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+                try {
+                    $token = Get-CachedAccessToken "https://analysis.windows.net/powerbi/api"
+                    $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                    if ($Body -ne $null) { return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -Body $Body -ErrorAction Stop }
+                    return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
+                } catch {
+                    $errorInfo = Get-P5FabricHttpError -ErrorRecord $_
+                    $isTransient = Test-P5FabricTransientError -StatusCode $errorInfo.StatusCode -ErrorText $errorInfo.Text
+                    if ($isTransient -and $attempt -lt 5) {
+                        $delay = [Math]::Min(15 * $attempt, 60)
+                        Write-Host "  $Label transient failure; retrying in ${delay}s... ($attempt/5)" -ForegroundColor Yellow
+                        Start-Sleep -Seconds $delay
+                        continue
+                    }
+                    throw
+                }
+            }
+        }
+
+        function Invoke-P5PowerBiWeb {
+            param(
+                [Parameter(Mandatory)][string]$Uri,
+                [string]$Method = 'GET',
+                [object]$Body = $null,
+                [string]$Label = 'Power BI request'
+            )
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+                try {
+                    $token = Get-CachedAccessToken "https://analysis.windows.net/powerbi/api"
+                    $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+                    if ($Body -ne $null) { return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -Body $Body -UseBasicParsing -ErrorAction Stop }
+                    return Invoke-WebRequest -Uri $Uri -Headers $headers -Method $Method -UseBasicParsing -ErrorAction Stop
+                } catch {
+                    $errorInfo = Get-P5FabricHttpError -ErrorRecord $_
+                    $isTransient = Test-P5FabricTransientError -StatusCode $errorInfo.StatusCode -ErrorText $errorInfo.Text
+                    if ($isTransient -and $attempt -lt 5) {
+                        $delay = [Math]::Min(15 * $attempt, 60)
+                        Write-Host "  $Label transient failure; retrying in ${delay}s... ($attempt/5)" -ForegroundColor Yellow
+                        Start-Sleep -Seconds $delay
+                        continue
+                    }
+                    throw
+                }
+            }
+        }
+
         $p5Token = Get-FabricTokenLocal
         $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
         $p5Base = "https://api.fabric.microsoft.com/v1"
@@ -3473,6 +3576,11 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
             Write-Host "     Star Rating Simulator, Risk Adjustment & RAF," -ForegroundColor DarkGray
             Write-Host "     Readmission Risk, Cost & Utilization)" -ForegroundColor DarkGray
             
+            $qualityModels = (Invoke-P5FabricRest -Uri "$p5Base/workspaces/$p5WsId/items?type=SemanticModel" -Label 'List quality semantic models').value
+            $qualityModel = $qualityModels | Where-Object { $_.displayName -match '(?i)cma.*semantic|semantic.*cma' } | Select-Object -First 1
+            if (-not $qualityModel -or -not $qualityModel.id) { throw "CMA semantic model could not be resolved after quality deployment." }
+            $qualityDatasetId = [string]$qualityModel.id
+            Write-Host "  ✓ Quality semantic model: $($qualityModel.displayName) ($qualityDatasetId)" -ForegroundColor Green
             # --- Programmatic SPN Credential Patching ---
             $spnSuccess = $false
             $kvName = (az keyvault list --resource-group $ResourceGroupName --query "[0].name" -o tsv 2>$null)
@@ -3486,12 +3594,9 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                     Write-Host "  Retrieved SPN credentials from Key Vault securely." -ForegroundColor White
                     Write-Host "  Attempting to patch Direct Lake semantic model credentials via Power BI API..." -ForegroundColor White
                     try {
-                        $p5Token = Get-FabricTokenLocal
-                        $p5Headers = @{ Authorization = "Bearer $p5Token"; "Content-Type" = "application/json" }
-                        
-                        # Find Gateway and Datasource IDs
-                        $dsUrl = "https://api.powerbi.com/v1.0/myorg/groups/$p5WsId/datasets/429bede8-09bc-4806-b5db-40a1a79341d2/datasources"
-                        $dsResp = Invoke-P5FabricRest -Uri $dsUrl -Label 'List quality report datasources'
+                        # Find Gateway and Datasource IDs from the live semantic model.
+                        $dsUrl = "https://api.powerbi.com/v1.0/myorg/groups/$p5WsId/datasets/$qualityDatasetId/datasources"
+                        $dsResp = Invoke-P5PowerBiRest -Uri $dsUrl -Label 'List quality report datasources'
                         $dsList = $dsResp.value
                         
                         if ($dsList -and $dsList.Count -gt 0) {
@@ -3518,7 +3623,7 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                             } | ConvertTo-Json -Depth 10
                             
                             # Use the web wrapper for PATCH because REST PATCH behavior varies across PowerShell hosts.
-                            $patchResp = Invoke-P5FabricWeb -Method PATCH -Uri $patchUrl -Body $patchBody -Label 'Patch quality report datasource credentials'
+                            $patchResp = Invoke-P5PowerBiWeb -Method PATCH -Uri $patchUrl -Body $patchBody -Label 'Patch quality report datasource credentials'
                             if ($patchResp.StatusCode -eq 200) {
                                 Write-Host "  ✓ Service Principal credentials programmatically bound — no manual sign-in required!" -ForegroundColor Green
                                 $spnSuccess = $true
@@ -3530,6 +3635,21 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                 }
             }
             
+            if (-not $spnSuccess) {
+                try {
+                    $queryBody = @{ queries = @(@{ query = 'EVALUATE ROW("Rows", COUNTROWS(''person''))' }); serializerSettings = @{ includeNulls = $true } } | ConvertTo-Json -Depth 8
+                    $queryUrl = "https://api.powerbi.com/v1.0/myorg/groups/$p5WsId/datasets/$qualityDatasetId/executeQueries"
+                    $queryResult = Invoke-P5PowerBiRest -Method POST -Uri $queryUrl -Body $queryBody -Label 'Validate quality semantic model DAX'
+                    $queryRows = @($queryResult.results[0].tables[0].rows)
+                    if ($queryRows.Count -gt 0) {
+                        Write-Host "  ✓ Quality semantic model executes DAX successfully; no manual credential action is required." -ForegroundColor Green
+                        $spnSuccess = $true
+                    }
+                } catch {
+                    Write-Host "  Quality semantic model query validation did not pass: $($_.Exception.Message)" -ForegroundColor Yellow
+                }
+            }
+
             # Print highly visible prompt to authorize Direct Lake credentials if SPN was not configured/failed
             if (-not $spnSuccess) {
                 Write-Host ""
@@ -3540,7 +3660,7 @@ Emit-PhaseTransition -Phase 6 -Label "CMS Quality & Performance" -StepCount 1
                 Write-Host "  MUST authorize the semantic model connection in the portal." -ForegroundColor Yellow
                 Write-Host "  Click 'Edit credentials' -> OAuth2 to bind your token." -ForegroundColor Yellow
                 Write-Host ""
-                Write-Host "  Settings: https://app.fabric.microsoft.com/groups/$p5WsId/settings/datasets/429bede8-09bc-4806-b5db-40a1a79341d2" -ForegroundColor Cyan
+                Write-Host "  Settings: https://app.fabric.microsoft.com/groups/$p5WsId/settings/datasets/$qualityDatasetId" -ForegroundColor Cyan
                 Write-Host ""
             }
         } else {
@@ -3692,8 +3812,8 @@ if (-not $Teardown) {
 # SUMMARY
 # ============================================================================
 
-$summaryTitle = if ($Phase7) { "PHASE 7 DEPLOYMENT SUMMARY" } elseif ($Phase5) { "PHASE 5 DEPLOYMENT SUMMARY" } elseif ($Phase4) { "PHASE 4 DEPLOYMENT SUMMARY" } elseif ($Phase3) { "PHASE 3 DEPLOYMENT SUMMARY" } elseif ($Phase2) { "PHASE 2 DEPLOYMENT SUMMARY" } else { "FULL DEPLOYMENT SUMMARY" }
-$summaryPhase = if ($Phase7) { "Phase7" } elseif ($Phase5) { "Phase5" } elseif ($Phase4) { "Phase4" } elseif ($Phase3) { "Phase3" } elseif ($Phase2) { "Phase2" } else { "Phase1+2+3+4+5+6+7" }
+$summaryTitle = $requestedSummaryTitle
+$summaryPhase = $requestedSummaryPhase
 Write-Summary -Title $summaryTitle -PhaseName $summaryPhase -PhaseResources @{
     FabricWorkspaceName = $FabricWorkspaceName
     ResourceGroupName   = $ResourceGroupName

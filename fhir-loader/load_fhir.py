@@ -1073,14 +1073,27 @@ def process_synthea_bundles(client: FHIRClient, existing_locations: Dict[str, st
     return qualifying_patients
 
 
+def build_device_patient_assignments(devices: List[Dict], patients: List[Dict], device_count: int) -> List[tuple]:
+    """Assign every selected telemetry device, cycling patients when necessary.
+
+    Reused environments can legitimately have fewer patients than devices. Leaving
+    the remaining devices unassigned breaks alert, location, and dashboard joins.
+    Multiple monitoring devices per patient are valid for this synthetic demo.
+    """
+    if not patients or device_count <= 0:
+        return []
+    selected_devices = devices[:device_count]
+    return [(device, patients[index % len(patients)]) for index, device in enumerate(selected_devices)]
+
+
 def create_device_associations(client: FHIRClient, qualifying_patients: List[Dict]) -> None:
-    """Create device associations linking devices to qualifying patients"""
-    print(f"Creating device associations for {len(qualifying_patients)} patients...", flush=True)
-    
-    devices = DEVICE_REGISTRY['devices'][:len(qualifying_patients)]
+    """Create associations for every configured telemetry device."""
+    assignments = build_device_patient_assignments(DEVICE_REGISTRY['devices'], qualifying_patients, DEVICE_COUNT)
+    print(f"Creating {len(assignments)} device associations across {len(qualifying_patients)} patients...", flush=True)
+
     association_mapping = []
-    
-    for i, (device_info, patient) in enumerate(zip(devices, qualifying_patients)):
+
+    for i, (device_info, patient) in enumerate(assignments):
         try:
             association = create_device_association(
                 device_id=device_info['id'],
@@ -1097,12 +1110,12 @@ def create_device_associations(client: FHIRClient, qualifying_patients: List[Dic
             })
             
             if (i + 1) % 20 == 0:
-                print(f"  - Created {i + 1}/{len(qualifying_patients)} associations", flush=True)
+                print(f"  - Created {i + 1}/{len(assignments)} associations", flush=True)
                 
         except Exception as e:
             print(f"  - Failed to create association for device {device_info['id']}: {e}", flush=True)
     
-    print(f"Created {len(qualifying_patients)} device associations", flush=True)
+    print(f"Created {len(association_mapping)} device associations", flush=True)
     
     # Write association mapping to blob storage for DICOM loader (avoids FHIR search indexing dependency)
     try:

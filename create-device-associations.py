@@ -48,7 +48,7 @@ def get_access_token():
     """Get Azure access token using az cli"""
     result = subprocess.run(
         ["az", "account", "get-access-token", "--resource", FHIR_SERVICE_URL, "--query", "accessToken", "-o", "tsv"],
-        capture_output=True, text=True, shell=True
+        capture_output=True, text=True, shell=False
     )
     if result.returncode != 0:
         print(f"Error getting access token: {result.stderr}")
@@ -160,6 +160,25 @@ def find_qualifying_patients(token, max_patients=100):
     return qualifying_patients
 
 
+def find_all_patients(token, max_patients=100):
+    """Return existing patients for complete device coverage in reused environments."""
+    result = fhir_request("GET", f"Patient?_count={max_patients}", token)
+    patients = []
+    for entry in result.get('entry', []):
+        patient = entry.get('resource', {})
+        if patient.get('resourceType') != 'Patient' or not patient.get('id'):
+            continue
+        names = patient.get('name', [])
+        if names:
+            given = (names[0].get('given') or [''])[0]
+            family = names[0].get('family', '')
+            patient_name = f"{given} {family}".strip()
+        else:
+            patient_name = f"Patient-{patient['id']}"
+        patients.append({'id': patient['id'], 'name': patient_name})
+    return patients
+
+
 def create_device_association(device_id, patient_reference, patient_name):
     """Create a FHIR Basic resource representing DeviceAssociation"""
     return {
@@ -197,33 +216,36 @@ def create_device_association(device_id, patient_reference, patient_name):
     }
 
 
-def create_associations(token, patients):
-    """Create DeviceAssociation resources"""
-    print(f"\nCreating device associations for {len(patients)} patients...")
-    
+def create_associations(token, patients, device_count=DEVICE_COUNT):
+    """Create one association per device, cycling patients when necessary."""
+    if not patients:
+        return 0
+    print(f"\nCreating {device_count} device associations across {len(patients)} patients...")
+
     created = 0
     failed = 0
-    
-    for i, patient in enumerate(patients):
+
+    for i in range(device_count):
+        patient = patients[i % len(patients)]
         device_id = f"MASIMO-RADIUS7-{(i+1):04d}"
-        
+
         association = create_device_association(
             device_id=device_id,
             patient_reference=f"Patient/{patient['id']}",
             patient_name=patient['name']
         )
-        
+
         try:
             fhir_request("PUT", f"Basic/{association['id']}", token, association)
             created += 1
-            
-            if (i + 1) % 20 == 0:
-                print(f"  Created {i + 1}/{len(patients)} associations...")
-                
+
+            if i == 0 or (i + 1) % 20 == 0:
+                print(f"  Created {i + 1}/{device_count} associations...")
+
         except Exception as e:
             print(f"  Failed to create association for {device_id}: {e}")
             failed += 1
-    
+
     print(f"\nCreated {created} device associations ({failed} failed)")
     return created
 
@@ -259,11 +281,17 @@ def main():
     token = get_access_token()
     print("Token acquired successfully")
     
-    # Find qualifying patients
+    # Prefer clinically qualifying patients, but reused environments may have a
+    # smaller cohort. Use every existing patient so no telemetry device is orphaned.
     patients = find_qualifying_patients(token, DEVICE_COUNT)
-    
+    if len(patients) < DEVICE_COUNT:
+        all_patients = find_all_patients(token, DEVICE_COUNT)
+        if all_patients:
+            patients = all_patients
+            print(f"Using all {len(patients)} existing patients for complete device coverage")
+
     if not patients:
-        print("\nERROR: No qualifying patients found!")
+        print("\nERROR: No patients found!")
         sys.exit(1)
     
     # Create associations

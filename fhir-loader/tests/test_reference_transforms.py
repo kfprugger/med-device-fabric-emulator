@@ -151,6 +151,15 @@ class FhirReferenceTransformTests(unittest.TestCase):
             self.loader.build_conditional_reference_map(bundle),
         )
 
+    def test_device_assignments_cover_all_devices_when_patients_are_reused(self) -> None:
+        devices = [{"id": f"device-{index}"} for index in range(5)]
+        patients = [{"id": "patient-a"}, {"id": "patient-b"}]
+
+        assignments = self.loader.build_device_patient_assignments(devices, patients, 5)
+
+        self.assertEqual([device["id"] for device, _patient in assignments], [f"device-{index}" for index in range(5)])
+        self.assertEqual([patient["id"] for _device, patient in assignments], ["patient-a", "patient-b", "patient-a", "patient-b", "patient-a"])
+
 
 if __name__ == "__main__":
     unittest.main()
