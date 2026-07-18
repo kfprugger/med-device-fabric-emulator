@@ -686,7 +686,9 @@ export function DeployWizard() {
     setConfig((prev) => {
       const base: DeploymentConfig = {
         ...prev,
-        patient_count: preset === "demo" ? Math.min(prev.patient_count || 25, 25) : preset === "full" ? Math.max(prev.patient_count || 100, 100) : prev.patient_count,
+        // Presets must never override a patient count the user explicitly entered.
+        // Only supply a preset default when no value is set yet.
+        patient_count: prev.patient_count || (preset === "demo" ? 25 : 100),
         skip_base_infra: false,
         skip_fhir: false,
         skip_dicom: false,
@@ -2139,7 +2141,12 @@ export function DeployWizard() {
                         min={10}
                         max={10000}
                         step={10}
-                        onChange={(_, d) => update("patient_count", d.value ?? 100)}
+                        onChange={(_, d) => {
+                          // Respect what the user enters: prefer the numeric value, else parse the
+                          // typed display string; never silently snap back to a default.
+                          const parsed = d.value ?? (d.displayValue != null ? parseInt(d.displayValue, 10) : NaN);
+                          if (!Number.isNaN(parsed)) update("patient_count", parsed);
+                        }}
                         disabled={config.reuse_patients}
                       />
                     </Field>
