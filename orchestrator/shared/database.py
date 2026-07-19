@@ -15,6 +15,7 @@ Tables:
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,23 +25,42 @@ logger = logging.getLogger(__name__)
 DB_PATH = Path(__file__).parent / "orchestrator.db"
 
 
+
+
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Wait (rather than immediately erroring) when another connection holds the
+    # write lock — WAL permits one writer at a time across connections.
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 
-_conn: sqlite3.Connection | None = None
+# A single shared sqlite3.Connection is not safe for concurrent use across the
+# FastAPI threadpool and asyncio background deploy tasks: overlapping execute()/
+# commit() calls raise "InterfaceError: bad parameter or other API misuse" and can
+# crash a background task mid-deploy. Give every thread its own connection, and
+# serialize writes with a process-wide lock so commits never interleave.
+_local = threading.local()
+_write_lock = threading.RLock()
+_init_lock = threading.Lock()
+_initialized = False
 
 
 def get_db() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        _conn = _get_conn()
-        _init_tables(_conn)
-    return _conn
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _get_conn()
+        _local.conn = conn
+    global _initialized
+    if not _initialized:
+        with _init_lock:
+            if not _initialized:
+                _init_tables(conn)
+                _initialized = True
+    return conn
 
 
 def _init_tables(conn: sqlite3.Connection):
@@ -83,21 +103,22 @@ def _init_tables(conn: sqlite3.Connection):
 
 def save_deployment(instance_id: str, data: dict[str, Any]):
     db = get_db()
-    db.execute("""
-        INSERT OR REPLACE INTO deployments
-            (instance_id, name, runtime_status, created_time, last_updated_time, custom_status, output, config)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        instance_id,
-        data.get("name", ""),
-        data.get("runtimeStatus", "Running"),
-        data.get("createdTime", datetime.now(timezone.utc).isoformat()),
-        data.get("lastUpdatedTime", datetime.now(timezone.utc).isoformat()),
-        json.dumps(data.get("customStatus", {}), default=str),
-        json.dumps(data.get("output"), default=str) if data.get("output") else None,
-        json.dumps(data.get("config", {}), default=str),
-    ))
-    db.commit()
+    with _write_lock:
+        db.execute("""
+            INSERT OR REPLACE INTO deployments
+                (instance_id, name, runtime_status, created_time, last_updated_time, custom_status, output, config)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            instance_id,
+            data.get("name", ""),
+            data.get("runtimeStatus", "Running"),
+            data.get("createdTime", datetime.now(timezone.utc).isoformat()),
+            data.get("lastUpdatedTime", datetime.now(timezone.utc).isoformat()),
+            json.dumps(data.get("customStatus", {}), default=str),
+            json.dumps(data.get("output"), default=str) if data.get("output") else None,
+            json.dumps(data.get("config", {}), default=str),
+        ))
+        db.commit()
 
 
 def get_deployment(instance_id: str) -> dict[str, Any] | None:
@@ -120,48 +141,51 @@ def list_deployments() -> list[dict[str, Any]]:
 
 def delete_deployment(instance_id: str) -> bool:
     db = get_db()
-    cursor = db.execute(
-        "DELETE FROM deployments WHERE instance_id = ?", (instance_id,)
-    )
-    db.commit()
+    with _write_lock:
+        cursor = db.execute(
+            "DELETE FROM deployments WHERE instance_id = ?", (instance_id,)
+        )
+        db.commit()
     return cursor.rowcount > 0
 
 
 def clear_all_deployments() -> int:
     db = get_db()
-    cursor = db.execute("DELETE FROM deployments")
-    db.commit()
+    with _write_lock:
+        cursor = db.execute("DELETE FROM deployments")
+        db.commit()
     return cursor.rowcount
 
 
 def mark_stale_as_terminated():
     """Mark any Running deployments as Terminated (server restart recovery)."""
     db = get_db()
-    rows = db.execute(
-        "SELECT instance_id, custom_status, output, created_time FROM deployments WHERE runtime_status = 'Running'"
-    ).fetchall()
-    for row in rows:
-        cs = json.loads(row["custom_status"])
-        cs["status"] = "terminated"
-        cs["detail"] = "Server restarted — deployment was interrupted"
-        # Try to compute actual duration from phase data or last update
-        output = json.loads(row["output"]) if row["output"] else None
-        if output and "phases" in output:
-            phase_duration = sum(
-                p.get("duration", 0) for p in output["phases"]
-                if isinstance(p.get("duration"), (int, float))
-            )
-            if phase_duration > 0:
-                cs["durationSeconds"] = round(phase_duration, 1)
-        db.execute("""
-            UPDATE deployments
-            SET runtime_status = 'Terminated',
-                custom_status = ?,
-                last_updated_time = ?
-            WHERE instance_id = ?
-        """, (json.dumps(cs, default=str), datetime.now(timezone.utc).isoformat(), row["instance_id"]))
-        logger.warning("Marked stale deployment %s as Terminated", row["instance_id"])
-    db.commit()
+    with _write_lock:
+        rows = db.execute(
+            "SELECT instance_id, custom_status, output, created_time FROM deployments WHERE runtime_status = 'Running'"
+        ).fetchall()
+        for row in rows:
+            cs = json.loads(row["custom_status"])
+            cs["status"] = "terminated"
+            cs["detail"] = "Server restarted — deployment was interrupted"
+            # Try to compute actual duration from phase data or last update
+            output = json.loads(row["output"]) if row["output"] else None
+            if output and "phases" in output:
+                phase_duration = sum(
+                    p.get("duration", 0) for p in output["phases"]
+                    if isinstance(p.get("duration"), (int, float))
+                )
+                if phase_duration > 0:
+                    cs["durationSeconds"] = round(phase_duration, 1)
+            db.execute("""
+                UPDATE deployments
+                SET runtime_status = 'Terminated',
+                    custom_status = ?,
+                    last_updated_time = ?
+                WHERE instance_id = ?
+            """, (json.dumps(cs, default=str), datetime.now(timezone.utc).isoformat(), row["instance_id"]))
+            logger.warning("Marked stale deployment %s as Terminated", row["instance_id"])
+        db.commit()
 
 
 def _row_to_deployment(row: sqlite3.Row) -> dict[str, Any]:
@@ -186,23 +210,26 @@ def get_locks() -> list[str]:
 
 def set_lock(resource_id: str, name: str = "", resource_type: str = ""):
     db = get_db()
-    db.execute("""
-        INSERT OR REPLACE INTO locks (resource_id, resource_name, resource_type, locked_at)
-        VALUES (?, ?, ?, ?)
-    """, (resource_id, name, resource_type, datetime.now(timezone.utc).isoformat()))
-    db.commit()
+    with _write_lock:
+        db.execute("""
+            INSERT OR REPLACE INTO locks (resource_id, resource_name, resource_type, locked_at)
+            VALUES (?, ?, ?, ?)
+        """, (resource_id, name, resource_type, datetime.now(timezone.utc).isoformat()))
+        db.commit()
 
 
 def remove_lock(resource_id: str):
     db = get_db()
-    db.execute("DELETE FROM locks WHERE resource_id = ?", (resource_id,))
-    db.commit()
+    with _write_lock:
+        db.execute("DELETE FROM locks WHERE resource_id = ?", (resource_id,))
+        db.commit()
 
 
 def clear_locks():
     db = get_db()
-    db.execute("DELETE FROM locks")
-    db.commit()
+    with _write_lock:
+        db.execute("DELETE FROM locks")
+        db.commit()
 
 
 # ── Form History ───────────────────────────────────────────────────────
@@ -220,11 +247,12 @@ def add_form_history(field: str, value: str):
     if not value.strip():
         return
     db = get_db()
-    db.execute("""
-        INSERT OR REPLACE INTO form_history (field, value, used_at)
-        VALUES (?, ?, ?)
-    """, (field, value.strip(), datetime.now(timezone.utc).isoformat()))
-    db.commit()
+    with _write_lock:
+        db.execute("""
+            INSERT OR REPLACE INTO form_history (field, value, used_at)
+            VALUES (?, ?, ?)
+        """, (field, value.strip(), datetime.now(timezone.utc).isoformat()))
+        db.commit()
 
 
 # ── Dismissed Teardowns ────────────────────────────────────────────────
@@ -237,11 +265,12 @@ def get_dismissed_teardowns() -> list[str]:
 
 def dismiss_teardown(instance_id: str):
     db = get_db()
-    db.execute("""
-        INSERT OR IGNORE INTO dismissed_teardowns (instance_id, dismissed_at)
-        VALUES (?, ?)
-    """, (instance_id, datetime.now(timezone.utc).isoformat()))
-    db.commit()
+    with _write_lock:
+        db.execute("""
+            INSERT OR IGNORE INTO dismissed_teardowns (instance_id, dismissed_at)
+            VALUES (?, ?)
+        """, (instance_id, datetime.now(timezone.utc).isoformat()))
+        db.commit()
 
 
 # ── Migration from JSON state file ────────────────────────────────────
