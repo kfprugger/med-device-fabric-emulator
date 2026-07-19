@@ -171,12 +171,19 @@ function Invoke-FabricApi {
             $errorBody = ""
             try { $errorBody = $_.ErrorDetails.Message } catch {}
 
-            if (($statusCode -eq 429 -or $statusCode -ge 500 -or ($statusCode -eq 403 -and $errorBody -match "RequestDeniedByInboundPolicy")) -and $attempt -lt $MaxRetries) {
+            # Transport-level failures (SSL/TLS handshake, connection reset, DNS, timeout) surface
+            # with no HTTP response, so $statusCode is null. These are transient and must be retried
+            # too — otherwise a single network blip fails the whole step after all real work succeeded.
+            $isTransport = ($null -eq $statusCode) -and (
+                $_.Exception -is [System.Net.Http.HttpRequestException] -or
+                $_.Exception.Message -match "SSL connection|connection could not be established|actively refused|connection was closed|timed out|Unable to (read|connect|write)|An error occurred while sending the request"
+            )
+            if (($statusCode -eq 429 -or $statusCode -ge 500 -or ($statusCode -eq 403 -and $errorBody -match "RequestDeniedByInboundPolicy") -or $isTransport) -and $attempt -lt $MaxRetries) {
                 $retryAfter = [Math]::Min(120, 10 * [Math]::Pow(2, $attempt - 1))
                 if ($statusCode -eq 429) {
                     try { $retryAfter = [int]$_.Exception.Response.Headers["Retry-After"] } catch {}
                 }
-                $reason = if ($statusCode -eq 403) { "Fabric inbound policy denied request" } elseif ($statusCode -eq 429) { "Rate limited" } else { "Fabric transient HTTP $statusCode" }
+                $reason = if ($isTransport) { "Fabric transient network/SSL error" } elseif ($statusCode -eq 403) { "Fabric inbound policy denied request" } elseif ($statusCode -eq 429) { "Rate limited" } else { "Fabric transient HTTP $statusCode" }
                 Write-Host "  $reason. Waiting ${retryAfter}s before retry $($attempt + 1)/$MaxRetries..." -ForegroundColor Yellow
                 Start-Sleep -Seconds $retryAfter
                 continue
