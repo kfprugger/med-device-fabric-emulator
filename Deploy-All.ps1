@@ -1021,7 +1021,9 @@ SELECT 'DicomFileReporting' AS tbl, COUNT(*) AS cnt FROM dbo.DicomFileReporting
 UNION ALL SELECT 'ImagingStudyReporting', COUNT(*) FROM dbo.ImagingStudyReporting
 UNION ALL SELECT 'PatientReporting', COUNT(*) FROM dbo.PatientReporting
 "@
-                $maxAttempts = if ($RequireReportingTables) { 8 } else { 1 }
+                # Fabric SQL analytics endpoints can lag several minutes exposing freshly
+                # materialized tables (metadata sync), so allow ~5 min before failing the gate.
+                $maxAttempts = if ($RequireReportingTables) { 20 } else { 1 }
                 $reportingReady = $false
                 for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
                     $rptRows = Invoke-DiagQuery -Server $rptServer -Database $rptDb -Token $sqlToken -Query $rptQuery
