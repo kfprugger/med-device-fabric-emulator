@@ -95,6 +95,7 @@ param (
     [switch]$SkipQualityMeasures,    # Skip Population Health & Quality Dashboard (claims, measures, risk, utilization, report)
     [switch]$RequireBronzeClinicalFhir, # Require Bronze ClinicalFhir rows after synthesized clinical pipeline runs
     [switch]$RequireBronzeImagingDicom, # Require Bronze ImagingDicom rows after synthesized imaging pipeline runs
+    [switch]$RunEval,                   # After deploy, run eval/deployment_eval_harness.py (reports/agents/RTI validation)
 
     # ── Phase 3 (FabricDicomCohortingToolkit) ──
     [string]$DicomToolkitPath = "C:\git\FabricDicomCohortingToolkit",
@@ -3807,6 +3808,35 @@ if (-not $Teardown) {
         }
     } catch {
         Write-Host "  ⚠ Workspace sweep organization failed: $_" -ForegroundColor Yellow
+    }
+}
+
+# ============================================================================
+# POST-DEPLOY EVALUATION (opt-in via -RunEval)
+# ============================================================================
+# Validates that reports render (no blank visuals), Data Agents answer queries,
+# and RTI dashboards return data. Non-fatal: reports results, never blocks deploy.
+if ($RunEval -and -not $Teardown) {
+    Write-Host ""
+    Write-Host "=== Post-deploy evaluation (eval/deployment_eval_harness.py) ===" -ForegroundColor Cyan
+    $evalScript = Join-Path $ScriptDir "eval/deployment_eval_harness.py"
+    if (Test-Path $evalScript) {
+        $evalJson = Join-Path $ScriptDir "eval/$FabricWorkspaceName-eval.json"
+        $py = Get-Command python3 -ErrorAction SilentlyContinue
+        if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
+        if ($py) {
+            & $py.Source $evalScript --workspace $FabricWorkspaceName --json-out $evalJson
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  ✓ Deployment evaluation passed" -ForegroundColor Green
+            } else {
+                Write-Host "  ⚠ Deployment evaluation reported issues (exit $LASTEXITCODE) — see $evalJson" -ForegroundColor Yellow
+                Write-Host "    Note: unpublished Data Agents and un-refreshed ontology graph models are expected Fabric-preview manual portal steps." -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Host "  ⚠ python not found; skipping evaluation" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  ⚠ eval harness not found at $evalScript" -ForegroundColor Yellow
     }
 }
 
