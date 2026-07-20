@@ -56,6 +56,8 @@ class FakeFabricClient:
         assert workspace_id == WORKSPACE_ID
         if name == "bronze":
             return {"id": "bronze-id", "displayName": "bronze"}
+        if name == "healthcare1_msft_gold_cma":
+            return {"id": "gold-cma-id", "displayName": "healthcare1_msft_gold_cma"}
         return None
 
     def find_item(
@@ -86,6 +88,16 @@ class FakeFabricClient:
         max_retries: int = 3,
     ) -> dict[str, list[dict[str, str]]]:
         del body, max_retries
+        # Gold CMA lakehouse SQL-endpoint lookup used by the semantic-model repoint.
+        if "/lakehouses/gold-cma-id" in endpoint and method == "GET":
+            self.events.append(("GET", "gold-cma-sql-endpoint"))
+            return {
+                "properties": {
+                    "sqlEndpointProperties": {
+                        "connectionString": "live-gold-cma.datawarehouse.fabric.microsoft.com"
+                    }
+                }
+            }
         pipeline_id = endpoint.split("/items/", 1)[1].split("/", 1)[0]
         pipeline_name = self.pipeline_names_by_id[pipeline_id]
         self.events.append((method, pipeline_name))
@@ -350,6 +362,7 @@ class DeployHdsCmaTests(unittest.TestCase):
             result["cma_finalization"],
             {
                 "pipeline_completion": "completed",
+                "semantic_model_datasource": "repointed:live-gold-cma.datawarehouse.fabric.microsoft.com",
                 "semantic_model": "overwritten",
                 f"report:{report_name}": "rebound",
             },
@@ -383,6 +396,18 @@ class DeployHdsCmaTests(unittest.TestCase):
             self.decoded_definition_part(semantic_definition, "definition/model.tmdl"),
             expected_model,
         )
+
+        # The Sql.Database source in every table part must be repointed to the live
+        # Gold CMA SQL endpoint (the fix that keeps CMA report visuals from going blank).
+        person_tmdl = self.decoded_definition_part(
+            semantic_definition, "definition/tables/person.tmdl"
+        ).decode("utf-8")
+        self.assertIn(
+            'Sql.Database("live-gold-cma.datawarehouse.fabric.microsoft.com", '
+            '"healthcare1_msft_gold_cma")',
+            person_tmdl,
+        )
+        self.assertNotIn("nkhahdl5to4ezo6p5bg76flepa", person_tmdl)
 
         report_definition = self.update_definition_for(fake_client, "report-id")
         patched_pbir = json.loads(

@@ -11,6 +11,7 @@ import base64
 import copy
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,11 @@ CMA_PIPELINE_NAME = "healthcare1_msft_cma"
 CMA_SEMANTIC_MODEL_NAME = "healthcare1_msft_cma_semantic_model"
 CMA_REPORT_NAMES = ("healthcare1_msft_cma_report",)
 CMA_ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "phase-2" / "cma-report"
+# The CMA semantic model TMDL binds every table to this Gold Lakehouse via
+# Sql.Database("<server>", CMA_GOLD_LAKEHOUSE). The committed artifact carries a
+# stale server from whatever workspace it was last exported from, so the finalize
+# step must rewrite it to the target workspace's live SQL analytics endpoint.
+CMA_GOLD_LAKEHOUSE = "healthcare1_msft_gold_cma"
 DEFAULT_SIDECAR_PIPELINE_PATTERNS = (
     "sdoh",
     "socialdeterminant",
@@ -253,6 +259,50 @@ def _patch_report_definition_connection(
     raise ValueError("Report definition is missing definition.pbir")
 
 
+def _resolve_gold_cma_sql_endpoint(
+    fabric: FabricClient, workspace_id: str
+) -> str | None:
+    """Return the live SQL analytics endpoint server for the target workspace's
+    Gold CMA lakehouse (e.g. '<id>.datawarehouse.fabric.microsoft.com')."""
+    lakehouse = fabric.find_lakehouse(workspace_id, CMA_GOLD_LAKEHOUSE)
+    if not lakehouse:
+        return None
+    detail = fabric.call(
+        "GET", f"/workspaces/{workspace_id}/lakehouses/{lakehouse['id']}"
+    )
+    props = (detail or {}).get("properties", {})
+    return (props.get("sqlEndpointProperties") or {}).get("connectionString")
+
+
+def _patch_semantic_model_datasource(
+    definition: dict[str, Any], target_server: str
+) -> tuple[dict[str, Any], int]:
+    """Rewrite every Sql.Database("<server>", "<gold_cma_db>") in the semantic
+    model's TMDL parts to point at the target workspace's live SQL endpoint.
+
+    The committed CMA semantic model artifact (which carries the age-group measure
+    fix) hardcodes the SQL endpoint server from whatever workspace it was exported
+    from. Without this rewrite the overwritten model points at a dead endpoint and
+    every visual renders blank ('a connection could not be made to the data source').
+    """
+    patched = copy.deepcopy(definition)
+    # Sql.Database("SERVER", "DB") — rewrite SERVER only when DB is the gold_cma db.
+    pattern = re.compile(
+        r'(Sql\.Database\(\s*")([^"]+)("\s*,\s*"' + re.escape(CMA_GOLD_LAKEHOUSE) + r'"\s*\))'
+    )
+    rewrites = 0
+    for part in patched.get("parts", []):
+        if not part.get("path", "").endswith(".tmdl"):
+            continue
+        text = base64.b64decode(part["payload"]).decode("utf-8")
+        new_text, n = pattern.subn(rf"\g<1>{target_server}\g<3>", text)
+        if n:
+            part["payload"] = base64.b64encode(new_text.encode("utf-8")).decode("ascii")
+            part["payloadType"] = "InlineBase64"
+            rewrites += n
+    return patched, rewrites
+
+
 def _finalize_cma_semantic_model(
     fabric: FabricClient,
     workspace_id: str,
@@ -270,6 +320,31 @@ def _finalize_cma_semantic_model(
     semantic_model_id = str(semantic_model["id"])
     semantic_model_dir = CMA_ARTIFACT_DIR / f"{CMA_SEMANTIC_MODEL_NAME}.SemanticModel"
     semantic_model_definition = _load_item_definition(semantic_model_dir)
+
+    # Repoint the model's Sql.Database source to the target workspace's live Gold CMA
+    # SQL endpoint before overwriting; the committed artifact hardcodes a stale server.
+    target_server = _resolve_gold_cma_sql_endpoint(fabric, workspace_id)
+    if target_server:
+        semantic_model_definition, rewrites = _patch_semantic_model_datasource(
+            semantic_model_definition, target_server
+        )
+        if rewrites:
+            logger.info(
+                "CMA semantic model datasource repointed to %s (%d table bindings rewritten)",
+                target_server, rewrites,
+            )
+            results["semantic_model_datasource"] = f"repointed:{target_server}"
+        else:
+            logger.warning("CMA semantic model: no Sql.Database bindings matched for rewrite")
+            results["semantic_model_datasource"] = "no_match"
+    else:
+        logger.warning(
+            "CMA semantic model: could not resolve live %s SQL endpoint; "
+            "overwriting with artifact server unchanged (visuals may be blank)",
+            CMA_GOLD_LAKEHOUSE,
+        )
+        results["semantic_model_datasource"] = "unresolved"
+
     fabric.update_item_definition(
         workspace_id,
         semantic_model_id,
