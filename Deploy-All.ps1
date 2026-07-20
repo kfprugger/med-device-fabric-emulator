@@ -2141,7 +2141,25 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
                 }
                 if ($proxyFqdn) {
                     try {
-                        $healthResp = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 10
+                        # The DICOM proxy is an Azure Container App that scales to zero, so a
+                        # cold start can exceed a single 10s probe. Warm it up with bounded
+                        # retries before treating unreachability as a failure.
+                        $healthResp = $null
+                        $healthErr = $null
+                        for ($healthAttempt = 1; $healthAttempt -le 6; $healthAttempt++) {
+                            try {
+                                $healthResp = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 30
+                                break
+                            } catch {
+                                $healthErr = $_
+                                if ($healthAttempt -lt 6) {
+                                    $healthDelay = [Math]::Min(30, 5 * $healthAttempt)
+                                    Write-Host "  DICOM proxy warming up (cold start); retrying in ${healthDelay}s... ($healthAttempt/6)" -ForegroundColor Yellow
+                                    Start-Sleep -Seconds $healthDelay
+                                }
+                            }
+                        }
+                        if ($null -eq $healthResp) { throw $healthErr }
                         $studyCount = $healthResp.studies
                         Write-Host "  DICOM index: $studyCount studies" -ForegroundColor $(if ($studyCount -gt 0) { 'Green' } else { 'Yellow' })
 
@@ -2159,7 +2177,7 @@ if (($Phase2 -or $Phase3) -and -not $SkipImaging) {
 
                                 # Re-check after rebuild
                                 Start-Sleep -Seconds 5
-                                $healthResp2 = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 10
+                                $healthResp2 = Invoke-RestMethod -Uri "https://$proxyFqdn/health" -TimeoutSec 30
                                 $studyCount2 = $healthResp2.studies
                                 if ($studyCount2 -gt 0) {
                                     Write-Host "  ✓ DICOM index rebuilt: $studyCount2 studies" -ForegroundColor Green
