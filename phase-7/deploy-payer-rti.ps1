@@ -555,17 +555,43 @@ if ($kqlDb -is [array]) { $kqlDb = $kqlDb[0] }
 if (-not $kqlDb) { throw "KQL Database 'MasimoKQLDB' or 'MasimoEventhouse' not found." }
 $kqlDbId = $kqlDb.id
 $kqlDbName = $kqlDb.displayName
-$kqlDbDetail = $null
-try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId" } catch {}
-if (-not $kqlDbDetail) { try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items/$kqlDbId" } catch {} }
+# Resolve the Kusto query URI with bounded warm-up retries. When the Fabric
+# capacity is paused/reactivating, the RTI compute endpoints (kqlDatabases /
+# eventhouses detail) transiently 404 even though the item lists fine, leaving
+# queryServiceUri unavailable. Retry both the KQLDatabase detail and the parent
+# Eventhouse before treating it as a hard failure.
 $kustoUri = $null
-if ($kqlDbDetail) {
-    $prop = $kqlDbDetail.PSObject.Properties['queryServiceUri']; if ($prop) { $kustoUri = $prop.Value }
-    if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['queryUri']; if ($prop) { $kustoUri = $prop.Value } }
-    if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['properties']; if ($prop -and $prop.Value) { $p = $prop.Value.PSObject.Properties['queryUri']; if ($p) { $kustoUri = $p.Value } } }
-    if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['properties']; if ($prop -and $prop.Value) { $p = $prop.Value.PSObject.Properties['queryServiceUri']; if ($p) { $kustoUri = $p.Value } } }
+for ($uriAttempt = 1; $uriAttempt -le 8 -and -not $kustoUri; $uriAttempt++) {
+    $kqlDbDetail = $null
+    try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/kqlDatabases/$kqlDbId" } catch {}
+    if (-not $kqlDbDetail) { try { $kqlDbDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/items/$kqlDbId" } catch {} }
+    if ($kqlDbDetail) {
+        $prop = $kqlDbDetail.PSObject.Properties['queryServiceUri']; if ($prop) { $kustoUri = $prop.Value }
+        if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['queryUri']; if ($prop) { $kustoUri = $prop.Value } }
+        if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['properties']; if ($prop -and $prop.Value) { $p = $prop.Value.PSObject.Properties['queryUri']; if ($p) { $kustoUri = $p.Value } } }
+        if (-not $kustoUri) { $prop = $kqlDbDetail.PSObject.Properties['properties']; if ($prop -and $prop.Value) { $p = $prop.Value.PSObject.Properties['queryServiceUri']; if ($p) { $kustoUri = $p.Value } } }
+    }
+    # Fallback: read the URI off the parent Eventhouse (mirrors deploy-fabric-rti.ps1).
+    if (-not $kustoUri) {
+        try {
+            $ehItems = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/eventhouses"
+            foreach ($eh in $ehItems.value) {
+                if ($eh.displayName -eq "MasimoEventhouse" -or $eh.displayName -eq $kqlDbName) {
+                    $ehDetail = Invoke-FabricApi -Endpoint "/workspaces/$workspaceId/eventhouses/$($eh.id)"
+                    if ($ehDetail.properties.queryServiceUri) { $kustoUri = $ehDetail.properties.queryServiceUri }
+                    elseif ($ehDetail.queryServiceUri) { $kustoUri = $ehDetail.queryServiceUri }
+                    if ($kustoUri) { break }
+                }
+            }
+        } catch {}
+    }
+    if (-not $kustoUri -and $uriAttempt -lt 8) {
+        $uriDelay = [Math]::Min(30, 10 * $uriAttempt)
+        Write-Host "  Kusto query URI not available yet (capacity may be reactivating); retrying in ${uriDelay}s... ($uriAttempt/8)" -ForegroundColor Yellow
+        Start-Sleep -Seconds $uriDelay
+    }
 }
-if (-not $kustoUri) { throw "Could not determine Kusto query URI for $kqlDbName." }
+if (-not $kustoUri) { throw "Could not determine Kusto query URI for $kqlDbName (capacity offline or Eventhouse not ready)." }
 Write-Host "  ✓ Kusto URI: $kustoUri" -ForegroundColor Green
 Write-Host "  ✓ KQL DB: $kqlDbName ($kqlDbId)" -ForegroundColor Green
 $kustoHeaders = @{ Authorization = "Bearer $(Get-KustoAccessToken)"; "Content-Type" = "application/json" }
