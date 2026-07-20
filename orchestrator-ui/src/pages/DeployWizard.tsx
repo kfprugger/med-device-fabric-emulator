@@ -1127,6 +1127,7 @@ export function DeployWizard() {
                 location: pc.location || prev.location,
                 admin_security_group: pc.admin_security_group || prev.admin_security_group,
                 alert_email: pc.alert_email || prev.alert_email,
+                payer_ops_email: pc.payer_ops_email || prev.payer_ops_email,
                 patient_count: pc.patient_count || prev.patient_count,
                 reuse_patients: true,
                 use_cached_synthea: pc.use_cached_synthea ?? prev.use_cached_synthea,
