@@ -492,6 +492,34 @@ class DeployHdsCmaTests(unittest.TestCase):
             [clinical_name, cma_name, imaging_name, omop_name],
         )
 
+    def test_skip_dicom_excludes_imaging_ingestion_but_runs_clinical_and_omop(
+        self,
+    ) -> None:
+        clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES
+        fake_client = FakeFabricClient(
+            pipeline_ids_by_name=self.pipeline_ids(include_cma=True),
+            statuses_by_name=self.completed_statuses(include_cma=True),
+        )
+        self.install_fake_client(fake_client)
+
+        result = self.deploy_hds.run(
+            {"fabric_api_base": "https://fabric.test/v1", "skip_dicom": True},
+            {"fabric_workspace_id": WORKSPACE_ID},
+        )
+
+        # Imaging ingestion is gated out because there is no DICOM Bronze data ...
+        self.assertEqual(
+            result["pipeline_results"][imaging_name], "skipped_dicom_disabled"
+        )
+        # ... but clinical and OMOP still ingest off the clinical foundation.
+        self.assertEqual(result["pipeline_results"][clinical_name], "completed")
+        self.assertEqual(result["pipeline_results"][omop_name], "completed")
+        # The imaging pipeline is never triggered; OMOP still is.
+        posted = self.posted_pipelines(fake_client)
+        self.assertNotIn(imaging_name, posted)
+        self.assertIn(omop_name, posted)
+        self.assertIn(clinical_name, posted)
+
     def test_clinical_failure_skips_cma_and_downstream_core_pipelines(self) -> None:
         statuses = self.completed_core_statuses()
         clinical_name, imaging_name, omop_name = self.deploy_hds.CORE_HDS_PIPELINE_NAMES

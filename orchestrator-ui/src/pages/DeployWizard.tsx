@@ -662,18 +662,29 @@ export function DeployWizard() {
     }
   };
 
-  // Calculate estimated duration
+  // Estimated duration — medians from 17 historical runs (med-0714..0720).
+  // HDS phase is decomposed: a DICOM-independent base (clinical + OMOP ingestion,
+  // shortcuts, row gates ~34m) plus the imaging ingestion sub-pipeline (~25m) that
+  // only fires when DICOM data exists — mirrors deploy_hds_pipelines.run gating.
   const getEstimatedDurationMinutes = (): number => {
-    let minutes = 5; // Base infrastructure
-    if (!config.skip_fhir && !config.skip_synthea) minutes += Math.ceil(config.patient_count / 10);
-    if (!config.skip_dicom) minutes += 20;
-    if (!config.skip_fabric) minutes += 15;
-    if (!config.skip_hds_pipelines) minutes += 10;
-    if (!config.skip_data_agents) minutes += 5;
-    if (!config.skip_imaging) minutes += 5;
-    if (!config.skip_phase7) minutes += 8;
-    if (!config.skip_phase7 && !config.skip_payer_rti) minutes += 5;
-    return minutes;
+    let minutes = 3; // base Azure infrastructure
+    if (!config.skip_fhir) minutes += 6 + (config.skip_synthea ? 0 : Math.ceil(config.patient_count / 10));
+    if (!config.skip_fhir && !config.skip_synthea && config.use_cached_synthea) minutes -= 8;
+    if (!config.skip_fhir && !config.skip_device_assoc) minutes += 1;
+    if (!config.skip_dicom) minutes += 8;
+    if (!config.skip_fabric) minutes += 1;
+    if (!config.skip_fabric && !config.skip_rti_phase2) minutes += 13;
+    if (!config.skip_hds_pipelines) {
+      minutes += 34; // clinical + OMOP ingestion, shortcuts, row gates
+      if (!config.skip_dicom) minutes += 25; // imaging ingestion sub-pipeline
+    }
+    if (!config.skip_imaging) minutes += 9;
+    if (!config.skip_ontology) minutes += 4;
+    if (!config.skip_data_agents) minutes += 1;
+    if (!config.skip_activator) minutes += 1;
+    if (!config.skip_quality_measures) minutes += 4;
+    if (!config.skip_phase7) minutes += 46;
+    return Math.max(3, minutes);
   };
 
   const getEstimatedDuration = (): string => {
@@ -1036,9 +1047,11 @@ export function DeployWizard() {
         next.skip_ops_agent = true;
         next.skip_graph_agent = true;
       }
-      // skip_dicom → forces skip_hds_pipelines, skip_imaging
+      // skip_dicom → forces skip_imaging (Imaging Toolkit needs DICOM studies).
+      // HDS pipelines are NOT force-skipped: clinical + OMOP ingestion run off FHIR
+      // data and stay enabled; only the imaging ingestion sub-pipeline is gated
+      // backend-side by skip_dicom (see deploy_hds_pipelines.run).
       if (field === "skip_dicom" && value) {
-        next.skip_hds_pipelines = true;
         next.skip_imaging = true;
       }
       // skip_fabric (RTI) → forces skip_fhir_export, skip_rti_phase2, skip_activator
@@ -1073,7 +1086,6 @@ export function DeployWizard() {
         next.skip_device_assoc = false;
       }
       if (field === "skip_dicom" && !value) {
-        next.skip_hds_pipelines = false;
         next.skip_imaging = false;
       }
       if (field === "skip_fabric" && !value) {
@@ -2349,12 +2361,20 @@ export function DeployWizard() {
                       {skipGroup3Collapsed ? <ChevronDownRegular /> : <ChevronUpRegular />}
                     </div>
                     <div className={`deploy-collapsible-content ${skipGroup3Collapsed ? "deploy-collapsible-collapsed" : ""}`} style={{ display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS, padding: "8px 12px 12px", transition: "all 0.3s ease" }}>
-                      <Tooltip content="Skip DICOM shortcut creation, HDS clinical/imaging/OMOP pipeline triggers, and row-count gates" relationship="description" positioning="after">
+                      <Tooltip content={config.skip_dicom
+                        ? "Runs clinical + OMOP ingestion and row gates. Imaging ingestion is auto-excluded because DICOM loading is off."
+                        : "Skip DICOM shortcut creation, HDS clinical/imaging/OMOP pipeline triggers, and row-count gates"} relationship="description" positioning="after">
                         <Checkbox
-                          label="HDS Bridge + Row Gates"
+                          label={
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              HDS Bridge + Row Gates
+                              {config.skip_dicom
+                                ? <Badge size="small" appearance="tint" color="warning">imaging excluded (no DICOM) · ~34m</Badge>
+                                : <Badge size="small" appearance="tint" color="informative">~59m</Badge>}
+                            </span>
+                          }
                           checked={!config.skip_hds_pipelines}
                           onChange={(_, d) => update("skip_hds_pipelines", !d.checked)}
-                          disabled={config.skip_dicom}
                         />
                       </Tooltip>
                       <Tooltip content="Skip Cohorting Agent, OHIF DICOM Viewer, PBI Imaging Report" relationship="description" positioning="after">

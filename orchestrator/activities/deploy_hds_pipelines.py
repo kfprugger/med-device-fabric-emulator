@@ -31,6 +31,7 @@ CORE_HDS_PIPELINE_NAMES = [
     "healthcare1_msft_imaging_with_clinical_foundation_ingestion",
     "healthcare1_msft_omop_analytics",
 ]
+IMAGING_INGESTION_PIPELINE_NAME = "healthcare1_msft_imaging_with_clinical_foundation_ingestion"
 CMA_PIPELINE_NAME = "healthcare1_msft_cma"
 CMA_SEMANTIC_MODEL_NAME = "healthcare1_msft_cma_semantic_model"
 CMA_REPORT_NAMES = ("healthcare1_msft_cma_report",)
@@ -481,6 +482,18 @@ def run(config: dict[str, Any], resources: dict[str, Any]) -> dict[str, Any]:
             pipeline_results[pipeline_name] = "skipped_prerequisites_incomplete"
             logger.warning(
                 "Skipping pipeline because a prior HDS pipeline did not complete: %s",
+                pipeline_name,
+            )
+            continue
+
+        # Imaging ingestion needs DICOM Bronze data. If DICOM was skipped there is
+        # nothing for it to ingest, so skip just this sub-pipeline while preserving
+        # prior_pipeline_completed so downstream OMOP still runs off the clinical
+        # foundation. (skip_hds_pipelines already gates the whole phase upstream.)
+        if pipeline_name == IMAGING_INGESTION_PIPELINE_NAME and config.get("skip_dicom"):
+            pipeline_results[pipeline_name] = "skipped_dicom_disabled"
+            logger.info(
+                "Skipping imaging ingestion pipeline because DICOM loading is disabled: %s",
                 pipeline_name,
             )
             continue
